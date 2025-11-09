@@ -1,7 +1,19 @@
 (function () {
+  const hasBrowserAPI = typeof browser !== "undefined";
+  const hasChromeAPI = typeof chrome !== "undefined";
+
   const extensionStorage =
-    typeof browser !== "undefined" && browser.storage && browser.storage.local ? browser.storage.local : null;
-  const runtime = typeof browser !== "undefined" && browser.runtime ? browser.runtime : null;
+    hasBrowserAPI && browser.storage && browser.storage.local
+      ? browser.storage.local
+      : hasChromeAPI && chrome.storage && chrome.storage.local
+      ? chrome.storage.local
+      : null;
+  const runtime =
+    hasBrowserAPI && browser.runtime
+      ? browser.runtime
+      : hasChromeAPI && chrome.runtime
+      ? chrome.runtime
+      : null;
 
   let siteDomain = window.location.hostname;
   let inboxUrl = "https://www.fiverr.com/inbox";
@@ -10,6 +22,38 @@
   var lastAction = Date.now();
   var isF10Clicked = false;
   var mailData = JSON.parse(localStorage.getItem("mailData")) || [];
+
+  const RELOAD_COUNT_KEY = "farReloadCount";
+  const NEXT_RELOAD_TIMESTAMP_KEY = "farNextReloadTimestamp";
+  const MIN_SECONDS_BETWEEN_ACTION_AND_RELOAD = 60;
+  let reloadCount = parseInt(localStorage.getItem(RELOAD_COUNT_KEY), 10) || 0;
+  let nextReloadTimestamp = null;
+  let nextReloadTimeoutId = null;
+  let statusUpdateIntervalId = null;
+  let statusDisplayElement = null;
+
+  let updateStatusDisplay = () => {};
+  let clearScheduledReload = (shouldUpdate = true) => {
+    if (nextReloadTimeoutId) {
+      clearTimeout(nextReloadTimeoutId);
+      nextReloadTimeoutId = null;
+    }
+    nextReloadTimestamp = null;
+    if (shouldUpdate) {
+      updateStatusDisplay();
+    }
+  };
+  let scheduleNextReload = () => {};
+  let pauseAutoReload = () => {
+    autoReload = false;
+    clearScheduledReload();
+  };
+  let enableAutoReload = () => {
+    autoReload = true;
+    isF10Clicked = false;
+    scheduleNextReload();
+    updateStatusDisplay();
+  };
 
   const PRIMARY_TAB_KEY = "farPrimaryTab";
   const PRIMARY_TAB_HEARTBEAT_INTERVAL = 5000;
@@ -83,7 +127,19 @@
           primaryTabMonitorTimer = null;
         }
         window.removeEventListener("storage", handlePrimaryTabRelease);
-        window.location.href = "https://www.fiverr.com/";
+        if (isOnline) {
+          window.location.href = "https://www.fiverr.com/";
+        } else {
+          const redirectWhenOnline = () => {
+            window.removeEventListener("online", redirectWhenOnline);
+            try {
+              window.location.href = "https://www.fiverr.com/";
+            } catch (error) {
+              console.warn("Fiverr Auto Reloader: failed to redirect primary tab when back online", error);
+            }
+          };
+          window.addEventListener("online", redirectWhenOnline);
+        }
       }
     };
 
@@ -118,9 +174,15 @@
   let isOnline = navigator.onLine;
   window.addEventListener("online", () => {
     isOnline = true;
+    if (autoReload) {
+      scheduleNextReload();
+    }
+    updateStatusDisplay();
   });
   window.addEventListener("offline", () => {
     isOnline = false;
+    clearScheduledReload();
+    updateStatusDisplay();
   });
 
   const defaultSound = "https://storefrontsignonline.com/wp-content/uploads/2025/10/money_trees.mp3";
@@ -256,6 +318,12 @@
       pageLinks = processPageLinks(getVal("pageLinks"));
       minReloadingSecond = parseInt(getVal("relStart"), 10) || minReloadingSecond;
       maxReloadingSecond = parseInt(getVal("relEnd"), 10) || maxReloadingSecond;
+
+      if (autoReload) {
+        scheduleNextReload();
+      } else {
+        updateStatusDisplay();
+      }
     });
   }
 
@@ -317,6 +385,177 @@
         }
       };
 
+      const statusContainerCss = {
+        position: "fixed",
+        bottom: "20px",
+        right: "20px",
+        backgroundColor: "rgba(0, 0, 0, 0.75)",
+        color: "#ffffff",
+        padding: "12px 16px",
+        borderRadius: "8px",
+        fontSize: "14px",
+        lineHeight: "1.4",
+        zIndex: "1001",
+        fontFamily: "Arial, sans-serif",
+        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)",
+        minWidth: "220px",
+        textAlign: "left",
+      };
+
+      const ensureStatusDisplayElement = () => {
+        if (statusDisplayElement && document.body.contains(statusDisplayElement)) {
+          return statusDisplayElement;
+        }
+
+        statusDisplayElement = document.createElement("div");
+        statusDisplayElement.id = "farReloadStatus";
+        applyStyles(statusDisplayElement, statusContainerCss);
+        document.body.appendChild(statusDisplayElement);
+
+        if (!statusUpdateIntervalId) {
+          statusUpdateIntervalId = setInterval(() => {
+            updateStatusDisplay();
+          }, 1000);
+        }
+
+        return statusDisplayElement;
+      };
+
+      const formatCountdown = (milliseconds) => {
+        if (milliseconds <= 0) {
+          return "Imminent";
+        }
+        const totalSeconds = Math.ceil(milliseconds / 1000);
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        const minutePart = minutes > 0 ? `${minutes}m ` : "";
+        const secondPart = `${seconds}s`;
+        return `${minutePart}${secondPart}`.trim();
+      };
+
+      const formatClockTime = (timestamp) => {
+        return new Date(timestamp).toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+        });
+      };
+
+      const deriveNextReloadLabel = () => {
+        if (!autoReload) {
+          return "Paused";
+        }
+        if (!isOnline) {
+          return "Offline";
+        }
+        if (siteDomain !== "www.fiverr.com") {
+          return "Unavailable";
+        }
+        if (!Array.isArray(pageLinks) || pageLinks.length === 0) {
+          return "No pages configured";
+        }
+        if (!nextReloadTimestamp) {
+          return "Scheduling...";
+        }
+        const remaining = nextReloadTimestamp - Date.now();
+        const countdown = formatCountdown(remaining);
+        const clockTime = formatClockTime(nextReloadTimestamp);
+        return `${countdown} (${clockTime})`;
+      };
+
+      updateStatusDisplay = () => {
+        if (!document.body) {
+          return;
+        }
+
+        if (siteDomain !== "www.fiverr.com") {
+          if (statusDisplayElement && statusDisplayElement.parentElement) {
+            statusDisplayElement.remove();
+          }
+          statusDisplayElement = null;
+          return;
+        }
+
+        const container = ensureStatusDisplayElement();
+        const nextReloadLabel = deriveNextReloadLabel();
+
+        container.innerHTML = `<div><strong>Total reloads:</strong> ${reloadCount}</div><div><strong>Next reload:</strong> ${nextReloadLabel}</div>`;
+      };
+
+      pauseAutoReload = () => {
+        autoReload = false;
+        clearScheduledReload();
+        updateStatusDisplay();
+      };
+
+      enableAutoReload = () => {
+        autoReload = true;
+        isF10Clicked = false;
+        scheduleNextReload();
+        updateStatusDisplay();
+      };
+
+      scheduleNextReload = () => {
+        clearScheduledReload(false);
+
+        if (!autoReload || !isOnline) {
+          updateStatusDisplay();
+          return;
+        }
+
+        if (siteDomain !== "www.fiverr.com") {
+          updateStatusDisplay();
+          return;
+        }
+
+        if (!Array.isArray(pageLinks) || pageLinks.length === 0) {
+          updateStatusDisplay();
+          return;
+        }
+
+        const delay = getRandomMiliSecond(minReloadingSecond, maxReloadingSecond);
+        nextReloadTimestamp = Date.now() + delay;
+        updateStatusDisplay();
+
+        nextReloadTimeoutId = setTimeout(() => {
+          nextReloadTimeoutId = null;
+
+          if (!autoReload || !isOnline) {
+            scheduleNextReload();
+            return;
+          }
+
+          if (siteDomain !== "www.fiverr.com") {
+            updateStatusDisplay();
+            return;
+          }
+
+          if (!Array.isArray(pageLinks) || pageLinks.length === 0) {
+            scheduleNextReload();
+            return;
+          }
+
+          const diffInSecond = (Date.now() - lastAction) / 1000;
+          if (diffInSecond <= MIN_SECONDS_BETWEEN_ACTION_AND_RELOAD) {
+            scheduleNextReload();
+            return;
+          }
+
+          const randomInt = Math.floor(Math.random() * pageLinks.length);
+          const fallbackLink = "/users/" + (getVal("profileUsername") || "") + "/seller_dashboard";
+          const goToLink = pageLinks[randomInt] || fallbackLink;
+          const newLink = new URL("https://www.fiverr.com" + goToLink).toString();
+
+          reloadCount += 1;
+          localStorage.setItem(RELOAD_COUNT_KEY, String(reloadCount));
+          updateStatusDisplay();
+          window.location.href = newLink;
+        }, delay);
+      };
+
+      updateStatusDisplay();
+
+
       const playAudio = (type) => {
         let audio;
 
@@ -340,24 +579,30 @@
 
       document.body.addEventListener("click", () => {
         lastAction = Date.now();
+        if (autoReload) {
+          scheduleNextReload();
+        } else {
+          updateStatusDisplay();
+        }
       });
 
       window.addEventListener("keydown", (event) => {
         lastAction = Date.now();
 
         if (event.code === "F8") {
-          autoReload = false;
+          pauseAutoReload();
           alert("Fiverr Auto Reloader Disabled For 30 Muntes");
           setTimeout(() => {
             if (!isF10Clicked) {
-              autoReload = true;
+              enableAutoReload();
             }
           }, 1800000);
         }
 
         if (event.code === "F10") {
           alert("Fiverr Auto Reloader Turned Off");
-          autoReload = false;
+          isF10Clicked = true;
+          pauseAutoReload();
         }
 
         if (event.code === "F6") {
@@ -365,195 +610,43 @@
         }
 
         if (event.code === "F4") {
-          let farContainer = document.getElementById("farContainer");
-          if (farContainer) {
-            farContainer.style.display = "block";
+          event.preventDefault();
+          const attemptFallbackOpen = () => {
+            if (runtime && typeof runtime.getURL === "function") {
+              const url = runtime.getURL("options.html");
+              window.open(url, "_blank", "noopener,noreferrer");
+            } else if (typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.getURL === "function") {
+              const url = chrome.runtime.getURL("options.html");
+              window.open(url, "_blank", "noopener,noreferrer");
+            }
+          };
+
+          if (runtime && typeof runtime.openOptionsPage === "function") {
+            try {
+              const result = runtime.openOptionsPage();
+              if (result && typeof result.catch === "function") {
+                result.catch(attemptFallbackOpen);
+              }
+            } catch (error) {
+              attemptFallbackOpen();
+            }
+          } else if (typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.openOptionsPage === "function") {
+            chrome.runtime.openOptionsPage(() => {
+              if (chrome.runtime.lastError) {
+                attemptFallbackOpen();
+              }
+            });
           } else {
-            document.body.appendChild(modalContainer);
-            modalContainer.style.display = "block";
+            attemptFallbackOpen();
           }
         }
-      });
 
-      const containerCss = {
-        width: "680px",
-        height: "550px",
-        position: "absolute",
-        top: "80px",
-        left: "50%",
-        transform: "translatex(-50%)",
-        zIndex: "1000",
-        backgroundColor: "#1DBF73",
-        color: "darkblue",
-        textAlign: "center",
-        borderRadius: "10px",
-        border: "2px solid darkblue",
-        boxShadow: "2px 2px 10px rgba(0,0,0,0.3)",
-        padding: "25px",
-        overflowY: "scroll",
-      };
-
-      const titleCss = {
-        color: "#fff",
-        textAlign: "center",
-        fontSize: "34px",
-        marginBottom: "30px",
-      };
-
-      const definedUserInputCss = {
-        width: "90%",
-        margin: "auto",
-        fontSize: "18px",
-        marginBottom: "20px",
-        padding: "10px",
-      };
-
-      const randomtimeEndInputCss = {
-        width: "50px",
-        display: "inline",
-      };
-
-      const randomTimeStartInputCss = {
-        width: "50px",
-        display: "inline",
-      };
-
-      const closeBtnCss = {
-        width: "200px",
-        margin: "auto",
-        marginTop: "20px",
-        backgroundColor: "red",
-        color: "#fff",
-        cursor: "pointer",
-        border: "none",
-        borderRadius: "5px",
-        padding: "10px",
-        textAlign: "center",
-        fontSize: "18px",
-        fontWeight: "bold",
-        display: "block",
-      };
-      const gotoLinkInputCss = {
-        width: "90%",
-        margin: "auto",
-        height: "250px",
-        fontSize: "18px",
-        marginBottom: "15px",
-        padding: "5px",
-      };
-
-      let modalContainer = document.createElement("div");
-      modalContainer.id = "farContainer";
-      applyStyles(modalContainer, containerCss);
-
-      const insertTitle = (title) => {
-        let modalTitle = document.createElement("h4");
-        applyStyles(modalTitle, titleCss);
-        modalTitle.textContent = title;
-        modalContainer.appendChild(modalTitle);
-      };
-
-      const insertInput = (id, label, defaultValue) => {
-        if (defaultValue && localStorage.getItem(id) === null) {
-          updateSetting(id, defaultValue);
-        }
-
-        let definedUserLabel = document.createElement("label");
-        definedUserLabel.textContent = label;
-        definedUserLabel.style.color = "#ffffff";
-        definedUserLabel.style.display = "block";
-        modalContainer.appendChild(definedUserLabel);
-
-        let definedUserInput = document.createElement("input");
-        let inputValue = getVal(id) || defaultValue || "";
-        definedUserInput.value = inputValue;
-        applyStyles(definedUserInput, definedUserInputCss);
-
-        definedUserInput.addEventListener("keyup", function (e) {
-          updateSetting(id, e.currentTarget.value);
-          if (id === "targetedClients") {
-            targetedClients = e.currentTarget.value;
-          }
-        });
-
-        definedUserInput.addEventListener("change", function (e) {
-          updateSetting(id, e.currentTarget.value);
-          if (id === "targetedClients") {
-            targetedClients = e.currentTarget.value;
-          }
-        });
-
-        modalContainer.appendChild(definedUserInput);
-      };
-
-      const insertTextarea = (id, label = "Fiverr Pages links to redirected") => {
-        let gotoLinkLabel = document.createElement("label");
-        gotoLinkLabel.textContent = label;
-        gotoLinkLabel.style.color = "white";
-        gotoLinkLabel.style.display = "block";
-        modalContainer.appendChild(gotoLinkLabel);
-
-        let gotoLinkInput = document.createElement("textarea");
-        gotoLinkInput.value = pageLinks.join(",");
-        applyStyles(gotoLinkInput, gotoLinkInputCss);
-        gotoLinkInput.addEventListener("change", function (e) {
-          const value = e.currentTarget.value;
-          updateSetting(id, value);
-          pageLinks = processPageLinks(value);
-        });
-
-        modalContainer.appendChild(gotoLinkInput);
-      };
-
-      let randomTimeLabel = document.createElement("label");
-      randomTimeLabel.textContent = "Random Time Start and End in Seconds: ";
-      randomTimeLabel.style.color = "white";
-      randomTimeLabel.style.display = "block";
-
-      let randomTimeStartInput = document.createElement("input");
-      randomTimeStartInput.value = minReloadingSecond;
-      applyStyles(randomTimeStartInput, randomTimeStartInputCss);
-
-      randomTimeStartInput.addEventListener("change", (e) => {
-        const value = parseInt(e.currentTarget.value, 10) || minReloadingSecond;
-        minReloadingSecond = value;
-        updateSetting("relStart", String(value));
-      });
-
-      let randomtimeEndInput = document.createElement("input");
-      randomtimeEndInput.value = maxReloadingSecond;
-      applyStyles(randomtimeEndInput, randomtimeEndInputCss);
-      randomtimeEndInput.addEventListener("change", (e) => {
-        const value = parseInt(e.currentTarget.value, 10) || maxReloadingSecond;
-        maxReloadingSecond = value;
-        updateSetting("relEnd", String(value));
-      });
-
-      let closeBtn = document.createElement("button");
-      closeBtn.textContent = "Close Console";
-      applyStyles(closeBtn, closeBtnCss);
-      closeBtn.addEventListener("click", () => {
-        let farContainer = document.getElementById("farContainer");
-        if (farContainer) {
-          farContainer.style.display = "none";
+        if (autoReload) {
+          scheduleNextReload();
+        } else {
+          updateStatusDisplay();
         }
       });
-
-      insertTitle("Fiverr Auto Reloader Console");
-      insertInput("profile", "Fiverr Profile Name", "");
-      insertInput("profileUsername", "Fiverr Profile Username", "");
-      insertInput("targetedClients", "Put Usersame of your clients saperating by comma", "");
-
-      insertTextarea("pageLinks", "Fiverr Pages links to redirected");
-
-      insertInput("new_client_sound", "New Client Notification Sound", defaultSettings.new_client_sound);
-      insertInput("targeted_client_sound", "Targeted Client Notification Sound", defaultSettings.targeted_client_sound);
-      insertInput("old_client_sound", "Old Client Notification Sound", defaultSettings.old_client_sound);
-
-      modalContainer.appendChild(randomTimeLabel);
-      modalContainer.appendChild(randomTimeStartInput);
-      modalContainer.appendChild(randomtimeEndInput);
-      modalContainer.appendChild(closeBtn);
 
       const sendNotification = (message) => {
         if ("Notification" in window) {
@@ -580,7 +673,7 @@
           if (newClientFlag) {
             playAudio("new");
             sendNotification("New client Message");
-            autoReload = false;
+            pauseAutoReload();
           } else {
             let targetClients = targetedClients.split(",");
             let isTargeted = targetClients.some((client) => client.trim() === "programerikram");
@@ -603,23 +696,7 @@
           }
         }
 
-        setInterval(() => {
-          if (autoReload === true && isOnline) {
-            const listLength = pageLinks.length;
-            if (listLength === 0) {
-              return;
-            }
-            let randomInt = Math.floor(Math.random() * listLength);
-            let diffInSecond = (Date.now() - lastAction) / 1000;
-            let goToLink = pageLinks[randomInt] || "/users/" + (getVal("profileUsername") || "") + "/seller_dashboard";
-
-            let newLink = new URL("https://www.fiverr.com" + goToLink).toString();
-            if (diffInSecond > 60) {
-              return;
-            }
-            window.location.href = newLink;
-          }
-        }, getRandomMiliSecond(minReloadingSecond, maxReloadingSecond));
+        scheduleNextReload();
       }
     } catch (error) {
       console.log(error);
