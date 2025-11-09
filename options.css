@@ -51,6 +51,41 @@ label {
   font-weight: 600;
 }
 
+.sound-setting {
+  gap: 12px;
+}
+
+.sound-input-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.sound-input-row input {
+  flex: 1;
+}
+
+.sound-play {
+  padding: 10px 16px;
+  border-radius: 8px;
+  border: 1px solid #1dbf73;
+  background-color: #ffffff;
+  color: #1dbf73;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.sound-play:hover {
+  background-color: #1dbf73;
+  color: #ffffff;
+}
+
+.sound-upload {
+  font-weight: 400;
+  padding: 6px 0;
+}
+
 input,
 textarea {
   padding: 10px 12px;

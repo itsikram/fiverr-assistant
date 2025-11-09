@@ -110,6 +110,99 @@
     }
   });
 
-  document.addEventListener("DOMContentLoaded", init);
+  const soundConfigs = [
+    {
+      field: "new_client_sound",
+      defaultValue: defaultSettings.new_client_sound,
+      fileInputId: "new_client_sound_file",
+    },
+    {
+      field: "targeted_client_sound",
+      defaultValue: defaultSettings.targeted_client_sound,
+      fileInputId: "targeted_client_sound_file",
+    },
+    {
+      field: "old_client_sound",
+      defaultValue: defaultSettings.old_client_sound,
+      fileInputId: "old_client_sound_file",
+    },
+  ];
+
+  let currentAudio = null;
+
+  const stopCurrentAudio = () => {
+    if (currentAudio) {
+      currentAudio.pause();
+      currentAudio.currentTime = 0;
+      currentAudio = null;
+    }
+  };
+
+  const attachSoundControls = () => {
+    soundConfigs.forEach(({ field, defaultValue, fileInputId }) => {
+      const urlInput = document.getElementById(field);
+      const playButton = document.querySelector(
+        `.sound-play[data-sound-field="${field}"]`
+      );
+      const fileInput = document.getElementById(fileInputId);
+
+      if (!urlInput || !playButton || !fileInput) return;
+
+      playButton.addEventListener("click", async () => {
+        const source = urlInput.value.trim() || defaultValue;
+        if (!source) {
+          showStatus("No audio source available.");
+          return;
+        }
+
+        stopCurrentAudio();
+        const audio = new Audio(source);
+        currentAudio = audio;
+        audio.addEventListener("ended", () => {
+          if (currentAudio === audio) {
+            currentAudio = null;
+          }
+        });
+
+        try {
+          await audio.play();
+        } catch (error) {
+          console.warn(`Unable to play sound for ${field}:`, error);
+          showStatus("Unable to play sound. Check the URL or uploaded file.", 3000);
+        }
+      });
+
+      fileInput.addEventListener("change", () => {
+        const [file] = fileInput.files;
+        if (!file) return;
+
+        if (!file.type.startsWith("audio/")) {
+          showStatus("Please select a valid audio file.", 3000);
+          fileInput.value = "";
+          return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = () => {
+          const result = reader.result;
+          if (typeof result === "string") {
+            urlInput.value = result;
+            showStatus("Audio file loaded. Remember to save your settings.");
+            fileInput.value = "";
+          }
+        };
+        reader.onerror = () => {
+          console.error(`Failed to read audio file for ${field}:`, reader.error);
+          showStatus("Failed to load audio file.", 3000);
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+  };
+
+  document.addEventListener("DOMContentLoaded", () => {
+    attachSoundControls();
+    init();
+  });
 })();
 

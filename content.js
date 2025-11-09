@@ -33,13 +33,38 @@
   let statusDisplayElement = null;
 
   let updateStatusDisplay = () => {};
-  let clearScheduledReload = (shouldUpdate = true) => {
+  const persistReloadState = () => {
+    try {
+      localStorage.setItem(RELOAD_COUNT_KEY, String(reloadCount));
+    } catch (_) {}
+
+    if (extensionStorage) {
+      const payload = {
+        [RELOAD_COUNT_KEY]: reloadCount,
+        [NEXT_RELOAD_TIMESTAMP_KEY]: nextReloadTimestamp || 0,
+      };
+
+      try {
+        const result = extensionStorage.set(payload);
+        if (result && typeof result.catch === "function") {
+          result.catch((error) => console.warn("Fiverr Auto Reloader: unable to persist reload state", error));
+        }
+      } catch (error) {
+        console.warn("Fiverr Auto Reloader: unable to persist reload state", error);
+      }
+    }
+  };
+
+  let clearScheduledReload = ({ updateDisplay = true, persist = true } = {}) => {
     if (nextReloadTimeoutId) {
       clearTimeout(nextReloadTimeoutId);
       nextReloadTimeoutId = null;
     }
     nextReloadTimestamp = null;
-    if (shouldUpdate) {
+    if (persist) {
+      persistReloadState();
+    }
+    if (updateDisplay) {
       updateStatusDisplay();
     }
   };
@@ -54,6 +79,21 @@
     scheduleNextReload();
     updateStatusDisplay();
   };
+
+  // Offline detection
+  let isOnline = navigator.onLine;
+  window.addEventListener("online", () => {
+    isOnline = true;
+    if (autoReload) {
+      scheduleNextReload();
+    }
+    updateStatusDisplay();
+  });
+  window.addEventListener("offline", () => {
+    isOnline = false;
+    clearScheduledReload();
+    updateStatusDisplay();
+  });
 
   const PRIMARY_TAB_KEY = "farPrimaryTab";
   const PRIMARY_TAB_HEARTBEAT_INTERVAL = 5000;
@@ -170,21 +210,6 @@
   window.addEventListener("beforeunload", releasePrimaryTab);
   window.addEventListener("pagehide", releasePrimaryTab);
 
-  // Offline detection
-  let isOnline = navigator.onLine;
-  window.addEventListener("online", () => {
-    isOnline = true;
-    if (autoReload) {
-      scheduleNextReload();
-    }
-    updateStatusDisplay();
-  });
-  window.addEventListener("offline", () => {
-    isOnline = false;
-    clearScheduledReload();
-    updateStatusDisplay();
-  });
-
   const defaultSound = "https://storefrontsignonline.com/wp-content/uploads/2025/10/money_trees.mp3";
   const defaultSettings = {
     profile: "",
@@ -199,6 +224,285 @@
   };
 
   const settings = { ...defaultSettings };
+  const supportsIndexedDB = (() => {
+    try {
+      return typeof indexedDB !== "undefined";
+    } catch (error) {
+      console.warn("Fiverr Auto Reloader: IndexedDB unavailable", error);
+      return false;
+    }
+  })();
+  const AUDIO_DB_NAME = "farAudioCache";
+  const AUDIO_STORE_NAME = "sounds";
+  const AUDIO_SETTING_KEYS = ["new_client_sound", "targeted_client_sound", "old_client_sound"];
+  const SOUND_TYPE_TO_SETTING_KEY = {
+    new: "new_client_sound",
+    targated: "targeted_client_sound",
+    targeted: "targeted_client_sound",
+    old: "old_client_sound",
+    default: "new_client_sound",
+  };
+  let audioDbPromise = null;
+  const inFlightAudioCache = new Map();
+
+  const normalizeUrl = (value) => (typeof value === "string" ? value.trim() : "");
+
+  const sendMessageToRuntime = (message) => {
+    if (!runtime || typeof runtime.sendMessage !== "function") {
+      return Promise.reject(new Error("Runtime messaging unavailable"));
+    }
+
+    if (hasBrowserAPI && runtime.sendMessage.length <= 1) {
+      try {
+        const result = runtime.sendMessage(message);
+        return result && typeof result.then === "function" ? result : Promise.resolve(result);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    }
+
+    return new Promise((resolve, reject) => {
+      try {
+        runtime.sendMessage(message, (response) => {
+          if (
+            hasChromeAPI &&
+            typeof chrome !== "undefined" &&
+            chrome.runtime &&
+            chrome.runtime.lastError
+          ) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve(response);
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
+  const fetchAudioViaRuntime = async (url) => {
+    if (!url || typeof url !== "string") {
+      return null;
+    }
+
+    try {
+      const response = await sendMessageToRuntime({ type: "fetchAudio", url });
+      if (!response || !response.ok || !response.buffer) {
+        return null;
+      }
+      const blobOptions = {};
+      if (response.contentType) {
+        blobOptions.type = response.contentType;
+      }
+      return new Blob([response.buffer], blobOptions);
+    } catch (error) {
+      console.warn("Fiverr Auto Reloader: background audio fetch failed", error);
+      return null;
+    }
+  };
+
+  const getAudioDb = () => {
+    if (!supportsIndexedDB) {
+      return Promise.reject(new Error("IndexedDB not supported"));
+    }
+    if (audioDbPromise) {
+      return audioDbPromise;
+    }
+    audioDbPromise = new Promise((resolve, reject) => {
+      try {
+        const request = indexedDB.open(AUDIO_DB_NAME, 1);
+        request.onupgradeneeded = (event) => {
+          const db = event.target.result;
+          if (!db.objectStoreNames.contains(AUDIO_STORE_NAME)) {
+            db.createObjectStore(AUDIO_STORE_NAME);
+          }
+        };
+        request.onsuccess = () => {
+          const db = request.result;
+          db.onversionchange = () => {
+            db.close();
+            audioDbPromise = null;
+          };
+          resolve(db);
+        };
+        request.onerror = () => {
+          reject(request.error);
+        };
+        request.onblocked = () => {
+          console.warn("Fiverr Auto Reloader: IndexedDB open request blocked");
+        };
+      } catch (error) {
+        reject(error);
+      }
+    }).catch((error) => {
+      console.warn("Fiverr Auto Reloader: unable to open audio cache database", error);
+      audioDbPromise = null;
+      throw error;
+    });
+    return audioDbPromise;
+  };
+
+  const readCachedAudioRecord = async (key) => {
+    if (!supportsIndexedDB) {
+      return null;
+    }
+    try {
+      const db = await getAudioDb();
+      return await new Promise((resolve, reject) => {
+        const transaction = db.transaction(AUDIO_STORE_NAME, "readonly");
+        const store = transaction.objectStore(AUDIO_STORE_NAME);
+        const request = store.get(key);
+        request.onsuccess = () => {
+          resolve(request.result || null);
+        };
+        request.onerror = () => {
+          reject(request.error);
+        };
+      });
+    } catch (error) {
+      console.warn("Fiverr Auto Reloader: failed to read cached audio", error);
+      return null;
+    }
+  };
+
+  const getCachedAudioBlobForUrl = async (key, url) => {
+    if (!supportsIndexedDB) {
+      return null;
+    }
+    const normalizedUrl = normalizeUrl(url);
+    if (!normalizedUrl) {
+      return null;
+    }
+    const record = await readCachedAudioRecord(key);
+    if (record && record.sourceUrl === normalizedUrl && record.blob instanceof Blob) {
+      return record.blob;
+    }
+    return null;
+  };
+
+  const writeCachedAudioRecord = async (key, value) => {
+    if (!supportsIndexedDB) {
+      return;
+    }
+    try {
+      const db = await getAudioDb();
+      await new Promise((resolve, reject) => {
+        const transaction = db.transaction(AUDIO_STORE_NAME, "readwrite");
+        const store = transaction.objectStore(AUDIO_STORE_NAME);
+        const request = store.put(value, key);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+    } catch (error) {
+      console.warn("Fiverr Auto Reloader: failed to write cached audio", error);
+    }
+  };
+
+  const deleteCachedAudioRecord = async (key) => {
+    if (!supportsIndexedDB) {
+      return;
+    }
+    try {
+      const db = await getAudioDb();
+      await new Promise((resolve, reject) => {
+        const transaction = db.transaction(AUDIO_STORE_NAME, "readwrite");
+        const store = transaction.objectStore(AUDIO_STORE_NAME);
+        const request = store.delete(key);
+        request.onsuccess = () => resolve();
+        request.onerror = () => reject(request.error);
+      });
+    } catch (error) {
+      console.warn("Fiverr Auto Reloader: failed to delete cached audio", error);
+    }
+  };
+
+  const fetchAndCacheAudio = async (key, url) => {
+    if (!supportsIndexedDB || !url) {
+      return null;
+    }
+    const normalizedUrl = normalizeUrl(url);
+    if (!normalizedUrl) {
+      return null;
+    }
+    try {
+      const response = await fetch(normalizedUrl, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status} ${response.statusText}`);
+      }
+      const blob = await response.blob();
+      await writeCachedAudioRecord(key, {
+        sourceUrl: normalizedUrl,
+        blob,
+        timestamp: Date.now(),
+      });
+      return blob;
+    } catch (error) {
+      console.warn("Fiverr Auto Reloader: failed to fetch audio for caching", error);
+      const fallbackBlob = await fetchAudioViaRuntime(normalizedUrl);
+      if (!fallbackBlob) {
+        return null;
+      }
+      await writeCachedAudioRecord(key, {
+        sourceUrl: normalizedUrl,
+        blob: fallbackBlob,
+        timestamp: Date.now(),
+      });
+      return fallbackBlob;
+    }
+  };
+
+  const ensureAudioBlob = async (key, url) => {
+    if (!supportsIndexedDB) {
+      return null;
+    }
+    const normalizedUrl = typeof url === "string" ? url.trim() : "";
+    const cacheKey = `${key}:${normalizedUrl}`;
+
+    if (!normalizedUrl) {
+      await deleteCachedAudioRecord(key);
+      return null;
+    }
+
+    if (inFlightAudioCache.has(cacheKey)) {
+      return inFlightAudioCache.get(cacheKey);
+    }
+
+    const promise = (async () => {
+      const existing = await readCachedAudioRecord(key);
+      if (existing && existing.sourceUrl === normalizedUrl && existing.blob instanceof Blob) {
+        return existing.blob;
+      }
+      return await fetchAndCacheAudio(key, normalizedUrl);
+    })();
+
+    inFlightAudioCache.set(cacheKey, promise);
+    try {
+      return await promise;
+    } finally {
+      inFlightAudioCache.delete(cacheKey);
+    }
+  };
+
+  const warmAudioCache = async () => {
+    if (!supportsIndexedDB) {
+      return;
+    }
+    const uniqueKeys = [...new Set(AUDIO_SETTING_KEYS)];
+    await Promise.all(
+      uniqueKeys.map((key) => {
+        let currentUrl = settings[key] || "";
+        if (!currentUrl) {
+          try {
+            currentUrl = localStorage.getItem(key) || "";
+          } catch (_) {
+            currentUrl = "";
+          }
+        }
+        return ensureAudioBlob(key, currentUrl);
+      })
+    );
+  };
   let targetedClients = "";
   let pageLinks = [];
   let minReloadingSecond = 30;
@@ -224,13 +528,17 @@
     if (extensionStorage) {
       extensionStorage.set({ [key]: value }).catch((error) => console.error("Failed to persist setting:", error));
     }
+    if (AUDIO_SETTING_KEYS.includes(key)) {
+      ensureAudioBlob(key, value);
+    }
   };
 
   const hydrateSettings = async () => {
     let stored = {};
     if (extensionStorage) {
+      const storageKeys = [...Object.keys(defaultSettings), RELOAD_COUNT_KEY, NEXT_RELOAD_TIMESTAMP_KEY];
       try {
-        stored = await extensionStorage.get(Object.keys(defaultSettings));
+        stored = await extensionStorage.get(storageKeys);
       } catch (error) {
         console.error("Failed to load settings from storage", error);
       }
@@ -268,6 +576,25 @@
       }
     });
 
+    const storedReloadCount = stored[RELOAD_COUNT_KEY];
+    if (storedReloadCount !== undefined && storedReloadCount !== null) {
+      const parsedCount = parseInt(storedReloadCount, 10);
+      if (!Number.isNaN(parsedCount)) {
+        reloadCount = parsedCount;
+        try {
+          localStorage.setItem(RELOAD_COUNT_KEY, String(reloadCount));
+        } catch (_) {}
+      }
+    }
+
+    const storedNextReload = stored[NEXT_RELOAD_TIMESTAMP_KEY];
+    if (storedNextReload !== undefined && storedNextReload !== null) {
+      const parsedNextReload = parseInt(storedNextReload, 10);
+      if (!Number.isNaN(parsedNextReload)) {
+        nextReloadTimestamp = parsedNextReload > 0 ? parsedNextReload : null;
+      }
+    }
+
     // Ensure pageLinks has a sensible default if still empty.
     if (!settings.pageLinks) {
       const profileUsername = settings.profileUsername || "";
@@ -290,6 +617,8 @@
         console.error("Failed to persist pending settings:", error);
       }
     }
+
+    await warmAudioCache();
 
     targetedClients = settings.targetedClients || "";
     pageLinks = processPageLinks(settings.pageLinks);
@@ -388,7 +717,7 @@
       const statusContainerCss = {
         position: "fixed",
         bottom: "20px",
-        right: "20px",
+        right: "50px",
         backgroundColor: "rgba(0, 0, 0, 0.75)",
         color: "#ffffff",
         padding: "12px 16px",
@@ -485,7 +814,6 @@
       pauseAutoReload = () => {
         autoReload = false;
         clearScheduledReload();
-        updateStatusDisplay();
       };
 
       enableAutoReload = () => {
@@ -496,25 +824,31 @@
       };
 
       scheduleNextReload = () => {
-        clearScheduledReload(false);
+        clearScheduledReload({ updateDisplay: false, persist: false });
+
+        const finalizeWithoutSchedule = () => {
+          persistReloadState();
+          updateStatusDisplay();
+        };
 
         if (!autoReload || !isOnline) {
-          updateStatusDisplay();
+          finalizeWithoutSchedule();
           return;
         }
 
         if (siteDomain !== "www.fiverr.com") {
-          updateStatusDisplay();
+          finalizeWithoutSchedule();
           return;
         }
 
         if (!Array.isArray(pageLinks) || pageLinks.length === 0) {
-          updateStatusDisplay();
+          finalizeWithoutSchedule();
           return;
         }
 
         const delay = getRandomMiliSecond(minReloadingSecond, maxReloadingSecond);
         nextReloadTimestamp = Date.now() + delay;
+        persistReloadState();
         updateStatusDisplay();
 
         nextReloadTimeoutId = setTimeout(() => {
@@ -526,6 +860,7 @@
           }
 
           if (siteDomain !== "www.fiverr.com") {
+            persistReloadState();
             updateStatusDisplay();
             return;
           }
@@ -547,7 +882,8 @@
           const newLink = new URL("https://www.fiverr.com" + goToLink).toString();
 
           reloadCount += 1;
-          localStorage.setItem(RELOAD_COUNT_KEY, String(reloadCount));
+          nextReloadTimestamp = null;
+          persistReloadState();
           updateStatusDisplay();
           window.location.href = newLink;
         }, delay);
@@ -556,25 +892,80 @@
       updateStatusDisplay();
 
 
-      const playAudio = (type) => {
-        let audio;
+      const playAudio = async (type) => {
+        const settingKey = SOUND_TYPE_TO_SETTING_KEY[type] || SOUND_TYPE_TO_SETTING_KEY.default;
+        const configuredUrl = getVal(settingKey) || settings[settingKey] || defaultSettings[settingKey] || "";
+        const normalizedUrl = normalizeUrl(configuredUrl);
 
-        switch (type) {
-          case "old":
-            audio = new Audio(getVal("old_client_sound"));
-            break;
-          case "targated":
-            audio = new Audio(getVal("targeted_client_sound"));
-            break;
-          case "new":
-            audio = new Audio(getVal("new_client_sound"));
-            break;
-          default:
-            audio = new Audio(getVal("new_client_sound"));
-            break;
+        let audioSource = configuredUrl;
+        let objectUrl = null;
+        let blobFromCache = null;
+
+        if (supportsIndexedDB && normalizedUrl) {
+          try {
+            blobFromCache = await getCachedAudioBlobForUrl(settingKey, normalizedUrl);
+            if (!blobFromCache) {
+              blobFromCache = await ensureAudioBlob(settingKey, normalizedUrl);
+            }
+          } catch (error) {
+            console.warn("Fiverr Auto Reloader: failed to load cached audio", error);
+          }
+        } else if (supportsIndexedDB && !normalizedUrl) {
+          try {
+            await deleteCachedAudioRecord(settingKey);
+          } catch (error) {
+            console.warn("Fiverr Auto Reloader: failed to clear cached audio", error);
+          }
         }
 
-        return audio.play().catch((error) => console.warn("Audio playback blocked:", error));
+        if (blobFromCache instanceof Blob) {
+          objectUrl = URL.createObjectURL(blobFromCache);
+          audioSource = objectUrl;
+        } else if (supportsIndexedDB && normalizedUrl) {
+          ensureAudioBlob(settingKey, normalizedUrl).catch(() => {});
+        }
+
+        if (!audioSource) {
+          console.warn(`Fiverr Auto Reloader: no audio source configured for ${settingKey}`);
+          return Promise.resolve();
+        }
+
+        const audio = new Audio(audioSource);
+
+        let cleanedUp = false;
+        const cleanup = () => {
+          if (cleanedUp) {
+            return;
+          }
+          cleanedUp = true;
+          if (objectUrl) {
+            URL.revokeObjectURL(objectUrl);
+          }
+          audio.removeEventListener("ended", cleanup);
+          audio.removeEventListener("error", cleanup);
+          audio.removeEventListener("pause", cleanup);
+        };
+
+        if (objectUrl) {
+          audio.addEventListener("ended", cleanup);
+          audio.addEventListener("error", cleanup);
+          audio.addEventListener("pause", cleanup);
+        }
+
+        try {
+          const playPromise = audio.play();
+          if (playPromise && typeof playPromise.catch === "function") {
+            playPromise.catch((error) => {
+              cleanup();
+              console.warn("Audio playback blocked:", error);
+            });
+          }
+          return playPromise;
+        } catch (error) {
+          cleanup();
+          console.warn("Audio playback blocked:", error);
+          return Promise.reject(error);
+        }
       };
 
       document.body.addEventListener("click", () => {

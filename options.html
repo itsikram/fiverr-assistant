@@ -32,17 +32,80 @@
         </section>
 
         <section>
-          <label>
+          <label class="sound-setting">
             <span>New Client Notification Sound</span>
-            <input type="url" id="new_client_sound" name="new_client_sound" />
+            <div class="sound-input-row">
+              <input
+                type="text"
+                inputmode="url"
+                id="new_client_sound"
+                name="new_client_sound"
+              />
+              <button
+                type="button"
+                class="sound-play"
+                data-sound-field="new_client_sound"
+              >
+                Play
+              </button>
+            </div>
+            <input
+              type="file"
+              id="new_client_sound_file"
+              class="sound-upload"
+              accept="audio/*"
+              data-sound-field="new_client_sound"
+            />
           </label>
-          <label>
+          <label class="sound-setting">
             <span>Targeted Client Notification Sound</span>
-            <input type="url" id="targeted_client_sound" name="targeted_client_sound" />
+            <div class="sound-input-row">
+              <input
+                type="text"
+                inputmode="url"
+                id="targeted_client_sound"
+                name="targeted_client_sound"
+              />
+              <button
+                type="button"
+                class="sound-play"
+                data-sound-field="targeted_client_sound"
+              >
+                Play
+              </button>
+            </div>
+            <input
+              type="file"
+              id="targeted_client_sound_file"
+              class="sound-upload"
+              accept="audio/*"
+              data-sound-field="targeted_client_sound"
+            />
           </label>
-          <label>
+          <label class="sound-setting">
             <span>Old Client Notification Sound</span>
-            <input type="url" id="old_client_sound" name="old_client_sound" />
+            <div class="sound-input-row">
+              <input
+                type="text"
+                inputmode="url"
+                id="old_client_sound"
+                name="old_client_sound"
+              />
+              <button
+                type="button"
+                class="sound-play"
+                data-sound-field="old_client_sound"
+              >
+                Play
+              </button>
+            </div>
+            <input
+              type="file"
+              id="old_client_sound_file"
+              class="sound-upload"
+              accept="audio/*"
+              data-sound-field="old_client_sound"
+            />
           </label>
         </section>
 
