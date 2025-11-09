@@ -15,9 +15,30 @@
       ? chrome.runtime
       : null;
 
+  const removeStatusDisplay = () => {
+    if (statusUpdateIntervalId) {
+      clearInterval(statusUpdateIntervalId);
+      statusUpdateIntervalId = null;
+    }
+    if (statusDisplayElement && statusDisplayElement.parentElement) {
+      statusDisplayElement.remove();
+    }
+    statusDisplayElement = null;
+  };
+
+  const readAutoReloadPreference = () => {
+    try {
+      const storedValue = localStorage.getItem("autoReloadEnabled");
+      return coerceBooleanSetting(storedValue, true);
+    } catch (error) {
+      console.warn("Fiverr Auto Reloader: unable to read stored auto reload preference", error);
+      return true;
+    }
+  };
+
   let siteDomain = window.location.hostname;
   let inboxUrl = "https://www.fiverr.com/inbox";
-  let autoReload = true;
+  let autoReload = readAutoReloadPreference();
   var audioElement = false;
   var lastAction = Date.now();
   var isF10Clicked = false;
@@ -31,6 +52,37 @@
   let nextReloadTimeoutId = null;
   let statusUpdateIntervalId = null;
   let statusDisplayElement = null;
+  let featuresInitialized = false;
+  let initializePromise = null;
+
+  const readSessionStorage = (key) => {
+    try {
+      if (typeof sessionStorage === "undefined") {
+        return null;
+      }
+      return sessionStorage.getItem(key);
+    } catch (_) {
+      return null;
+    }
+  };
+
+  const writeSessionStorage = (key, value) => {
+    try {
+      if (typeof sessionStorage === "undefined") {
+        return;
+      }
+      sessionStorage.setItem(key, value);
+    } catch (_) {}
+  };
+
+  const removeSessionStorage = (key) => {
+    try {
+      if (typeof sessionStorage === "undefined") {
+        return;
+      }
+      sessionStorage.removeItem(key);
+    } catch (_) {}
+  };
 
   const coerceBooleanSetting = (value, defaultValue = false) => {
     if (typeof value === "boolean") {
@@ -94,12 +146,17 @@
   let pauseAutoReload = () => {
     autoReload = false;
     clearScheduledReload();
+    removeStatusDisplay();
   };
   let enableAutoReload = () => {
     autoReload = true;
     isF10Clicked = false;
-    scheduleNextReload();
-    updateStatusDisplay();
+    if (featuresInitialized) {
+      scheduleNextReload();
+      updateStatusDisplay();
+    } else {
+      initialize();
+    }
   };
 
   // Offline detection
@@ -120,7 +177,19 @@
   const PRIMARY_TAB_KEY = "farPrimaryTab";
   const PRIMARY_TAB_HEARTBEAT_INTERVAL = 5000;
   const PRIMARY_TAB_STALE_THRESHOLD = PRIMARY_TAB_HEARTBEAT_INTERVAL * 3;
-  const tabIdentifier = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const TAB_IDENTIFIER_STORAGE_KEY = "farTabIdentifier";
+  const SKIP_PRIMARY_RELEASE_KEY = "farSkipPrimaryRelease";
+  let tabIdentifier = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const storedTabIdentifier = readSessionStorage(TAB_IDENTIFIER_STORAGE_KEY);
+  if (storedTabIdentifier) {
+    tabIdentifier = storedTabIdentifier;
+  } else {
+    writeSessionStorage(TAB_IDENTIFIER_STORAGE_KEY, tabIdentifier);
+  }
+  removeSessionStorage(SKIP_PRIMARY_RELEASE_KEY);
+  const markPrimaryNavigation = () => {
+    writeSessionStorage(SKIP_PRIMARY_RELEASE_KEY, "1");
+  };
   let isPrimaryTab = false;
   let primaryTabHeartbeatTimer = null;
   let primaryTabMonitorTimer = null;
@@ -173,64 +242,75 @@
       clearInterval(primaryTabHeartbeatTimer);
       primaryTabHeartbeatTimer = null;
     }
+    const skipRelease = readSessionStorage(SKIP_PRIMARY_RELEASE_KEY) === "1";
+    if (skipRelease) {
+      removeSessionStorage(SKIP_PRIMARY_RELEASE_KEY);
+      return;
+    }
     const record = readPrimaryTabRecord();
     if (record && record.id === tabIdentifier) {
       localStorage.removeItem(PRIMARY_TAB_KEY);
     }
   };
 
-  isPrimaryTab = attemptToClaimPrimaryTab();
+  if (autoReload) {
+    isPrimaryTab = attemptToClaimPrimaryTab();
 
-  if (!isPrimaryTab) {
-    const promoteToPrimaryTab = () => {
-      if (attemptToClaimPrimaryTab()) {
-        if (primaryTabMonitorTimer) {
-          clearInterval(primaryTabMonitorTimer);
-          primaryTabMonitorTimer = null;
+    if (!isPrimaryTab) {
+      const promoteToPrimaryTab = () => {
+        if (attemptToClaimPrimaryTab()) {
+          if (primaryTabMonitorTimer) {
+            clearInterval(primaryTabMonitorTimer);
+            primaryTabMonitorTimer = null;
+          }
+          window.removeEventListener("storage", handlePrimaryTabRelease);
+          if (isOnline) {
+            markPrimaryNavigation();
+            window.location.href = "https://www.fiverr.com/";
+          } else {
+            const redirectWhenOnline = () => {
+              window.removeEventListener("online", redirectWhenOnline);
+              try {
+                markPrimaryNavigation();
+                window.location.href = "https://www.fiverr.com/";
+              } catch (error) {
+                console.warn("Fiverr Auto Reloader: failed to redirect primary tab when back online", error);
+              }
+            };
+            window.addEventListener("online", redirectWhenOnline);
+          }
         }
-        window.removeEventListener("storage", handlePrimaryTabRelease);
-        if (isOnline) {
-          window.location.href = "https://www.fiverr.com/";
-        } else {
-          const redirectWhenOnline = () => {
-            window.removeEventListener("online", redirectWhenOnline);
-            try {
-              window.location.href = "https://www.fiverr.com/";
-            } catch (error) {
-              console.warn("Fiverr Auto Reloader: failed to redirect primary tab when back online", error);
-            }
-          };
-          window.addEventListener("online", redirectWhenOnline);
-        }
-      }
-    };
+      };
 
-    const handlePrimaryTabRelease = (event) => {
-      if (event.key === PRIMARY_TAB_KEY) {
+      const handlePrimaryTabRelease = (event) => {
+        if (event.key === PRIMARY_TAB_KEY) {
+          const record = readPrimaryTabRecord();
+          if (!record || isRecordStale(record)) {
+            promoteToPrimaryTab();
+          }
+        }
+      };
+
+      primaryTabMonitorTimer = setInterval(() => {
         const record = readPrimaryTabRecord();
         if (!record || isRecordStale(record)) {
           promoteToPrimaryTab();
         }
-      }
-    };
+      }, PRIMARY_TAB_HEARTBEAT_INTERVAL);
 
-    primaryTabMonitorTimer = setInterval(() => {
-      const record = readPrimaryTabRecord();
-      if (!record || isRecordStale(record)) {
-        promoteToPrimaryTab();
-      }
+      window.addEventListener("storage", handlePrimaryTabRelease);
+      return;
+    }
+
+    primaryTabHeartbeatTimer = setInterval(() => {
+      writePrimaryTabRecord();
     }, PRIMARY_TAB_HEARTBEAT_INTERVAL);
 
-    window.addEventListener("storage", handlePrimaryTabRelease);
-    return;
+    window.addEventListener("beforeunload", releasePrimaryTab);
+    window.addEventListener("pagehide", releasePrimaryTab);
+  } else {
+    isPrimaryTab = true;
   }
-
-  primaryTabHeartbeatTimer = setInterval(() => {
-    writePrimaryTabRecord();
-  }, PRIMARY_TAB_HEARTBEAT_INTERVAL);
-
-  window.addEventListener("beforeunload", releasePrimaryTab);
-  window.addEventListener("pagehide", releasePrimaryTab);
 
   const defaultSound = "https://storefrontsignonline.com/wp-content/uploads/2025/10/money_trees.mp3";
   const defaultSettings = {
@@ -663,6 +743,7 @@
     autoReload = coerceBooleanSetting(settings.autoReloadEnabled, true);
     if (!autoReload) {
       clearScheduledReload({ updateDisplay: false });
+      removeStatusDisplay();
     }
     updateStatusDisplay();
   };
@@ -694,24 +775,40 @@
           enableAutoReload();
         } else {
           pauseAutoReload();
-          updateStatusDisplay();
         }
-      } else {
-        autoReload = coerceBooleanSetting(settings.autoReloadEnabled, true);
+        return;
       }
+
+      autoReload = coerceBooleanSetting(settings.autoReloadEnabled, true);
 
       if (autoReload) {
         scheduleNextReload();
       } else {
-        updateStatusDisplay();
+        removeStatusDisplay();
       }
     });
   }
 
-  const initialize = async () => {
-    await hydrateSettings();
+  async function initialize() {
+    if (initializePromise) {
+      return initializePromise;
+    }
 
-    try {
+    initializePromise = (async () => {
+      await hydrateSettings();
+
+      if (!autoReload) {
+        removeStatusDisplay();
+        return;
+      }
+
+      if (featuresInitialized) {
+        scheduleNextReload();
+        updateStatusDisplay();
+        return;
+      }
+
+      try {
       var isNewClient = document.querySelector(".first > div:nth-child(2) > div:nth-child(1) > span:nth-child(2)") ? true : false;
 
       function isWithinLastTenMinutes(givenTime) {
@@ -849,11 +946,13 @@
           return;
         }
 
+        if (!autoReload) {
+          removeStatusDisplay();
+          return;
+        }
+
         if (siteDomain !== "www.fiverr.com") {
-          if (statusDisplayElement && statusDisplayElement.parentElement) {
-            statusDisplayElement.remove();
-          }
-          statusDisplayElement = null;
+          removeStatusDisplay();
           return;
         }
 
@@ -866,6 +965,7 @@
       pauseAutoReload = () => {
         autoReload = false;
         clearScheduledReload();
+        removeStatusDisplay();
       };
 
       enableAutoReload = () => {
@@ -937,6 +1037,7 @@
           nextReloadTimestamp = null;
           persistReloadState();
           updateStatusDisplay();
+          markPrimaryNavigation();
           window.location.href = newLink;
         }, delay);
       };
@@ -1151,6 +1252,7 @@
         let hasMessage = document.querySelector(".messages-wrapper .unread-icon");
         if (hasMessage && isOnline) {
           if (window.location.href !== inboxUrl) {
+            markPrimaryNavigation();
             window.location.href = inboxUrl;
           }
         }
@@ -1161,15 +1263,25 @@
           updateStatusDisplay();
         }
       }
+      featuresInitialized = true;
     } catch (error) {
       console.log(error);
       setTimeout(() => {
         if (isOnline) {
+          markPrimaryNavigation();
           window.location.reload();
         }
       }, 3000);
     }
-  };
+
+    })();
+
+    try {
+      await initializePromise;
+    } finally {
+      initializePromise = null;
+    }
+  }
 
   initialize();
 })();

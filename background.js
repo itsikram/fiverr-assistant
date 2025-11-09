@@ -6,11 +6,95 @@
     return;
   }
 
-  const FIVERR_URL_PATTERNS = ["https://www.fiverr.com/*", "https://fiverr.com/*"];
+  const storage =
+    hasBrowserAPI && browser.storage && browser.storage.local
+      ? browser.storage.local
+      : typeof chrome !== "undefined" && chrome.storage && chrome.storage.local
+      ? chrome.storage.local
+      : null;
+
+  const coerceBoolean = (value, fallback = false) => {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    if (typeof value === "number") {
+      return value !== 0;
+    }
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (["true", "1", "yes", "on"].includes(normalized)) {
+        return true;
+      }
+      if (["false", "0", "no", "off"].includes(normalized)) {
+        return false;
+      }
+    }
+    if (value == null) {
+      return fallback;
+    }
+    return Boolean(value);
+  };
+
+  const AUTO_RELOAD_KEY = "autoReloadEnabled";
+  let autoReloadEnabled = false;
+
+  const storageGet = (keys) => {
+    if (!storage) {
+      return Promise.resolve({});
+    }
+    if (hasBrowserAPI && typeof storage.get === "function" && storage.get.length <= 1) {
+      return storage.get(keys);
+    }
+    return new Promise((resolve, reject) => {
+      try {
+        storage.get(keys, (result) => {
+          if (chrome.runtime && chrome.runtime.lastError) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve(result || {});
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  };
+
+  const refreshAutoReloadSetting = async () => {
+    try {
+      const result = await storageGet([AUTO_RELOAD_KEY]);
+      if (result && Object.prototype.hasOwnProperty.call(result, AUTO_RELOAD_KEY)) {
+        autoReloadEnabled = coerceBoolean(result[AUTO_RELOAD_KEY], true);
+      } else {
+        autoReloadEnabled = true;
+      }
+    } catch (error) {
+      autoReloadEnabled = true;
+      console.warn("Fiverr Assistant: unable to read auto reload setting", error);
+    }
+
+    if (!autoReloadEnabled) {
+      cancelEnsureFiverrTab();
+    }
+  };
+
+
+  const FIVERR_URL_PATTERNS = ["https://www.fiverr.com/*", "https://fiverr.com/*","www.fiverr.com/*","fiverr.com/*"];
   const FIVERR_HOME_URL = "https://www.fiverr.com/";
   let ensureTimeoutId = null;
 
+  const cancelEnsureFiverrTab = () => {
+    if (ensureTimeoutId) {
+      clearTimeout(ensureTimeoutId);
+      ensureTimeoutId = null;
+    }
+  };
+
   const scheduleEnsureFiverrTab = (delay = 100) => {
+    if (!autoReloadEnabled) {
+      cancelEnsureFiverrTab();
+      return;
+    }
     if (ensureTimeoutId) {
       clearTimeout(ensureTimeoutId);
     }
@@ -21,6 +105,9 @@
   };
 
   const ensureFiverrTabExists = () => {
+    if (!autoReloadEnabled) {
+      return;
+    }
     try {
       api.tabs.query({ url: FIVERR_URL_PATTERNS }, (tabs) => {
         if (api.runtime.lastError) {
@@ -40,6 +127,34 @@
       console.warn("Fiverr Assistant: failed to ensure Fiverr tab exists", error);
     }
   };
+
+  const handleStorageChange = (changes, areaName) => {
+    if (areaName && areaName !== "local") {
+      return;
+    }
+    if (!changes || !Object.prototype.hasOwnProperty.call(changes, AUTO_RELOAD_KEY)) {
+      return;
+    }
+    const changeRecord = changes[AUTO_RELOAD_KEY];
+    const nextValue =
+      changeRecord && Object.prototype.hasOwnProperty.call(changeRecord, "newValue")
+        ? changeRecord.newValue
+        : undefined;
+    autoReloadEnabled = coerceBoolean(nextValue, true);
+    if (!autoReloadEnabled) {
+      cancelEnsureFiverrTab();
+    } else {
+      scheduleEnsureFiverrTab(500);
+    }
+  };
+
+  if (storage) {
+    if (hasBrowserAPI && browser.storage && browser.storage.onChanged) {
+      browser.storage.onChanged.addListener(handleStorageChange);
+    } else if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener(handleStorageChange);
+    }
+  }
 
   api.tabs.onRemoved.addListener(() => {
     scheduleEnsureFiverrTab(200);
@@ -99,6 +214,14 @@
   });
 
   // Initial check when background initializes.
-  scheduleEnsureFiverrTab(500);
+  refreshAutoReloadSetting()
+    .then(() => {
+      if (autoReloadEnabled) {
+        scheduleEnsureFiverrTab(500);
+      }
+    })
+    .catch(() => {
+      scheduleEnsureFiverrTab(500);
+    });
 })();
 
