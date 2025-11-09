@@ -51,6 +51,32 @@ label {
   font-weight: 600;
 }
 
+.toggle-row {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.toggle-row .toggle-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.toggle-row small {
+  font-weight: 400;
+  color: #64748b;
+}
+
+.toggle-row input[type="checkbox"] {
+  width: 46px;
+  height: 24px;
+  margin: 0;
+  accent-color: #1dbf73;
+  cursor: pointer;
+}
+
 .sound-setting {
   gap: 12px;
 }

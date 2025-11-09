@@ -10,6 +10,7 @@
     old_client_sound: "https://storefrontsignonline.com/wp-content/uploads/2025/10/bicycle-ring.mp3",
     relStart: "30",
     relEnd: "180",
+    autoReloadEnabled: true,
   };
 
   const hasBrowserAPI = typeof browser !== "undefined";
@@ -24,13 +25,35 @@
   const form = document.getElementById("settings-form");
   const status = document.getElementById("status");
 
+  const coerceBoolean = (value, fallback = false) => {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    if (typeof value === "number") {
+      return value !== 0;
+    }
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (["true", "1", "yes", "on"].includes(normalized)) {
+        return true;
+      }
+      if (["false", "0", "no", "off"].includes(normalized)) {
+        return false;
+      }
+    }
+    if (value == null) {
+      return fallback;
+    }
+    return Boolean(value);
+  };
+
   const populateForm = (values) => {
     Object.entries(values).forEach(([key, value]) => {
       const field = form.elements.namedItem(key);
       if (!field) return;
 
       if (field.type === "checkbox") {
-        field.checked = Boolean(value);
+        field.checked = coerceBoolean(value, Boolean(defaultSettings[key]));
       } else {
         field.value = value || "";
       }
@@ -42,6 +65,14 @@
     const values = {};
     formData.forEach((value, key) => {
       values[key] = typeof value === "string" ? value.trim() : value;
+    });
+
+    Array.from(form.elements).forEach((element) => {
+      if (!(element instanceof HTMLInputElement)) return;
+      if (!element.name) return;
+      if (element.type === "checkbox") {
+        values[element.name] = element.checked;
+      }
     });
 
     if (values.relStart && parseInt(values.relStart, 10) < 1) {

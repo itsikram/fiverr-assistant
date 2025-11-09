@@ -32,6 +32,28 @@
   let statusUpdateIntervalId = null;
   let statusDisplayElement = null;
 
+  const coerceBooleanSetting = (value, defaultValue = false) => {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    if (typeof value === "number") {
+      return value !== 0;
+    }
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (["true", "1", "yes", "on"].includes(normalized)) {
+        return true;
+      }
+      if (["false", "0", "no", "off"].includes(normalized)) {
+        return false;
+      }
+    }
+    if (value == null) {
+      return defaultValue;
+    }
+    return Boolean(value);
+  };
+
   let updateStatusDisplay = () => {};
   const persistReloadState = () => {
     try {
@@ -221,6 +243,7 @@
     old_client_sound: "https://storefrontsignonline.com/wp-content/uploads/2025/10/bicycle-ring.mp3",
     relStart: "30",
     relEnd: "180",
+    autoReloadEnabled: "true",
   };
 
   const settings = { ...defaultSettings };
@@ -376,6 +399,11 @@
     }
     const record = await readCachedAudioRecord(key);
     if (record && record.sourceUrl === normalizedUrl && record.blob instanceof Blob) {
+      console.info("Fiverr Auto Reloader: audio cache hit", {
+        settingKey: key,
+        sourceUrl: normalizedUrl,
+        cachedAt: record.timestamp,
+      });
       return record.blob;
     }
     return null;
@@ -431,6 +459,10 @@
         throw new Error(`HTTP ${response.status} ${response.statusText}`);
       }
       const blob = await response.blob();
+      console.info("Fiverr Auto Reloader: cached audio via direct fetch", {
+        settingKey: key,
+        sourceUrl: normalizedUrl,
+      });
       await writeCachedAudioRecord(key, {
         sourceUrl: normalizedUrl,
         blob,
@@ -443,6 +475,10 @@
       if (!fallbackBlob) {
         return null;
       }
+      console.info("Fiverr Auto Reloader: cached audio via background fetch", {
+        settingKey: key,
+        sourceUrl: normalizedUrl,
+      });
       await writeCachedAudioRecord(key, {
         sourceUrl: normalizedUrl,
         blob: fallbackBlob,
@@ -624,6 +660,11 @@
     pageLinks = processPageLinks(settings.pageLinks);
     minReloadingSecond = parseInt(settings.relStart, 10) || 30;
     maxReloadingSecond = parseInt(settings.relEnd, 10) || 180;
+    autoReload = coerceBooleanSetting(settings.autoReloadEnabled, true);
+    if (!autoReload) {
+      clearScheduledReload({ updateDisplay: false });
+    }
+    updateStatusDisplay();
   };
 
   let getVal = (id) => {
@@ -647,6 +688,17 @@
       pageLinks = processPageLinks(getVal("pageLinks"));
       minReloadingSecond = parseInt(getVal("relStart"), 10) || minReloadingSecond;
       maxReloadingSecond = parseInt(getVal("relEnd"), 10) || maxReloadingSecond;
+      if (Object.prototype.hasOwnProperty.call(message.payload, "autoReloadEnabled")) {
+        const shouldEnable = coerceBooleanSetting(message.payload.autoReloadEnabled, true);
+        if (shouldEnable) {
+          enableAutoReload();
+        } else {
+          pauseAutoReload();
+          updateStatusDisplay();
+        }
+      } else {
+        autoReload = coerceBooleanSetting(settings.autoReloadEnabled, true);
+      }
 
       if (autoReload) {
         scheduleNextReload();
@@ -921,6 +973,10 @@
         if (blobFromCache instanceof Blob) {
           objectUrl = URL.createObjectURL(blobFromCache);
           audioSource = objectUrl;
+          console.info("Fiverr Auto Reloader: playing audio from IndexedDB cache", {
+            settingKey,
+            sourceUrl: normalizedUrl,
+          });
         } else if (supportsIndexedDB && normalizedUrl) {
           ensureAudioBlob(settingKey, normalizedUrl).catch(() => {});
         }
@@ -957,13 +1013,25 @@
           if (playPromise && typeof playPromise.catch === "function") {
             playPromise.catch((error) => {
               cleanup();
-              console.warn("Audio playback blocked:", error);
+              console.warn("Audio playback blocked:", error, {
+                settingKey,
+                sourceUrl: normalizedUrl || configuredUrl,
+              });
+            });
+          }
+          if (!objectUrl) {
+            console.info("Fiverr Auto Reloader: playing audio directly from URL", {
+              settingKey,
+              sourceUrl: normalizedUrl || configuredUrl,
             });
           }
           return playPromise;
         } catch (error) {
           cleanup();
-          console.warn("Audio playback blocked:", error);
+          console.warn("Audio playback blocked:", error, {
+            settingKey,
+            sourceUrl: normalizedUrl || configuredUrl,
+          });
           return Promise.reject(error);
         }
       };
@@ -1087,7 +1155,11 @@
           }
         }
 
-        scheduleNextReload();
+        if (autoReload) {
+          scheduleNextReload();
+        } else {
+          updateStatusDisplay();
+        }
       }
     } catch (error) {
       console.log(error);
