@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Fiverr Assistant Settings</title>
+    <link rel="stylesheet" href="options.css" />
+  </head>
+  <body>
+    <main class="container">
+      <h1>Fiverr Auto Reloader Settings</h1>
+      <form id="settings-form">
+        <section>
+          <label>
+            <span>Fiverr Profile Name</span>
+            <input type="text" id="profile" name="profile" />
+          </label>
+          <label>
+            <span>Fiverr Profile Username</span>
+            <input type="text" id="profileUsername" name="profileUsername" />
+          </label>
+          <label>
+            <span>Targeted Clients (comma separated)</span>
+            <input type="text" id="targetedClients" name="targetedClients" />
+          </label>
+        </section>
+
+        <section>
+          <label>
+            <span>Fiverr Pages (comma separated URLs)</span>
+            <textarea id="pageLinks" name="pageLinks" rows="4"></textarea>
+          </label>
+        </section>
+
+        <section>
+          <label>
+            <span>New Client Notification Sound</span>
+            <input type="url" id="new_client_sound" name="new_client_sound" />
+          </label>
+          <label>
+            <span>Targeted Client Notification Sound</span>
+            <input type="url" id="targeted_client_sound" name="targeted_client_sound" />
+          </label>
+          <label>
+            <span>Old Client Notification Sound</span>
+            <input type="url" id="old_client_sound" name="old_client_sound" />
+          </label>
+        </section>
+
+        <section class="inline">
+          <label>
+            <span>Random Time Start (seconds)</span>
+            <input type="number" id="relStart" name="relStart" min="1" />
+          </label>
+          <label>
+            <span>Random Time End (seconds)</span>
+            <input type="number" id="relEnd" name="relEnd" min="1" />
+          </label>
+        </section>
+
+        <footer>
+          <button type="submit" class="primary">Save Settings</button>
+          <span id="status" role="status" aria-live="polite"></span>
+        </footer>
+      </form>
+    </main>
+
+    <script src="options.js"></script>
+  </body>
+</html>
+

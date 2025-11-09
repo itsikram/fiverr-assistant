@@ -1,0 +1,48 @@
+{
+  "manifest_version": 2,
+  "name": "Fiverr Assistant & Auto Reloader",
+  "version": "1.0.0",
+  "description": "Injects the Fiverr auto reloader script into fiverr.com to monitor messages and auto-navigate as configured. also notify you when you have a new client or old client.",
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.fiverr.com/*",
+        "https://fiverr.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "permissions": [
+    "notifications",
+
+    "tabs",
+    "storage"
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "browser_style": true
+  },
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "mdikram295@gmail.com",
+      "data_collection_permissions": {
+        "required": [
+          "none"
+        ]
+      }
+    }
+  },
+  "icons": {
+    "48": "icons/icon48.png"  },
+  "browser_action": {
+    "default_icon": {
+      "48": "icons/icon48.png"
+    },
+    "default_title": "Fiverr Assistant",
+    "default_popup": "options.html"
+  }
+}
+
