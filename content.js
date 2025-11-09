@@ -1,4 +1,4 @@
-(function () {
+(async function () {
   const hasBrowserAPI = typeof browser !== "undefined";
   const hasChromeAPI = typeof chrome !== "undefined";
 
@@ -14,6 +14,62 @@
       : hasChromeAPI && chrome.runtime
       ? chrome.runtime
       : null;
+
+  function coerceBooleanSetting(value, defaultValue = false) {
+    if (typeof value === "boolean") {
+      return value;
+    }
+    if (typeof value === "number") {
+      return value !== 0;
+    }
+    if (typeof value === "string") {
+      const normalized = value.trim().toLowerCase();
+      if (["true", "1", "yes", "on"].includes(normalized)) {
+        return true;
+      }
+      if (["false", "0", "no", "off"].includes(normalized)) {
+        return false;
+      }
+    }
+    if (value == null) {
+      return defaultValue;
+    }
+    return Boolean(value);
+  }
+
+  function sendMessageToRuntime(message) {
+    if (!runtime || typeof runtime.sendMessage !== "function") {
+      return Promise.reject(new Error("Runtime messaging unavailable"));
+    }
+
+    if (hasBrowserAPI && runtime.sendMessage.length <= 1) {
+      try {
+        const result = runtime.sendMessage(message);
+        return result && typeof result.then === "function" ? result : Promise.resolve(result);
+      } catch (error) {
+        return Promise.reject(error);
+      }
+    }
+
+    return new Promise((resolve, reject) => {
+      try {
+        runtime.sendMessage(message, (response) => {
+          if (
+            hasChromeAPI &&
+            typeof chrome !== "undefined" &&
+            chrome.runtime &&
+            chrome.runtime.lastError
+          ) {
+            reject(new Error(chrome.runtime.lastError.message));
+            return;
+          }
+          resolve(response);
+        });
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
 
   const removeStatusDisplay = () => {
     if (statusUpdateIntervalId) {
@@ -84,27 +140,99 @@
     } catch (_) {}
   };
 
-  const coerceBooleanSetting = (value, defaultValue = false) => {
-    if (typeof value === "boolean") {
-      return value;
+  const PRIMARY_TAB_ID_STORAGE_KEY = "farPrimaryTabId";
+  let designatedPrimaryTabId = null;
+  let currentTabId = null;
+  let hasPrimaryOverride = false;
+
+  const getCurrentTabId = async () => {
+    if (!runtime) {
+      return null;
     }
-    if (typeof value === "number") {
-      return value !== 0;
-    }
-    if (typeof value === "string") {
-      const normalized = value.trim().toLowerCase();
-      if (["true", "1", "yes", "on"].includes(normalized)) {
-        return true;
+    try {
+      const response = await sendMessageToRuntime({ type: "getTabId" });
+      if (response && typeof response.tabId === "number") {
+        return response.tabId;
       }
-      if (["false", "0", "no", "off"].includes(normalized)) {
-        return false;
-      }
+    } catch (error) {
+      console.warn("Fiverr Auto Reloader: unable to determine current tab id", error);
     }
-    if (value == null) {
-      return defaultValue;
-    }
-    return Boolean(value);
+    return null;
   };
+
+  const readDesignatedPrimaryTabId = async () => {
+    if (extensionStorage) {
+      try {
+        const result = await extensionStorage.get(PRIMARY_TAB_ID_STORAGE_KEY);
+        const value = result ? result[PRIMARY_TAB_ID_STORAGE_KEY] : null;
+        if (typeof value === "number" && !Number.isNaN(value)) {
+          return value;
+        }
+        if (typeof value === "string" && value.trim() !== "") {
+          const parsed = parseInt(value, 10);
+          if (!Number.isNaN(parsed)) {
+            return parsed;
+          }
+        }
+      } catch (error) {
+        console.warn("Fiverr Auto Reloader: unable to read primary tab id", error);
+      }
+    }
+
+    try {
+      const stored = localStorage.getItem(PRIMARY_TAB_ID_STORAGE_KEY);
+      if (stored == null || stored === "") {
+        return null;
+      }
+      const parsed = parseInt(stored, 10);
+      return Number.isNaN(parsed) ? null : parsed;
+    } catch (_) {
+      return null;
+    }
+  };
+
+  try {
+    currentTabId = await getCurrentTabId();
+  } catch (_) {
+    currentTabId = null;
+  }
+
+  try {
+    designatedPrimaryTabId = await readDesignatedPrimaryTabId();
+  } catch (_) {
+    designatedPrimaryTabId = null;
+  }
+
+  hasPrimaryOverride = typeof designatedPrimaryTabId === "number" && !Number.isNaN(designatedPrimaryTabId);
+
+  if (hasPrimaryOverride) {
+    try {
+      localStorage.setItem(PRIMARY_TAB_ID_STORAGE_KEY, String(designatedPrimaryTabId));
+    } catch (_) {}
+  } else {
+    try {
+      localStorage.removeItem(PRIMARY_TAB_ID_STORAGE_KEY);
+    } catch (_) {}
+  }
+
+  if (hasPrimaryOverride && (currentTabId == null || currentTabId !== designatedPrimaryTabId)) {
+    if (
+      runtime &&
+      runtime.onMessage &&
+      typeof runtime.onMessage.addListener === "function"
+    ) {
+      runtime.onMessage.addListener((message) => {
+        if (
+          message &&
+          message.type === "primaryTabStatus" &&
+          message.isPrimary
+        ) {
+          window.location.reload();
+        }
+      });
+    }
+    return;
+  }
 
   let updateStatusDisplay = () => {};
   const persistReloadState = () => {
@@ -146,12 +274,14 @@
   let pauseAutoReload = () => {
     autoReload = false;
     clearScheduledReload();
+    clearMessageCheckInterval();
     removeStatusDisplay();
   };
   let enableAutoReload = () => {
     autoReload = true;
     isF10Clicked = false;
     if (featuresInitialized) {
+      ensureMessageCheckInterval();
       scheduleNextReload();
       updateStatusDisplay();
     } else {
@@ -189,6 +319,38 @@
   removeSessionStorage(SKIP_PRIMARY_RELEASE_KEY);
   const markPrimaryNavigation = () => {
     writeSessionStorage(SKIP_PRIMARY_RELEASE_KEY, "1");
+  };
+  const MESSAGE_CHECK_INTERVAL_MS = 5000;
+  let messageCheckIntervalId = null;
+
+  const clearMessageCheckInterval = () => {
+    if (messageCheckIntervalId) {
+      clearInterval(messageCheckIntervalId);
+      messageCheckIntervalId = null;
+    }
+  };
+
+  const runMessageCheck = () => {
+    if (siteDomain !== "www.fiverr.com") {
+      return;
+    }
+
+    const hasMessage = document.querySelector(".messages-wrapper .unread-icon");
+    if (hasMessage && isOnline && window.location.href !== inboxUrl) {
+      markPrimaryNavigation();
+      window.location.href = inboxUrl;
+    }
+  };
+
+  const ensureMessageCheckInterval = () => {
+    clearMessageCheckInterval();
+
+    if (siteDomain !== "www.fiverr.com") {
+      return;
+    }
+
+    runMessageCheck();
+    messageCheckIntervalId = setInterval(runMessageCheck, MESSAGE_CHECK_INTERVAL_MS);
   };
   let isPrimaryTab = false;
   let primaryTabHeartbeatTimer = null;
@@ -349,40 +511,6 @@
   const inFlightAudioCache = new Map();
 
   const normalizeUrl = (value) => (typeof value === "string" ? value.trim() : "");
-
-  const sendMessageToRuntime = (message) => {
-    if (!runtime || typeof runtime.sendMessage !== "function") {
-      return Promise.reject(new Error("Runtime messaging unavailable"));
-    }
-
-    if (hasBrowserAPI && runtime.sendMessage.length <= 1) {
-      try {
-        const result = runtime.sendMessage(message);
-        return result && typeof result.then === "function" ? result : Promise.resolve(result);
-      } catch (error) {
-        return Promise.reject(error);
-      }
-    }
-
-    return new Promise((resolve, reject) => {
-      try {
-        runtime.sendMessage(message, (response) => {
-          if (
-            hasChromeAPI &&
-            typeof chrome !== "undefined" &&
-            chrome.runtime &&
-            chrome.runtime.lastError
-          ) {
-            reject(new Error(chrome.runtime.lastError.message));
-            return;
-          }
-          resolve(response);
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
-  };
 
   const fetchAudioViaRuntime = async (url) => {
     if (!url || typeof url !== "string") {
@@ -652,11 +780,28 @@
   const hydrateSettings = async () => {
     let stored = {};
     if (extensionStorage) {
-      const storageKeys = [...Object.keys(defaultSettings), RELOAD_COUNT_KEY, NEXT_RELOAD_TIMESTAMP_KEY];
+      const storageKeys = [
+        ...Object.keys(defaultSettings),
+        RELOAD_COUNT_KEY,
+        NEXT_RELOAD_TIMESTAMP_KEY,
+        PRIMARY_TAB_ID_STORAGE_KEY,
+      ];
       try {
         stored = await extensionStorage.get(storageKeys);
       } catch (error) {
         console.error("Failed to load settings from storage", error);
+      }
+    }
+
+    if (stored && Object.prototype.hasOwnProperty.call(stored, PRIMARY_TAB_ID_STORAGE_KEY)) {
+      const storedPrimaryId = stored[PRIMARY_TAB_ID_STORAGE_KEY];
+      if (typeof storedPrimaryId === "number" && !Number.isNaN(storedPrimaryId)) {
+        designatedPrimaryTabId = storedPrimaryId;
+      } else if (typeof storedPrimaryId === "string" && storedPrimaryId.trim() !== "") {
+        const parsedPrimaryId = parseInt(storedPrimaryId, 10);
+        if (!Number.isNaN(parsedPrimaryId)) {
+          designatedPrimaryTabId = parsedPrimaryId;
+        }
       }
     }
 
@@ -752,9 +897,47 @@
     return localStorage.getItem(id) || null;
   };
 
+  const deactivatePrimaryTabFeatures = () => {
+    pauseAutoReload();
+    clearScheduledReload({ updateDisplay: false });
+    removeStatusDisplay();
+    releasePrimaryTab();
+    if (primaryTabMonitorTimer) {
+      clearInterval(primaryTabMonitorTimer);
+      primaryTabMonitorTimer = null;
+    }
+    if (primaryTabHeartbeatTimer) {
+      clearInterval(primaryTabHeartbeatTimer);
+      primaryTabHeartbeatTimer = null;
+    }
+    featuresInitialized = false;
+    isPrimaryTab = false;
+    autoReload = false;
+  };
+
   if (runtime && runtime.onMessage) {
     runtime.onMessage.addListener((message) => {
       if (!message || message.type !== "settingsUpdated" || !message.payload) {
+        if (message && message.type === "primaryTabStatus") {
+          const { primaryTabId, isPrimary } = message;
+          if (typeof primaryTabId === "number" && !Number.isNaN(primaryTabId)) {
+            designatedPrimaryTabId = primaryTabId;
+            try {
+              localStorage.setItem(PRIMARY_TAB_ID_STORAGE_KEY, String(primaryTabId));
+            } catch (_) {}
+          } else {
+            designatedPrimaryTabId = null;
+            try {
+              localStorage.removeItem(PRIMARY_TAB_ID_STORAGE_KEY);
+            } catch (_) {}
+          }
+
+          if (isPrimary) {
+            initialize().catch(() => {});
+          } else {
+            deactivatePrimaryTabFeatures();
+          }
+        }
         return;
       }
 
@@ -959,18 +1142,35 @@
         const container = ensureStatusDisplayElement();
         const nextReloadLabel = deriveNextReloadLabel();
 
-        container.innerHTML = `<div><strong>Total reloads:</strong> ${reloadCount}</div><div><strong>Next reload:</strong> ${nextReloadLabel}</div>`;
+        container.textContent = "";
+
+        const reloadWrapper = document.createElement("div");
+        const reloadStrong = document.createElement("strong");
+        reloadStrong.textContent = "Total reloads:";
+        reloadWrapper.appendChild(reloadStrong);
+        reloadWrapper.appendChild(document.createTextNode(` ${reloadCount}`));
+
+        const nextWrapper = document.createElement("div");
+        const nextStrong = document.createElement("strong");
+        nextStrong.textContent = "Next reload:";
+        nextWrapper.appendChild(nextStrong);
+        nextWrapper.appendChild(document.createTextNode(` ${nextReloadLabel}`));
+
+        container.appendChild(reloadWrapper);
+        container.appendChild(nextWrapper);
       };
 
       pauseAutoReload = () => {
         autoReload = false;
         clearScheduledReload();
+        clearMessageCheckInterval();
         removeStatusDisplay();
       };
 
       enableAutoReload = () => {
         autoReload = true;
         isF10Clicked = false;
+        ensureMessageCheckInterval();
         scheduleNextReload();
         updateStatusDisplay();
       };
@@ -1249,19 +1449,15 @@
       }
 
       if (siteDomain === "www.fiverr.com") {
-        let hasMessage = document.querySelector(".messages-wrapper .unread-icon");
-        if (hasMessage && isOnline) {
-          if (window.location.href !== inboxUrl) {
-            markPrimaryNavigation();
-            window.location.href = inboxUrl;
-          }
-        }
+        ensureMessageCheckInterval();
 
         if (autoReload) {
           scheduleNextReload();
         } else {
           updateStatusDisplay();
         }
+      } else {
+        clearMessageCheckInterval();
       }
       featuresInitialized = true;
     } catch (error) {
@@ -1285,4 +1481,5 @@
 
   initialize();
 })();
+
 

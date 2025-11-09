@@ -35,6 +35,17 @@ section {
   gap: 16px;
 }
 
+.primary-tab-section {
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+}
+
+.primary-tab-section #primaryTabInfo {
+  font-size: 14px;
+  color: #64748b;
+}
+
 section.inline {
   flex-direction: row;
   gap: 16px;
@@ -157,6 +168,14 @@ button.primary:hover {
 
 button.primary:active {
   transform: translateY(1px);
+}
+
+button.primary.danger {
+  background-color: #ef4444;
+}
+
+button.primary.danger:hover {
+  background-color: #dc2626;
 }
 
 #status {

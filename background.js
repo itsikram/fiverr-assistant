@@ -191,8 +191,19 @@
     return { buffer, contentType };
   };
 
-  api.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (!message || message.type !== "fetchAudio") {
+  api.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (!message || !message.type) {
+      return false;
+    }
+
+    if (message.type === "getTabId") {
+      const tabId =
+        sender && sender.tab && typeof sender.tab.id === "number" ? sender.tab.id : null;
+      sendResponse({ ok: typeof tabId === "number", tabId });
+      return false;
+    }
+
+    if (message.type !== "fetchAudio") {
       return false;
     }
 

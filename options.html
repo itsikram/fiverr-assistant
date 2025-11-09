@@ -7,18 +7,12 @@
   </head>
   <body>
     <main class="container">
-      <h1>Fiverr Auto Reloader Settings</h1>
+      <h1>Fiverr Assistant & Reloader Settings</h1>
       <form id="settings-form">
-        <section class="toggle-section">
-          <label class="toggle-row">
-            <div class="toggle-text">
-              <span>Enable Auto Reload</span>
-              <small>Turn this off to stop the extension from automatically rotating through your Fiverr pages.</small>
-            </div>
-            <input type="checkbox" id="autoReloadEnabled" name="autoReloadEnabled" />
-          </label>
+        <section class="primary-tab-section" style="text-align: center;">
+          <button type="button" id="activatePrimaryTab" class="primary">Activate Current Tab</button>
+          <span id="primaryTabInfo" role="status" aria-live="polite"></span>
         </section>
-
         <section>
           <label>
             <span>Fiverr Profile Name</span>

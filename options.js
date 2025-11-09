@@ -12,6 +12,7 @@
     relEnd: "180",
     autoReloadEnabled: true,
   };
+  const PRIMARY_TAB_ID_STORAGE_KEY = "farPrimaryTabId";
 
   const hasBrowserAPI = typeof browser !== "undefined";
   const storage = hasBrowserAPI && browser.storage && browser.storage.local ? browser.storage.local : null;
@@ -24,6 +25,10 @@
 
   const form = document.getElementById("settings-form");
   const status = document.getElementById("status");
+  const activatePrimaryButton = document.getElementById("activatePrimaryTab");
+  const primaryTabInfo = document.getElementById("primaryTabInfo");
+  let currentPrimaryTabId = null;
+  let isAutoReloadActive = false;
 
   const coerceBoolean = (value, fallback = false) => {
     if (typeof value === "boolean") {
@@ -94,16 +99,83 @@
 
       await Promise.all(
         fiverrTabs.map((tab) =>
-          browser.tabs.sendMessage(tab.id, {
-            type: "settingsUpdated",
-            payload,
-          }).catch(() => {
-            // Content script might not be loaded yet; silently ignore.
-          })
+          tabs
+            .sendMessage(tab.id, {
+              type: "settingsUpdated",
+              payload,
+            })
+            .catch(() => {
+              // Content script might not be loaded yet; silently ignore.
+            })
         )
       );
     } catch (error) {
       console.warn("Failed to broadcast settings to active Fiverr tabs:", error);
+    }
+  };
+
+  const updatePrimaryTabInfo = () => {
+    if (!primaryTabInfo) return;
+
+    if (isAutoReloadActive && typeof currentPrimaryTabId === "number") {
+      primaryTabInfo.textContent = `Auto reload active on tab ID ${currentPrimaryTabId}.`;
+    } else {
+      primaryTabInfo.textContent = "Auto reload inactive.";
+    }
+  };
+
+  const setActivationState = (active, tabId) => {
+    isAutoReloadActive = Boolean(active);
+    if (typeof tabId === "number" && !Number.isNaN(tabId)) {
+      currentPrimaryTabId = tabId;
+    } else {
+      currentPrimaryTabId = null;
+    }
+    if (activatePrimaryButton) {
+      activatePrimaryButton.textContent = isAutoReloadActive
+        ? "Deactivate Auto Reload"
+        : "Activate Current Tab";
+      activatePrimaryButton.classList.toggle("danger", isAutoReloadActive);
+    }
+    updatePrimaryTabInfo();
+  };
+
+  const queryActiveTab = async () => {
+    if (!tabs) return [];
+
+    try {
+      const activeTabs = await tabs.query({
+        active: true,
+        lastFocusedWindow: true,
+      });
+      return Array.isArray(activeTabs) ? activeTabs : [];
+    } catch (error) {
+      console.warn("Unable to query active tab:", error);
+      return [];
+    }
+  };
+
+  const broadcastPrimaryTabStatus = async (primaryTabId) => {
+    if (!tabs) return;
+
+    try {
+      const fiverrTabs = await tabs.query({
+        url: ["https://www.fiverr.com/*", "https://fiverr.com/*"],
+      });
+
+      await Promise.all(
+        fiverrTabs.map((tab) =>
+          tabs
+            .sendMessage(tab.id, {
+              type: "primaryTabStatus",
+              primaryTabId,
+              isPrimary: typeof primaryTabId === "number" && tab.id === primaryTabId,
+            })
+            .catch(() => {})
+        )
+      );
+    } catch (error) {
+      console.warn("Failed to broadcast primary tab designation:", error);
     }
   };
 
@@ -118,12 +190,29 @@
 
   const init = async () => {
     try {
-      const stored = await storage.get(defaultSettings);
+      const stored = await storage.get({
+        ...defaultSettings,
+        [PRIMARY_TAB_ID_STORAGE_KEY]: null,
+      });
       const merged = { ...defaultSettings, ...stored };
       populateForm(merged);
+
+      let storedPrimaryId = stored[PRIMARY_TAB_ID_STORAGE_KEY];
+      if (typeof storedPrimaryId === "string" && storedPrimaryId.trim() !== "") {
+        const parsed = parseInt(storedPrimaryId, 10);
+        storedPrimaryId = Number.isNaN(parsed) ? null : parsed;
+      }
+      if (typeof storedPrimaryId !== "number" || Number.isNaN(storedPrimaryId)) {
+        storedPrimaryId = null;
+      }
+
+      const storedAutoReload = coerceBoolean(stored.autoReloadEnabled, defaultSettings.autoReloadEnabled);
+      const shouldActivate = storedAutoReload && storedPrimaryId !== null;
+      setActivationState(shouldActivate, shouldActivate ? storedPrimaryId : null);
     } catch (error) {
       console.error("Failed to load stored settings:", error);
       showStatus("Unable to load settings.", 0);
+      setActivationState(false, null);
     }
   };
 
@@ -235,5 +324,55 @@
     attachSoundControls();
     init();
   });
+
+  if (activatePrimaryButton) {
+    updatePrimaryTabInfo();
+    activatePrimaryButton.addEventListener("click", async () => {
+      if (!storage) {
+        showStatus("Storage unavailable.", 0);
+        return;
+      }
+      if (!tabs) {
+        showStatus("Tabs API unavailable in this browser.", 0);
+        return;
+      }
+
+      activatePrimaryButton.disabled = true;
+      try {
+        if (isAutoReloadActive) {
+          await storage.set({ autoReloadEnabled: false });
+          await storage.remove(PRIMARY_TAB_ID_STORAGE_KEY);
+          await sendSettingsToTabs({ autoReloadEnabled: false });
+          await broadcastPrimaryTabStatus(null);
+          setActivationState(false, null);
+          showStatus("Auto reload deactivated.");
+          return;
+        }
+
+        const [activeTab] = await queryActiveTab();
+        if (!activeTab || typeof activeTab.id !== "number") {
+          showStatus("No active tab detected.", 3000);
+          return;
+        }
+        const isFiverrTab =
+          typeof activeTab.url === "string" && /https?:\/\/(www\.)?fiverr\.com/i.test(activeTab.url);
+        if (!isFiverrTab) {
+          showStatus("Open a Fiverr tab before activating.", 3000);
+          return;
+        }
+
+        await storage.set({ [PRIMARY_TAB_ID_STORAGE_KEY]: activeTab.id, autoReloadEnabled: true });
+        await sendSettingsToTabs({ autoReloadEnabled: true });
+        await broadcastPrimaryTabStatus(activeTab.id);
+        setActivationState(true, activeTab.id);
+        showStatus("Auto reload activated.");
+      } catch (error) {
+        console.error("Failed to toggle primary tab:", error);
+        showStatus("Unable to toggle auto reload. Check the console for details.", 0);
+      } finally {
+        activatePrimaryButton.disabled = false;
+      }
+    });
+  }
 })();
 
