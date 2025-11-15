@@ -8,121 +8,172 @@
   <body>
     <main class="container">
       <h1>Fiverr Assistant & Reloader Settings</h1>
+      
+      <div class="tabs">
+        <button type="button" class="tab-button active" data-tab="general">General</button>
+        <button type="button" class="tab-button" data-tab="sounds">Sounds</button>
+        <button type="button" class="tab-button" data-tab="selectors">Selectors</button>
+        <button type="button" class="tab-button" data-tab="settings">Settings</button>
+      </div>
+
       <form id="settings-form">
-        <section class="primary-tab-section" style="text-align: center;">
-          <button type="button" id="activatePrimaryTab" class="primary">Activate Current Tab</button>
-          <span id="primaryTabInfo" role="status" aria-live="polite"></span>
-        </section>
-        <section>
-          <label>
-            <span>Fiverr Profile Name</span>
-            <input type="text" id="profile" name="profile" />
-          </label>
-          <label>
-            <span>Fiverr Profile Username</span>
-            <input type="text" id="profileUsername" name="profileUsername" />
-          </label>
-          <label>
-            <span>Targeted Clients (comma separated)</span>
-            <input type="text" id="targetedClients" name="targetedClients" />
-          </label>
-        </section>
+        <!-- General Tab -->
+        <div class="tab-content active" id="tab-general">
+          <section class="primary-tab-section" style="text-align: center;">
+            <button type="button" id="activatePrimaryTab" class="primary">Activate Current Tab</button>
+            <span id="primaryTabInfo" role="status" aria-live="polite"></span>
+          </section>
+          <section>
+            <label>
+              <span>Fiverr Profile Name</span>
+              <input type="text" id="profile" name="profile" />
+            </label>
+            <label>
+              <span>Fiverr Profile Username</span>
+              <input type="text" id="profileUsername" name="profileUsername" />
+            </label>
+            <label>
+              <span>Targeted Clients (comma separated)</span>
+              <input type="text" id="targetedClients" name="targetedClients" />
+            </label>
+          </section>
 
-        <section>
-          <label>
-            <span>Fiverr Pages (comma separated URLs)</span>
-            <textarea id="pageLinks" name="pageLinks" rows="4"></textarea>
-          </label>
-        </section>
+          <section>
+            <label>
+              <span>Fiverr Pages (comma separated URLs)</span>
+              <textarea id="pageLinks" name="pageLinks" rows="4"></textarea>
+            </label>
+          </section>
 
-        <section>
-          <label class="sound-setting">
-            <span>New Client Notification Sound</span>
-            <div class="sound-input-row">
-              <input
-                type="text"
-                inputmode="url"
-                id="new_client_sound"
-                name="new_client_sound"
-              />
-              <button
-                type="button"
-                class="sound-play"
-                data-sound-field="new_client_sound"
-              >
-                Play
-              </button>
-            </div>
-            <input
-              type="file"
-              id="new_client_sound_file"
-              class="sound-upload"
-              accept="audio/*"
-              data-sound-field="new_client_sound"
-            />
-          </label>
-          <label class="sound-setting">
-            <span>Targeted Client Notification Sound</span>
-            <div class="sound-input-row">
-              <input
-                type="text"
-                inputmode="url"
-                id="targeted_client_sound"
-                name="targeted_client_sound"
-              />
-              <button
-                type="button"
-                class="sound-play"
-                data-sound-field="targeted_client_sound"
-              >
-                Play
-              </button>
-            </div>
-            <input
-              type="file"
-              id="targeted_client_sound_file"
-              class="sound-upload"
-              accept="audio/*"
-              data-sound-field="targeted_client_sound"
-            />
-          </label>
-          <label class="sound-setting">
-            <span>Old Client Notification Sound</span>
-            <div class="sound-input-row">
-              <input
-                type="text"
-                inputmode="url"
-                id="old_client_sound"
-                name="old_client_sound"
-              />
-              <button
-                type="button"
-                class="sound-play"
-                data-sound-field="old_client_sound"
-              >
-                Play
-              </button>
-            </div>
-            <input
-              type="file"
-              id="old_client_sound_file"
-              class="sound-upload"
-              accept="audio/*"
-              data-sound-field="old_client_sound"
-            />
-          </label>
-        </section>
+          <section class="inline">
+            <label>
+              <span>Random Time Start (seconds)</span>
+              <input type="number" id="relStart" name="relStart" min="1" />
+            </label>
+            <label>
+              <span>Random Time End (seconds)</span>
+              <input type="number" id="relEnd" name="relEnd" min="1" />
+            </label>
+          </section>
+        </div>
 
-        <section class="inline">
-          <label>
-            <span>Random Time Start (seconds)</span>
-            <input type="number" id="relStart" name="relStart" min="1" />
-          </label>
-          <label>
-            <span>Random Time End (seconds)</span>
-            <input type="number" id="relEnd" name="relEnd" min="1" />
-          </label>
-        </section>
+        <!-- Sounds Tab -->
+        <div class="tab-content" id="tab-sounds">
+          <section>
+            <label class="sound-setting">
+              <span>New Client Notification Sound</span>
+              <div class="sound-input-row">
+                <input
+                  type="text"
+                  inputmode="url"
+                  id="new_client_sound"
+                  name="new_client_sound"
+                />
+                <button
+                  type="button"
+                  class="sound-play"
+                  data-sound-field="new_client_sound"
+                >
+                  Play
+                </button>
+              </div>
+              <label for="new_client_sound_file" class="file-upload-label">
+                <span>📁 Upload Audio File</span>
+                <input
+                  type="file"
+                  id="new_client_sound_file"
+                  class="sound-upload"
+                  accept="audio/*"
+                  data-sound-field="new_client_sound"
+                />
+              </label>
+            </label>
+            <label class="sound-setting">
+              <span>Targeted Client Notification Sound</span>
+              <div class="sound-input-row">
+                <input
+                  type="text"
+                  inputmode="url"
+                  id="targeted_client_sound"
+                  name="targeted_client_sound"
+                />
+                <button
+                  type="button"
+                  class="sound-play"
+                  data-sound-field="targeted_client_sound"
+                >
+                  Play
+                </button>
+              </div>
+              <label for="targeted_client_sound_file" class="file-upload-label">
+                <span>📁 Upload Audio File</span>
+                <input
+                  type="file"
+                  id="targeted_client_sound_file"
+                  class="sound-upload"
+                  accept="audio/*"
+                  data-sound-field="targeted_client_sound"
+                />
+              </label>
+            </label>
+            <label class="sound-setting">
+              <span>Old Client Notification Sound</span>
+              <div class="sound-input-row">
+                <input
+                  type="text"
+                  inputmode="url"
+                  id="old_client_sound"
+                  name="old_client_sound"
+                />
+                <button
+                  type="button"
+                  class="sound-play"
+                  data-sound-field="old_client_sound"
+                >
+                  Play
+                </button>
+              </div>
+              <label for="old_client_sound_file" class="file-upload-label">
+                <span>📁 Upload Audio File</span>
+                <input
+                  type="file"
+                  id="old_client_sound_file"
+                  class="sound-upload"
+                  accept="audio/*"
+                  data-sound-field="old_client_sound"
+                />
+              </label>
+            </label>
+          </section>
+        </div>
+
+        <!-- Selectors Tab -->
+        <div class="tab-content" id="tab-selectors">
+          <section>
+            <label>
+              <span>Unread Message Icon Selector</span>
+              <input type="text" id="selectorUnreadIcon" name="selectorUnreadIcon" placeholder=".messages-wrapper .unread-icon" />
+              <small style="color: #64748b; font-weight: 400;">CSS selector for detecting unread messages</small>
+            </label>
+            <label>
+              <span>New Client Flag Selector</span>
+              <input type="text" id="selectorNewClientFlag" name="selectorNewClientFlag" placeholder=".first > div:nth-child(2) > div:nth-child(1) > span:nth-child(2)" />
+              <small style="color: #64748b; font-weight: 400;">CSS selector for detecting new client indicator</small>
+            </label>
+            <label>
+              <span>Message Content Selector</span>
+              <input type="text" id="selectorMessageContent" name="selectorMessageContent" placeholder=".message-flow .content" />
+              <small style="color: #64748b; font-weight: 400;">CSS selector for message content containers (for scrolling)</small>
+            </label>
+          </section>
+        </div>
+
+        <!-- Settings Tab -->
+        <div class="tab-content" id="tab-settings">
+          <section>
+            <p>Additional settings will be available here.</p>
+          </section>
+        </div>
 
         <footer>
           <button type="submit" class="primary">Save Settings</button>

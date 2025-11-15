@@ -11,6 +11,9 @@
     relStart: "30",
     relEnd: "180",
     autoReloadEnabled: true,
+    selectorUnreadIcon: ".messages-wrapper .unread-icon",
+    selectorNewClientFlag: ".first > div:nth-child(2) > div:nth-child(1) > span:nth-child(2)",
+    selectorMessageContent: ".message-flow .content",
   };
   const PRIMARY_TAB_ID_STORAGE_KEY = "farPrimaryTabId";
 
@@ -266,7 +269,18 @@
       );
       const fileInput = document.getElementById(fileInputId);
 
-      if (!urlInput || !playButton || !fileInput) return;
+      if (!urlInput) {
+        console.warn(`URL input not found for field: ${field}`);
+        return;
+      }
+      if (!playButton) {
+        console.warn(`Play button not found for field: ${field}`);
+        return;
+      }
+      if (!fileInput) {
+        console.warn(`File input not found for field: ${field}, id: ${fileInputId}`);
+        return;
+      }
 
       playButton.addEventListener("click", async () => {
         const source = urlInput.value.trim() || defaultValue;
@@ -292,12 +306,29 @@
         }
       });
 
-      fileInput.addEventListener("change", () => {
+      fileInput.addEventListener("change", (event) => {
         const [file] = fileInput.files;
-        if (!file) return;
+        if (!file) {
+          console.log(`No file selected for ${field}`);
+          return;
+        }
+
+        console.log(`File selected for ${field}:`, {
+          name: file.name,
+          type: file.type,
+          size: file.size
+        });
 
         if (!file.type.startsWith("audio/")) {
-          showStatus("Please select a valid audio file.", 3000);
+          showStatus(`Please select a valid audio file. Selected file type: ${file.type || "unknown"}`, 3000);
+          fileInput.value = "";
+          return;
+        }
+
+        // Check file size (limit to 10MB)
+        const maxSize = 10 * 1024 * 1024; // 10MB
+        if (file.size > maxSize) {
+          showStatus(`File is too large. Maximum size is 10MB. Selected file: ${(file.size / 1024 / 1024).toFixed(2)}MB`, 3000);
           fileInput.value = "";
           return;
         }
@@ -306,21 +337,82 @@
         reader.onload = () => {
           const result = reader.result;
           if (typeof result === "string") {
+            // Update the URL input field with the data URL
             urlInput.value = result;
-            showStatus("Audio file loaded. Remember to save your settings.");
+            // Trigger input event to ensure any listeners are notified
+            urlInput.dispatchEvent(new Event("input", { bubbles: true }));
+            urlInput.dispatchEvent(new Event("change", { bubbles: true }));
+            
+            showStatus(`Audio file "${file.name}" loaded successfully! The URL field has been updated. Remember to save your settings.`, 3000);
+            console.log(`Audio file loaded for ${field}, size: ${result.length} characters`);
+            console.log(`URL input field updated with data URL for ${field}`);
+            
+            // Reset file input to allow selecting the same file again if needed
             fileInput.value = "";
+          } else {
+            console.error(`Unexpected result type for ${field}:`, typeof result);
+            showStatus("Failed to load audio file: unexpected result type.", 3000);
           }
         };
-        reader.onerror = () => {
-          console.error(`Failed to read audio file for ${field}:`, reader.error);
-          showStatus("Failed to load audio file.", 3000);
+        reader.onerror = (error) => {
+          console.error(`Failed to read audio file for ${field}:`, error);
+          showStatus(`Failed to load audio file: ${error.message || "Unknown error"}`, 3000);
+          fileInput.value = "";
         };
-        reader.readAsDataURL(file);
+        reader.onabort = () => {
+          console.warn(`File read aborted for ${field}`);
+          showStatus("File upload cancelled.", 2000);
+          fileInput.value = "";
+        };
+        
+        try {
+          reader.readAsDataURL(file);
+        } catch (error) {
+          console.error(`Error reading file for ${field}:`, error);
+          showStatus(`Error reading file: ${error.message || "Unknown error"}`, 3000);
+          fileInput.value = "";
+        }
+      });
+
+      // Ensure the label properly triggers the file input
+      const fileLabel = fileInput.closest("label.file-upload-label");
+      if (fileLabel) {
+        // Remove any existing click handlers to avoid conflicts
+        fileLabel.addEventListener("click", (e) => {
+          // Don't prevent default - let the label's natural behavior work
+          // The label's 'for' attribute should handle the click
+          if (e.target === fileInput) {
+            return; // Let the input handle its own click
+          }
+        }, { passive: true });
+      }
+    });
+  };
+
+  const initTabs = () => {
+    const tabButtons = document.querySelectorAll(".tab-button");
+    const tabContents = document.querySelectorAll(".tab-content");
+
+    tabButtons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const targetTab = button.getAttribute("data-tab");
+
+        // Remove active class from all buttons and contents
+        tabButtons.forEach((btn) => btn.classList.remove("active"));
+        tabContents.forEach((content) => content.classList.remove("active"));
+
+        // Add active class to clicked button and corresponding content
+        button.classList.add("active");
+        const targetContent = document.getElementById(`tab-${targetTab}`);
+        if (targetContent) {
+          targetContent.classList.add("active");
+        }
       });
     });
   };
 
   document.addEventListener("DOMContentLoaded", () => {
+    initTabs();
     attachSoundControls();
     init();
   });

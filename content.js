@@ -101,9 +101,48 @@
   var mailData = JSON.parse(localStorage.getItem("mailData")) || [];
 
   const RELOAD_COUNT_KEY = "farReloadCount";
+  const RELOAD_DATE_KEY = "farReloadDate";
   const NEXT_RELOAD_TIMESTAMP_KEY = "farNextReloadTimestamp";
   const MIN_SECONDS_BETWEEN_ACTION_AND_RELOAD = 60;
-  let reloadCount = parseInt(localStorage.getItem(RELOAD_COUNT_KEY), 10) || 0;
+  
+  const getTodayDateString = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+  
+  const checkAndResetDailyCount = () => {
+    const today = getTodayDateString();
+    const storedDate = localStorage.getItem(RELOAD_DATE_KEY);
+    
+    if (storedDate !== today) {
+      // Date has changed, reset the count
+      reloadCount = 0;
+      try {
+        localStorage.setItem(RELOAD_DATE_KEY, today);
+        localStorage.setItem(RELOAD_COUNT_KEY, "0");
+      } catch (_) {}
+      return true; // Count was reset
+    }
+    return false; // Count was not reset
+  };
+  
+  // Initialize reload count with daily check
+  const storedDate = localStorage.getItem(RELOAD_DATE_KEY);
+  const today = getTodayDateString();
+  if (storedDate !== today) {
+    // New day, reset count
+    reloadCount = 0;
+    try {
+      localStorage.setItem(RELOAD_DATE_KEY, today);
+      localStorage.setItem(RELOAD_COUNT_KEY, "0");
+    } catch (_) {}
+  } else {
+    // Same day, load existing count
+    reloadCount = parseInt(localStorage.getItem(RELOAD_COUNT_KEY), 10) || 0;
+  }
   let nextReloadTimestamp = null;
   let nextReloadTimeoutId = null;
   let statusUpdateIntervalId = null;
@@ -236,13 +275,20 @@
 
   let updateStatusDisplay = () => {};
   const persistReloadState = () => {
+    // Check if we need to reset for a new day before persisting
+    checkAndResetDailyCount();
+    
     try {
+      const today = getTodayDateString();
       localStorage.setItem(RELOAD_COUNT_KEY, String(reloadCount));
+      localStorage.setItem(RELOAD_DATE_KEY, today);
     } catch (_) {}
 
     if (extensionStorage) {
+      const today = getTodayDateString();
       const payload = {
         [RELOAD_COUNT_KEY]: reloadCount,
+        [RELOAD_DATE_KEY]: today,
         [NEXT_RELOAD_TIMESTAMP_KEY]: nextReloadTimestamp || 0,
       };
 
@@ -335,7 +381,8 @@
       return;
     }
 
-    const hasMessage = document.querySelector(".messages-wrapper .unread-icon");
+    const unreadIconSelector = settings.selectorUnreadIcon || defaultSettings.selectorUnreadIcon;
+    const hasMessage = document.querySelector(unreadIconSelector);
     if (hasMessage && isOnline && window.location.href !== inboxUrl) {
       markPrimaryNavigation();
       window.location.href = inboxUrl;
@@ -486,6 +533,9 @@
     relStart: "30",
     relEnd: "180",
     autoReloadEnabled: "true",
+    selectorUnreadIcon: ".seller-nav-right ul li:nth-child(3) .messages-wrapper .unread-icon",
+    selectorNewClientFlag: ".first > div:nth-child(2) > div:nth-child(1) > span:nth-child(2)",
+    selectorMessageContent: ".message-flow .content",
   };
 
   const settings = { ...defaultSettings };
@@ -783,6 +833,7 @@
       const storageKeys = [
         ...Object.keys(defaultSettings),
         RELOAD_COUNT_KEY,
+        RELOAD_DATE_KEY,
         NEXT_RELOAD_TIMESTAMP_KEY,
         PRIMARY_TAB_ID_STORAGE_KEY,
       ];
@@ -837,15 +888,30 @@
       }
     });
 
+    // Check if we need to reset for a new day
+    checkAndResetDailyCount();
+    
     const storedReloadCount = stored[RELOAD_COUNT_KEY];
-    if (storedReloadCount !== undefined && storedReloadCount !== null) {
+    const storedDate = stored[RELOAD_DATE_KEY];
+    const today = getTodayDateString();
+    
+    // Only use stored count if it's from today
+    if (storedDate === today && storedReloadCount !== undefined && storedReloadCount !== null) {
       const parsedCount = parseInt(storedReloadCount, 10);
       if (!Number.isNaN(parsedCount)) {
         reloadCount = parsedCount;
         try {
           localStorage.setItem(RELOAD_COUNT_KEY, String(reloadCount));
+          localStorage.setItem(RELOAD_DATE_KEY, today);
         } catch (_) {}
       }
+    } else {
+      // Date mismatch or no stored date, reset count
+      reloadCount = 0;
+      try {
+        localStorage.setItem(RELOAD_COUNT_KEY, "0");
+        localStorage.setItem(RELOAD_DATE_KEY, today);
+      } catch (_) {}
     }
 
     const storedNextReload = stored[NEXT_RELOAD_TIMESTAMP_KEY];
@@ -992,7 +1058,8 @@
       }
 
       try {
-      var isNewClient = document.querySelector(".first > div:nth-child(2) > div:nth-child(1) > span:nth-child(2)") ? true : false;
+      const newClientFlagSelector = settings.selectorNewClientFlag || defaultSettings.selectorNewClientFlag;
+      var isNewClient = document.querySelector(newClientFlagSelector) ? true : false;
 
       function isWithinLastTenMinutes(givenTime) {
         if (givenTime == null) return null;
@@ -1011,7 +1078,8 @@
       };
 
       function scrollAllToBottom() {
-        const elements = document.querySelectorAll(".message-flow .content");
+        const messageContentSelector = settings.selectorMessageContent || defaultSettings.selectorMessageContent;
+        const elements = document.querySelectorAll(messageContentSelector);
 
         elements.forEach((element) => {
           element.scrollTop = element.scrollHeight;
@@ -1049,7 +1117,7 @@
       const statusContainerCss = {
         position: "fixed",
         bottom: "20px",
-        right: "50px",
+        right: "100px",
         backgroundColor: "rgba(0, 0, 0, 0.75)",
         color: "#ffffff",
         padding: "12px 16px",
@@ -1146,7 +1214,7 @@
 
         const reloadWrapper = document.createElement("div");
         const reloadStrong = document.createElement("strong");
-        reloadStrong.textContent = "Total reloads:";
+        reloadStrong.textContent = "Reloads today:";
         reloadWrapper.appendChild(reloadStrong);
         reloadWrapper.appendChild(document.createTextNode(` ${reloadCount}`));
 
@@ -1233,6 +1301,8 @@
           const goToLink = pageLinks[randomInt] || fallbackLink;
           const newLink = new URL("https://www.fiverr.com" + goToLink).toString();
 
+          // Check if we need to reset for a new day before incrementing
+          checkAndResetDailyCount();
           reloadCount += 1;
           nextReloadTimestamp = null;
           persistReloadState();
@@ -1426,10 +1496,12 @@
       };
 
       if (window.location.href === inboxUrl) {
-        let hasMessage = document.querySelector(".messages-wrapper .unread-icon");
+        const unreadIconSelector = settings.selectorUnreadIcon || defaultSettings.selectorUnreadIcon;
+        const newClientFlagSelector = settings.selectorNewClientFlag || defaultSettings.selectorNewClientFlag;
+        let hasMessage = document.querySelector(unreadIconSelector);
 
         if (hasMessage) {
-          let newClientFlag = document.querySelector(".first > div:nth-child(2) > div:nth-child(1) > span:nth-child(2)");
+          let newClientFlag = document.querySelector(newClientFlagSelector);
           if (newClientFlag) {
             playAudio("new");
             sendNotification("New client Message");
