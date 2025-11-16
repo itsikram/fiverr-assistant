@@ -383,7 +383,17 @@
 
     const unreadIconSelector = settings.selectorUnreadIcon || defaultSettings.selectorUnreadIcon;
     const hasMessage = document.querySelector(unreadIconSelector);
-    if (hasMessage && isOnline && window.location.href !== inboxUrl) {
+
+    // Respect recent user interaction: do NOT auto-redirect to inbox
+    // if the last click/keypress was within the last MIN_SECONDS_BETWEEN_ACTION_AND_RELOAD seconds.
+    const secondsSinceLastAction = (Date.now() - lastAction) / 1000;
+
+    if (
+      hasMessage &&
+      isOnline &&
+      window.location.href !== inboxUrl &&
+      secondsSinceLastAction > MIN_SECONDS_BETWEEN_ACTION_AND_RELOAD
+    ) {
       markPrimaryNavigation();
       window.location.href = inboxUrl;
     }
