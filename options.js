@@ -16,6 +16,18 @@
     selectorMessageContent: ".message-flow .content",
   };
   const PRIMARY_TAB_ID_STORAGE_KEY = "farPrimaryTabId";
+  const CONNECTION_TIME_KEY = "farConnectionTime";
+  const MONITORING_TIME_KEY = "farMonitoringTime";
+  const CONNECTION_DATE_KEY = "farConnectionDate";
+  const MONITORING_DATE_KEY = "farMonitoringDate";
+  
+  const getTodayDateString = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
 
   const hasBrowserAPI = typeof browser !== "undefined";
   const storage = hasBrowserAPI && browser.storage && browser.storage.local ? browser.storage.local : null;
@@ -411,10 +423,153 @@
     });
   };
 
+  const formatTime = (milliseconds) => {
+    if (!milliseconds || milliseconds < 0) {
+      return "0s";
+    }
+    
+    const totalSeconds = Math.floor(milliseconds / 1000);
+    const days = Math.floor(totalSeconds / 86400);
+    const hours = Math.floor((totalSeconds % 86400) / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    const parts = [];
+    if (days > 0) parts.push(`${days}d`);
+    if (hours > 0) parts.push(`${hours}h`);
+    if (minutes > 0) parts.push(`${minutes}m`);
+    if (seconds > 0 || parts.length === 0) parts.push(`${seconds}s`);
+    
+    return parts.join(" ");
+  };
+
+  const updateStatistics = async () => {
+    const connectionTimeEl = document.getElementById("connectionTime");
+    const monitoringTimeEl = document.getElementById("monitoringTime");
+    
+    if (!connectionTimeEl || !monitoringTimeEl) return;
+    
+    try {
+      const today = getTodayDateString();
+      const stored = await storage.get({
+        [CONNECTION_TIME_KEY]: 0,
+        [MONITORING_TIME_KEY]: 0,
+        [CONNECTION_DATE_KEY]: "",
+        [MONITORING_DATE_KEY]: "",
+      });
+      
+      // Also check localStorage as fallback
+      let connectionTime = 0;
+      let monitoringTime = 0;
+      
+      try {
+        // Only use stored time if it's from today
+        const connectionDate = localStorage.getItem(CONNECTION_DATE_KEY) || stored[CONNECTION_DATE_KEY] || "";
+        const monitoringDate = localStorage.getItem(MONITORING_DATE_KEY) || stored[MONITORING_DATE_KEY] || "";
+        
+        if (connectionDate === today) {
+          const localConnectionTime = localStorage.getItem(CONNECTION_TIME_KEY);
+          const storedConnectionTime = stored[CONNECTION_TIME_KEY] || 0;
+          if (localConnectionTime) {
+            const parsed = parseInt(localConnectionTime, 10);
+            if (!Number.isNaN(parsed)) {
+              connectionTime = Math.max(parsed, storedConnectionTime);
+            } else {
+              connectionTime = storedConnectionTime;
+            }
+          } else {
+            connectionTime = storedConnectionTime;
+          }
+        }
+        
+        if (monitoringDate === today) {
+          const localMonitoringTime = localStorage.getItem(MONITORING_TIME_KEY);
+          const storedMonitoringTime = stored[MONITORING_TIME_KEY] || 0;
+          if (localMonitoringTime) {
+            const parsed = parseInt(localMonitoringTime, 10);
+            if (!Number.isNaN(parsed)) {
+              monitoringTime = Math.max(parsed, storedMonitoringTime);
+            } else {
+              monitoringTime = storedMonitoringTime;
+            }
+          } else {
+            monitoringTime = storedMonitoringTime;
+          }
+        }
+        
+        // Add current session time if tracking is active and from today
+        const connectionStart = localStorage.getItem("farConnectionStart");
+        if (connectionStart && connectionDate === today) {
+          const startTime = parseInt(connectionStart, 10);
+          if (!Number.isNaN(startTime)) {
+            const elapsed = Date.now() - startTime;
+            connectionTime += elapsed;
+          }
+        }
+        
+        const monitoringStart = localStorage.getItem("farMonitoringStart");
+        if (monitoringStart && monitoringDate === today) {
+          const startTime = parseInt(monitoringStart, 10);
+          if (!Number.isNaN(startTime)) {
+            const elapsed = Date.now() - startTime;
+            monitoringTime += elapsed;
+          }
+        }
+      } catch (_) {}
+      
+      connectionTimeEl.textContent = formatTime(connectionTime);
+      monitoringTimeEl.textContent = formatTime(monitoringTime);
+    } catch (error) {
+      console.error("Failed to load statistics:", error);
+      connectionTimeEl.textContent = "Error";
+      monitoringTimeEl.textContent = "Error";
+    }
+  };
+
+  const resetStatistics = async () => {
+    if (!confirm("Are you sure you want to reset today's statistics? This action cannot be undone.")) {
+      return;
+    }
+    
+    try {
+      const today = getTodayDateString();
+      await storage.set({
+        [CONNECTION_TIME_KEY]: 0,
+        [MONITORING_TIME_KEY]: 0,
+        [CONNECTION_DATE_KEY]: today,
+        [MONITORING_DATE_KEY]: today,
+      });
+      try {
+        localStorage.setItem(CONNECTION_TIME_KEY, "0");
+        localStorage.setItem(MONITORING_TIME_KEY, "0");
+        localStorage.setItem(CONNECTION_DATE_KEY, today);
+        localStorage.setItem(MONITORING_DATE_KEY, today);
+        localStorage.removeItem("farConnectionStart");
+        localStorage.removeItem("farMonitoringStart");
+      } catch (_) {}
+      
+      await updateStatistics();
+      showStatus("Today's statistics reset successfully!");
+    } catch (error) {
+      console.error("Failed to reset statistics:", error);
+      showStatus("Error resetting statistics. Check the console for details.", 0);
+    }
+  };
+
   document.addEventListener("DOMContentLoaded", () => {
     initTabs();
     attachSoundControls();
     init();
+    updateStatistics();
+    
+    // Update statistics every 5 seconds
+    setInterval(updateStatistics, 5000);
+    
+    // Reset button handler
+    const resetButton = document.getElementById("resetStats");
+    if (resetButton) {
+      resetButton.addEventListener("click", resetStatistics);
+    }
   });
 
   if (activatePrimaryButton) {

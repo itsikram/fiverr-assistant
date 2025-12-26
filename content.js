@@ -81,6 +81,17 @@
     }
     statusDisplayElement = null;
   };
+  
+  // Cleanup time tracking on page unload
+  window.addEventListener("beforeunload", () => {
+    updateTimeTracking();
+    stopConnectionTracking();
+    stopMonitoringTracking();
+    if (timeTrackingIntervalId) {
+      clearInterval(timeTrackingIntervalId);
+      timeTrackingIntervalId = null;
+    }
+  });
 
   const readAutoReloadPreference = () => {
     try {
@@ -104,6 +115,12 @@
   const RELOAD_DATE_KEY = "farReloadDate";
   const NEXT_RELOAD_TIMESTAMP_KEY = "farNextReloadTimestamp";
   const MIN_SECONDS_BETWEEN_ACTION_AND_RELOAD = 60;
+  const CONNECTION_TIME_KEY = "farConnectionTime";
+  const MONITORING_TIME_KEY = "farMonitoringTime";
+  const CONNECTION_DATE_KEY = "farConnectionDate";
+  const MONITORING_DATE_KEY = "farMonitoringDate";
+  const CONNECTION_START_KEY = "farConnectionStart";
+  const MONITORING_START_KEY = "farMonitoringStart";
   
   const getTodayDateString = () => {
     const now = new Date();
@@ -319,6 +336,7 @@
   let scheduleNextReload = () => {};
   let pauseAutoReload = () => {
     autoReload = false;
+    stopMonitoringTracking();
     clearScheduledReload();
     clearMessageCheckInterval();
     removeStatusDisplay();
@@ -327,6 +345,7 @@
     autoReload = true;
     isF10Clicked = false;
     if (featuresInitialized) {
+      startMonitoringTracking();
       ensureMessageCheckInterval();
       scheduleNextReload();
       updateStatusDisplay();
@@ -335,10 +354,163 @@
     }
   };
 
+  // Time tracking variables
+  let connectionStartTime = null;
+  let monitoringStartTime = null;
+  let timeTrackingIntervalId = null;
+  
+  const getStoredTime = (timeKey, dateKey) => {
+    try {
+      const today = getTodayDateString();
+      const storedDate = localStorage.getItem(dateKey);
+      
+      // If date doesn't match today, return 0 (new day)
+      if (storedDate !== today) {
+        return 0;
+      }
+      
+      const stored = localStorage.getItem(timeKey);
+      return stored ? parseInt(stored, 10) : 0;
+    } catch (_) {
+      return 0;
+    }
+  };
+  
+  const setStoredTime = (timeKey, dateKey, value) => {
+    try {
+      const today = getTodayDateString();
+      localStorage.setItem(timeKey, String(value));
+      localStorage.setItem(dateKey, today);
+      if (extensionStorage) {
+        extensionStorage.set({ [timeKey]: value, [dateKey]: today }).catch(() => {});
+      }
+    } catch (_) {}
+  };
+  
+  const checkAndResetDailyTime = (timeKey, dateKey) => {
+    const today = getTodayDateString();
+    const storedDate = localStorage.getItem(dateKey);
+    
+    if (storedDate !== today) {
+      // New day, reset time
+      try {
+        localStorage.setItem(timeKey, "0");
+        localStorage.setItem(dateKey, today);
+        if (extensionStorage) {
+          extensionStorage.set({ [timeKey]: 0, [dateKey]: today }).catch(() => {});
+        }
+      } catch (_) {}
+      return true; // Time was reset
+    }
+    return false; // Time was not reset
+  };
+  
+  const updateTimeTracking = () => {
+    const now = Date.now();
+    
+    // Check and reset daily time if needed
+    checkAndResetDailyTime(CONNECTION_TIME_KEY, CONNECTION_DATE_KEY);
+    checkAndResetDailyTime(MONITORING_TIME_KEY, MONITORING_DATE_KEY);
+    
+    // Update connection time if online
+    if (isOnline && connectionStartTime) {
+      const elapsed = now - connectionStartTime;
+      const currentTotal = getStoredTime(CONNECTION_TIME_KEY, CONNECTION_DATE_KEY);
+      setStoredTime(CONNECTION_TIME_KEY, CONNECTION_DATE_KEY, currentTotal + elapsed);
+      connectionStartTime = now;
+      try {
+        localStorage.setItem(CONNECTION_START_KEY, String(connectionStartTime));
+      } catch (_) {}
+    }
+    
+    // Update monitoring time if monitoring is active
+    if (monitoringStartTime && autoReload && featuresInitialized && isPrimaryTab) {
+      const elapsed = now - monitoringStartTime;
+      const currentTotal = getStoredTime(MONITORING_TIME_KEY, MONITORING_DATE_KEY);
+      setStoredTime(MONITORING_TIME_KEY, MONITORING_DATE_KEY, currentTotal + elapsed);
+      monitoringStartTime = now;
+      try {
+        localStorage.setItem(MONITORING_START_KEY, String(monitoringStartTime));
+      } catch (_) {}
+    }
+  };
+  
+  const startConnectionTracking = () => {
+    if (isOnline && !connectionStartTime) {
+      // Check if we need to reset for new day
+      checkAndResetDailyTime(CONNECTION_TIME_KEY, CONNECTION_DATE_KEY);
+      
+      const storedStart = localStorage.getItem(CONNECTION_START_KEY);
+      const today = getTodayDateString();
+      const storedDate = localStorage.getItem(CONNECTION_DATE_KEY);
+      
+      // Only restore start time if it's from today
+      if (storedStart && storedDate === today) {
+        connectionStartTime = parseInt(storedStart, 10);
+      } else {
+        connectionStartTime = Date.now();
+        localStorage.setItem(CONNECTION_START_KEY, String(connectionStartTime));
+      }
+    }
+  };
+  
+  const stopConnectionTracking = () => {
+    if (connectionStartTime) {
+      updateTimeTracking();
+      connectionStartTime = null;
+      localStorage.removeItem(CONNECTION_START_KEY);
+    }
+  };
+  
+  const startMonitoringTracking = () => {
+    if (autoReload && featuresInitialized && isPrimaryTab && !monitoringStartTime) {
+      // Check if we need to reset for new day
+      checkAndResetDailyTime(MONITORING_TIME_KEY, MONITORING_DATE_KEY);
+      
+      const storedStart = localStorage.getItem(MONITORING_START_KEY);
+      const today = getTodayDateString();
+      const storedDate = localStorage.getItem(MONITORING_DATE_KEY);
+      
+      // Only restore start time if it's from today
+      if (storedStart && storedDate === today) {
+        monitoringStartTime = parseInt(storedStart, 10);
+      } else {
+        monitoringStartTime = Date.now();
+        localStorage.setItem(MONITORING_START_KEY, String(monitoringStartTime));
+      }
+    }
+  };
+  
+  const stopMonitoringTracking = () => {
+    if (monitoringStartTime) {
+      updateTimeTracking();
+      monitoringStartTime = null;
+      localStorage.removeItem(MONITORING_START_KEY);
+    }
+  };
+  
+  const initializeTimeTracking = () => {
+    // Start connection tracking if online
+    startConnectionTracking();
+    
+    // Start monitoring tracking if conditions are met
+    if (autoReload && featuresInitialized && isPrimaryTab) {
+      startMonitoringTracking();
+    }
+    
+    // Set up periodic updates (every 30 seconds)
+    if (!timeTrackingIntervalId) {
+      timeTrackingIntervalId = setInterval(() => {
+        updateTimeTracking();
+      }, 30000);
+    }
+  };
+  
   // Offline detection
   let isOnline = navigator.onLine;
   window.addEventListener("online", () => {
     isOnline = true;
+    startConnectionTracking();
     if (autoReload) {
       scheduleNextReload();
     }
@@ -346,6 +518,7 @@
   });
   window.addEventListener("offline", () => {
     isOnline = false;
+    stopConnectionTracking();
     clearScheduledReload();
     updateStatusDisplay();
   });
@@ -975,6 +1148,7 @@
 
   const deactivatePrimaryTabFeatures = () => {
     pauseAutoReload();
+    stopMonitoringTracking();
     clearScheduledReload({ updateDisplay: false });
     removeStatusDisplay();
     releasePrimaryTab();
@@ -986,6 +1160,10 @@
       clearInterval(primaryTabHeartbeatTimer);
       primaryTabHeartbeatTimer = null;
     }
+    if (timeTrackingIntervalId) {
+      clearInterval(timeTrackingIntervalId);
+      timeTrackingIntervalId = null;
+    }
     featuresInitialized = false;
     isPrimaryTab = false;
     autoReload = false;
@@ -993,6 +1171,8 @@
 
   if (runtime && runtime.onMessage) {
     runtime.onMessage.addListener((message) => {
+      console.log("Fiverr Assistant Content: Received message", message?.type, message?.payload ? Object.keys(message.payload) : "no payload");
+      
       if (!message || message.type !== "settingsUpdated" || !message.payload) {
         if (message && message.type === "primaryTabStatus") {
           const { primaryTabId, isPrimary } = message;
@@ -1024,13 +1204,24 @@
         updateSetting(key, value);
       });
 
-      targetedClients = getVal("targetedClients") || "";
-      pageLinks = processPageLinks(getVal("pageLinks"));
-      minReloadingSecond = parseInt(getVal("relStart"), 10) || minReloadingSecond;
-      maxReloadingSecond = parseInt(getVal("relEnd"), 10) || maxReloadingSecond;
+      // Use payload values directly instead of reading from localStorage to avoid timing issues
+      targetedClients = message.payload.targetedClients !== undefined ? String(message.payload.targetedClients || "") : (getVal("targetedClients") || "");
+      pageLinks = message.payload.pageLinks !== undefined ? processPageLinks(String(message.payload.pageLinks || "")) : processPageLinks(getVal("pageLinks"));
+      minReloadingSecond = message.payload.relStart !== undefined ? (parseInt(String(message.payload.relStart), 10) || 30) : (parseInt(getVal("relStart"), 10) || minReloadingSecond);
+      maxReloadingSecond = message.payload.relEnd !== undefined ? (parseInt(String(message.payload.relEnd), 10) || 180) : (parseInt(getVal("relEnd"), 10) || maxReloadingSecond);
+      
+      console.log("Fiverr Assistant Content: Settings updated", {
+        pageLinks: pageLinks,
+        pageLinksLength: pageLinks.length,
+        minReloadingSecond: minReloadingSecond,
+        maxReloadingSecond: maxReloadingSecond,
+        autoReloadEnabled: message.payload.autoReloadEnabled
+      });
+      
       if (Object.prototype.hasOwnProperty.call(message.payload, "autoReloadEnabled")) {
         const shouldEnable = coerceBooleanSetting(message.payload.autoReloadEnabled, true);
         if (shouldEnable) {
+          console.log("Fiverr Assistant Content: Enabling auto-reload, featuresInitialized:", featuresInitialized);
           enableAutoReload();
         } else {
           pauseAutoReload();
@@ -1240,6 +1431,7 @@
 
       pauseAutoReload = () => {
         autoReload = false;
+        stopMonitoringTracking();
         clearScheduledReload();
         clearMessageCheckInterval();
         removeStatusDisplay();
@@ -1248,6 +1440,7 @@
       enableAutoReload = () => {
         autoReload = true;
         isF10Clicked = false;
+        startMonitoringTracking();
         ensureMessageCheckInterval();
         scheduleNextReload();
         updateStatusDisplay();
@@ -1261,20 +1454,33 @@
           updateStatusDisplay();
         };
 
+        console.log("Fiverr Assistant Content: scheduleNextReload called", {
+          autoReload: autoReload,
+          isOnline: isOnline,
+          siteDomain: siteDomain,
+          pageLinks: pageLinks,
+          pageLinksLength: Array.isArray(pageLinks) ? pageLinks.length : "not an array"
+        });
+
         if (!autoReload || !isOnline) {
+          console.log("Fiverr Assistant Content: Not scheduling reload - autoReload:", autoReload, "isOnline:", isOnline);
           finalizeWithoutSchedule();
           return;
         }
 
         if (siteDomain !== "www.fiverr.com") {
+          console.log("Fiverr Assistant Content: Not scheduling reload - wrong domain:", siteDomain);
           finalizeWithoutSchedule();
           return;
         }
 
         if (!Array.isArray(pageLinks) || pageLinks.length === 0) {
+          console.log("Fiverr Assistant Content: Not scheduling reload - pageLinks empty or invalid", pageLinks);
           finalizeWithoutSchedule();
           return;
         }
+        
+        console.log("Fiverr Assistant Content: Scheduling next reload with pageLinks:", pageLinks);
 
         const delay = getRandomMiliSecond(minReloadingSecond, maxReloadingSecond);
         nextReloadTimestamp = Date.now() + delay;
@@ -1542,6 +1748,7 @@
         clearMessageCheckInterval();
       }
       featuresInitialized = true;
+      initializeTimeTracking();
     } catch (error) {
       console.log(error);
       setTimeout(() => {
@@ -1561,6 +1768,11 @@
     }
   }
 
+  // Initialize connection tracking on load
+  if (isOnline) {
+    startConnectionTracking();
+  }
+  
   initialize();
 })();
 

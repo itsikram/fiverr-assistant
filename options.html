@@ -171,7 +171,18 @@
         <!-- Settings Tab -->
         <div class="tab-content" id="tab-settings">
           <section>
-            <p>Additional settings will be available here.</p>
+            <h2 style="margin-top: 0; color: #1dbf73; font-size: 18px;">Today's Statistics</h2>
+            <div class="stats-container">
+              <div class="stat-item">
+                <div class="stat-label">Internet Connection Time (Today)</div>
+                <div class="stat-value" id="connectionTime">Loading...</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">Assistant Monitoring Time (Today)</div>
+                <div class="stat-value" id="monitoringTime">Loading...</div>
+              </div>
+            </div>
+            <button type="button" id="resetStats" class="secondary" style="margin-top: 16px;">Reset Today's Statistics</button>
           </section>
         </div>
 
