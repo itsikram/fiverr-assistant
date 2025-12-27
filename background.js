@@ -535,13 +535,13 @@
             }
           }
           
-          // Activate, pin, and send settings to target tab
+          // Pin and send settings to target tab (without activating/focusing)
           if (targetTabId) {
-            api.tabs.update(targetTabId, { active: true, pinned: true }, () => {
+            api.tabs.update(targetTabId, { pinned: true }, () => {
               if (api.runtime.lastError) {
-                console.error("Fiverr Assistant: unable to activate/pin target tab", api.runtime.lastError);
+                console.error("Fiverr Assistant: unable to pin target tab", api.runtime.lastError);
               } else {
-                console.log("Fiverr Assistant: Successfully activated and pinned target tab", targetTabId);
+                console.log("Fiverr Assistant: Successfully pinned target tab", targetTabId);
                 // Send all settings to content script
                 sendAllSettingsToTab(targetTabId);
               }
@@ -603,22 +603,22 @@
             const primaryTabId = result && result[PRIMARY_TAB_ID_STORAGE_KEY];
             if (!primaryTabId && typeof tab.id === "number") {
               // No primary tab set, make this one primary
-              storageSet({ [PRIMARY_TAB_ID_STORAGE_KEY]: tab.id }).then(() => {
-                api.tabs.update(tab.id, { active: true, pinned: true }, () => {
-                  if (!api.runtime.lastError) {
-                    console.log("Fiverr Assistant: Set newly created/restored tab as primary", tab.id);
-                    sendAllSettingsToTab(tab.id);
-                  }
-                });
-              });
-            } else if (primaryTabId === tab.id) {
-              // This is the designated primary tab
-              api.tabs.update(tab.id, { active: true, pinned: true }, () => {
-                if (!api.runtime.lastError) {
-                  console.log("Fiverr Assistant: Activated primary tab", tab.id);
-                  sendAllSettingsToTab(tab.id);
-                }
-              });
+               storageSet({ [PRIMARY_TAB_ID_STORAGE_KEY]: tab.id }).then(() => {
+                 api.tabs.update(tab.id, { pinned: true }, () => {
+                   if (!api.runtime.lastError) {
+                     console.log("Fiverr Assistant: Set newly created/restored tab as primary", tab.id);
+                     sendAllSettingsToTab(tab.id);
+                   }
+                 });
+               });
+             } else if (primaryTabId === tab.id) {
+               // This is the designated primary tab
+               api.tabs.update(tab.id, { pinned: true }, () => {
+                 if (!api.runtime.lastError) {
+                   console.log("Fiverr Assistant: Pinned primary tab", tab.id);
+                   sendAllSettingsToTab(tab.id);
+                 }
+               });
             }
           }).catch(() => {});
         }).catch(() => {});
@@ -673,15 +673,15 @@
               await storageSet({ [PRIMARY_TAB_ID_STORAGE_KEY]: newPrimaryTabId });
               console.log("Fiverr Assistant: Set new primary tab", newPrimaryTabId);
               
-              // Activate, pin, and send settings to the new primary tab
-              api.tabs.update(newPrimaryTabId, { active: true, pinned: true }, () => {
-                if (api.runtime.lastError) {
-                  console.warn("Fiverr Assistant: Could not activate/pin new primary tab", api.runtime.lastError);
-                } else {
-                  console.log("Fiverr Assistant: Successfully activated and pinned new primary tab", newPrimaryTabId);
-                  sendAllSettingsToTab(newPrimaryTabId);
-                }
-              });
+               // Pin and send settings to the new primary tab (without activating/focusing)
+               api.tabs.update(newPrimaryTabId, { pinned: true }, () => {
+                 if (api.runtime.lastError) {
+                   console.warn("Fiverr Assistant: Could not pin new primary tab", api.runtime.lastError);
+                 } else {
+                   console.log("Fiverr Assistant: Successfully pinned new primary tab", newPrimaryTabId);
+                   sendAllSettingsToTab(newPrimaryTabId);
+                 }
+               });
             } else {
               // No Fiverr tabs available, create a new one and activate it
               console.log("Fiverr Assistant: No Fiverr tabs available, creating new activated tab...");
@@ -776,19 +776,19 @@
         // Send all settings to content script to activate reloader
         sendAllSettingsToTab(tabId);
         
-        // Check if this is the primary tab and activate it if needed
-        storageGet([PRIMARY_TAB_ID_STORAGE_KEY]).then((result) => {
-          const primaryTabId = result && result[PRIMARY_TAB_ID_STORAGE_KEY];
-          if (primaryTabId === tabId || (!primaryTabId && tabId)) {
-            // This is or should be the primary tab
-            api.tabs.update(tabId, { active: true, pinned: true }, () => {
-              if (!api.runtime.lastError && (!primaryTabId || primaryTabId !== tabId)) {
-                // Set as primary tab if not already set
-                storageSet({ [PRIMARY_TAB_ID_STORAGE_KEY]: tabId });
-              }
-            });
-          }
-        }).catch(() => {});
+         // Check if this is the primary tab and pin it if needed
+         storageGet([PRIMARY_TAB_ID_STORAGE_KEY]).then((result) => {
+           const primaryTabId = result && result[PRIMARY_TAB_ID_STORAGE_KEY];
+           if (primaryTabId === tabId || (!primaryTabId && tabId)) {
+             // This is or should be the primary tab
+             api.tabs.update(tabId, { pinned: true }, () => {
+               if (!api.runtime.lastError && (!primaryTabId || primaryTabId !== tabId)) {
+                 // Set as primary tab if not already set
+                 storageSet({ [PRIMARY_TAB_ID_STORAGE_KEY]: tabId });
+               }
+             });
+           }
+         }).catch(() => {});
       }
     }
     
@@ -811,7 +811,7 @@
       refreshAutoReloadSetting().then(() => {
         checkAndActivateFiverrTab().then(() => {
           if (autoReloadEnabled) {
-            scheduleEnsureFiverrTab(1000);
+    scheduleEnsureFiverrTab(1000);
           }
         });
       });
@@ -877,23 +877,23 @@
   const initDelay = hasBrowserAPI ? 1000 : 500;
   
   setTimeout(() => {
-    refreshAutoReloadSetting()
+  refreshAutoReloadSetting()
       .then(() => {
         console.log("Fiverr Assistant: Auto-reload setting refreshed, checking for tabs...");
         // Check if any Fiverr tab exists, if not create one and activate reloader
         return checkAndActivateFiverrTab();
       })
-      .then(() => {
-        if (autoReloadEnabled) {
-          scheduleEnsureFiverrTab(500);
-        }
-      })
+    .then(() => {
+      if (autoReloadEnabled) {
+        scheduleEnsureFiverrTab(500);
+      }
+    })
       .catch((error) => {
         console.error("Fiverr Assistant: Error in initialization", error);
         // Even if refresh fails, check and activate
         checkAndActivateFiverrTab().then(() => {
-          scheduleEnsureFiverrTab(500);
-        });
+      scheduleEnsureFiverrTab(500);
+    });
       });
   }, initDelay);
   
