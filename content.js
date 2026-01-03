@@ -344,6 +344,11 @@
     stopMessageObserver();
     removeStatusDisplay();
     stopOfflineErrorChecking();
+    // Clear notification pause timeout if auto-reload is manually paused
+    if (notificationPauseTimeoutId) {
+      clearTimeout(notificationPauseTimeoutId);
+      notificationPauseTimeoutId = null;
+    }
   };
   let enableAutoReload = () => {
     autoReload = true;
@@ -357,6 +362,29 @@
     } else {
       initialize();
     }
+  };
+
+  // Function to pause auto-reload for 5 minutes when notification sound plays
+  let pauseAutoReloadForNotification = () => {
+    // Clear any existing notification pause timeout
+    if (notificationPauseTimeoutId) {
+      clearTimeout(notificationPauseTimeoutId);
+      notificationPauseTimeoutId = null;
+    }
+    
+    // Pause auto-reload
+    pauseAutoReload();
+    
+    // Resume after 5 minutes (300000 milliseconds)
+    notificationPauseTimeoutId = setTimeout(() => {
+      notificationPauseTimeoutId = null;
+      if (!isF10Clicked && featuresInitialized) {
+        enableAutoReload();
+        console.log("Fiverr Assistant: Auto-reload resumed after 5-minute notification pause");
+      }
+    }, 300000); // 5 minutes
+    
+    console.log("Fiverr Assistant: Auto-reload paused for 5 minutes due to notification");
   };
 
   // Time tracking variables
@@ -737,6 +765,7 @@
   let messageCheckIntervalId = null;
   let messageObserver = null;
   let processedNewClientMessages = new Set(); // Track processed new client messages
+  let notificationPauseTimeoutId = null; // Track timeout for 5-minute pause after notification
   
   // DOM query caching for performance
   let cachedUnreadIcon = null;
@@ -834,10 +863,13 @@
           // Play sound instantly
           playAudio("new");
           sendNotification("New client Message");
-          pauseAutoReload();
+          
+          // Pause auto-reload for 5 minutes when notification plays
+          pauseAutoReloadForNotification();
+          
           activateFiverrTab();
           
-          console.log("Fiverr Assistant: New client message detected instantly, sound played");
+          console.log("Fiverr Assistant: New client message detected instantly, sound played, reloader paused for 5 minutes");
           
           // Clean up old processed messages (keep only last 10)
           if (processedNewClientMessages.size > 10) {
@@ -958,7 +990,7 @@
           return;
         }
         
-        // Use increased debounce to reduce CPU usage
+        // Use minimal debounce for instant detection
         if (messageObserver.debounceTimer) {
           clearTimeout(messageObserver.debounceTimer);
         }
@@ -966,7 +998,7 @@
           // Invalidate cache before checking to ensure fresh results
           cacheTimestamp = 0;
           checkNewClientMessageInstantly();
-        }, 300); // Increased from 100ms to 300ms for better performance
+        }, 50); // Reduced to 50ms for near-instant detection
       });
 
       // Try to find a more specific container for messages, otherwise observe body
@@ -987,19 +1019,17 @@
       targetElement = targetElement || document.body;
       
       // Observe the target element for changes
-      // Use subtree: false when possible to reduce observation scope
-      const useSubtree = targetElement === document.body; // Only use subtree for body
-      
+      // Always use subtree: true to catch all DOM changes for instant detection
       messageObserver.observe(targetElement || document.body || document.documentElement, {
         childList: true,
-        subtree: useSubtree, // Narrow scope when possible
+        subtree: true, // Always use subtree to catch all changes instantly
         attributes: true,
         attributeFilter: ['class', 'style', 'data-testid'] // Watch for class/style/data changes
       });
 
       console.log("Fiverr Assistant: Message observer started for instant new client detection", {
         targetElement: targetElement ? targetElement.tagName : 'body',
-        useSubtree: useSubtree
+        useSubtree: true
       });
     } catch (error) {
       console.warn("Fiverr Assistant: Failed to start message observer", error);
@@ -1906,6 +1936,34 @@
         stopMessageObserver();
         removeStatusDisplay();
         stopOfflineErrorChecking();
+        // Clear notification pause timeout if auto-reload is manually paused
+        if (notificationPauseTimeoutId) {
+          clearTimeout(notificationPauseTimeoutId);
+          notificationPauseTimeoutId = null;
+        }
+      };
+
+      // Redefine pauseAutoReloadForNotification to use local pauseAutoReload and enableAutoReload
+      pauseAutoReloadForNotification = () => {
+        // Clear any existing notification pause timeout
+        if (notificationPauseTimeoutId) {
+          clearTimeout(notificationPauseTimeoutId);
+          notificationPauseTimeoutId = null;
+        }
+        
+        // Pause auto-reload
+        pauseAutoReload();
+        
+        // Resume after 5 minutes (300000 milliseconds)
+        notificationPauseTimeoutId = setTimeout(() => {
+          notificationPauseTimeoutId = null;
+          if (!isF10Clicked && featuresInitialized) {
+            enableAutoReload();
+            console.log("Fiverr Assistant: Auto-reload resumed after 5-minute notification pause");
+          }
+        }, 300000); // 5 minutes
+        
+        console.log("Fiverr Assistant: Auto-reload paused for 5 minutes due to notification");
       };
 
       enableAutoReload = () => {
@@ -2208,7 +2266,8 @@
           if (newClientFlag) {
             playAudio("new");
             sendNotification("New client Message");
-            pauseAutoReload();
+            // Pause auto-reload for 5 minutes when notification plays
+            pauseAutoReloadForNotification();
             // Activate the tab when new client message is detected
             activateFiverrTab();
           } else {
