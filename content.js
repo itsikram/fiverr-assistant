@@ -87,6 +87,7 @@
     updateTimeTracking();
     stopConnectionTracking();
     stopMonitoringTracking();
+    stopOfflineErrorChecking();
     if (timeTrackingIntervalId) {
       clearInterval(timeTrackingIntervalId);
       timeTrackingIntervalId = null;
@@ -166,6 +167,7 @@
   let statusDisplayElement = null;
   let featuresInitialized = false;
   let initializePromise = null;
+  let offlineCheckIntervalId = null;
 
   const readSessionStorage = (key) => {
     try {
@@ -339,7 +341,9 @@
     stopMonitoringTracking();
     clearScheduledReload();
     clearMessageCheckInterval();
+    stopMessageObserver();
     removeStatusDisplay();
+    stopOfflineErrorChecking();
   };
   let enableAutoReload = () => {
     autoReload = true;
@@ -349,6 +353,7 @@
       ensureMessageCheckInterval();
       scheduleNextReload();
       updateStatusDisplay();
+      startOfflineErrorChecking();
     } else {
       initialize();
     }
@@ -508,20 +513,209 @@
   
   // Offline detection
   let isOnline = navigator.onLine;
+  let wasOffline = !navigator.onLine;
+  let consecutiveReloadAttempts = 0;
+  let lastReloadCheckTime = 0;
+  let pageLoadCheckDone = false; // Flag to prevent multiple checks on same page load
+  const MAX_CONSECUTIVE_RELOADS = 10; // Maximum reload attempts before giving up
+  const RELOAD_CHECK_DELAY = 8000; // Wait 8 seconds after page load before checking (increased from 5)
+  
+  // Function to detect if page is showing "no internet connection" error
+  const isShowingOfflineError = () => {
+    if (siteDomain !== "www.fiverr.com" && siteDomain !== "fiverr.com") {
+      return false;
+    }
+    
+    // Wait a bit for page to load before checking
+    const timeSinceLoad = Date.now() - lastReloadCheckTime;
+    if (timeSinceLoad < RELOAD_CHECK_DELAY && lastReloadCheckTime > 0) {
+      // Too soon after load, don't check yet
+      return false;
+    }
+    
+    if (!document.body) {
+      return false;
+    }
+    
+    const title = document.title.toLowerCase();
+    const bodyText = document.body ? document.body.textContent.toLowerCase() : "";
+    
+    // Check for STRONG error indicators in title first (most reliable)
+    const strongErrorIndicators = [
+      "the connection has timed out",
+      "connection has timed out",
+      "this site can't be reached",
+      "err_internet_disconnected",
+      "dns_probe_finished_no_internet",
+      "unable to find the server",
+      "server not found"
+    ];
+    
+    if (strongErrorIndicators.some(indicator => title.includes(indicator))) {
+      return true;
+    }
+    
+    // Check for Firefox-specific error page - must have ALL these texts together
+    const firefoxErrorTexts = [
+      "the connection has timed out",
+      "the server at",
+      "is taking too long to respond"
+    ];
+    
+    // Only consider it an error if ALL Firefox error texts are present AND we have very little content
+    if (firefoxErrorTexts.every(text => bodyText.includes(text))) {
+      // Additional check: error pages have very little content
+      if (document.body.textContent.trim().length < 500) {
+        return true;
+      }
+    }
+    
+    // Check for Chrome error pages - must have specific error text AND minimal content
+    if (bodyText.includes("this site can't be reached") || bodyText.includes("err_internet_disconnected")) {
+      if (document.body.textContent.trim().length < 500) {
+        return true;
+      }
+    }
+    
+    // Only check for missing Fiverr content if we have very little content overall
+    // This prevents false positives during normal page loads
+    const bodyTextLength = document.body.textContent.trim().length;
+    if (bodyTextLength < 100) {
+      // Very little content - might be an error page
+      const hasFiverrContent = document.querySelector('header, nav, [class*="header"], [class*="nav"], [id*="header"], [id*="nav"], [class*="fiverr"], main, [role="main"], [data-testid]');
+      if (!hasFiverrContent) {
+        // No Fiverr content and very little text - likely error page
+        return true;
+      }
+    }
+    
+    return false;
+  };
+  
+  // Function to check and reload if showing offline error
+  const checkAndReloadIfOffline = () => {
+    if (!autoReload || !isPrimaryTab || siteDomain !== "www.fiverr.com") {
+      consecutiveReloadAttempts = 0; // Reset if conditions not met
+      return;
+    }
+    
+    if (isShowingOfflineError()) {
+      consecutiveReloadAttempts++;
+      
+      if (consecutiveReloadAttempts > MAX_CONSECUTIVE_RELOADS) {
+        console.warn(`Fiverr Assistant: Max reload attempts (${MAX_CONSECUTIVE_RELOADS}) reached, stopping auto-reload for offline errors`);
+        return;
+      }
+      
+      console.log(`Fiverr Assistant: Detected offline/error page (attempt ${consecutiveReloadAttempts}/${MAX_CONSECUTIVE_RELOADS}), reloading...`);
+      markPrimaryNavigation();
+      lastReloadCheckTime = Date.now();
+      window.location.reload();
+    } else {
+      // Page loaded successfully, reset counter
+      if (consecutiveReloadAttempts > 0) {
+        console.log("Fiverr Assistant: Page loaded successfully after offline error");
+        consecutiveReloadAttempts = 0;
+      }
+    }
+  };
+  
+  // Check on page load if we're still showing an error (after a delay to let page load)
+  const checkPageLoadStatus = () => {
+    if (!autoReload || !isPrimaryTab || siteDomain !== "www.fiverr.com") {
+      consecutiveReloadAttempts = 0; // Reset if conditions not met
+      pageLoadCheckDone = false;
+      return;
+    }
+    
+    // Prevent multiple checks on the same page load
+    if (pageLoadCheckDone) {
+      return;
+    }
+    
+    // Mark that we're checking this page load
+    pageLoadCheckDone = true;
+    lastReloadCheckTime = Date.now();
+    
+    // Wait longer for the page to fully load before checking
+    setTimeout(() => {
+      // Only check if we're still on the same page and conditions are still met
+      if (!autoReload || !isPrimaryTab || siteDomain !== "www.fiverr.com") {
+        pageLoadCheckDone = false;
+        return;
+      }
+      
+      if (isShowingOfflineError()) {
+        console.log("Fiverr Assistant: Page still showing error after load, will reload...");
+        checkAndReloadIfOffline();
+      } else {
+        // Page loaded successfully, reset counter
+        if (consecutiveReloadAttempts > 0) {
+          console.log("Fiverr Assistant: Page loaded successfully after offline error");
+        }
+        consecutiveReloadAttempts = 0;
+        pageLoadCheckDone = false; // Reset flag for next page load
+      }
+    }, RELOAD_CHECK_DELAY);
+  };
+  
   window.addEventListener("online", () => {
+    const wasOfflineBefore = wasOffline;
     isOnline = true;
+    wasOffline = false;
     startConnectionTracking();
+    
+    // Reload page when coming back online (if we were offline before)
+    if (wasOfflineBefore && autoReload && isPrimaryTab && siteDomain === "www.fiverr.com") {
+      console.log("Fiverr Assistant: Connection restored, reloading page...");
+      markPrimaryNavigation();
+      // Small delay to ensure connection is stable
+      setTimeout(() => {
+        window.location.reload();
+      }, 500);
+      return;
+    }
+    
     if (autoReload) {
       scheduleNextReload();
     }
     updateStatusDisplay();
   });
+  
   window.addEventListener("offline", () => {
     isOnline = false;
+    wasOffline = true;
     stopConnectionTracking();
     clearScheduledReload();
     updateStatusDisplay();
   });
+  
+  // Periodically check for offline error pages (every 10 seconds)
+  const startOfflineErrorChecking = () => {
+    if (offlineCheckIntervalId) {
+      return;
+    }
+    
+    // Don't check immediately - let the page load first
+    // The page load event handler will check after the page is fully loaded
+    
+    offlineCheckIntervalId = setInterval(() => {
+      if (isOnline && autoReload && isPrimaryTab) {
+        // Only check if enough time has passed since last check
+        const timeSinceLastCheck = Date.now() - lastReloadCheckTime;
+        if (timeSinceLastCheck >= RELOAD_CHECK_DELAY) {
+          checkAndReloadIfOffline();
+        }
+      }
+    }, 15000); // Check every 15 seconds (increased from 10 to be less aggressive)
+  };
+  
+  const stopOfflineErrorChecking = () => {
+    if (offlineCheckIntervalId) {
+      clearInterval(offlineCheckIntervalId);
+      offlineCheckIntervalId = null;
+    }
+  };
 
   const PRIMARY_TAB_KEY = "farPrimaryTab";
   const PRIMARY_TAB_HEARTBEAT_INTERVAL = 5000;
@@ -541,11 +735,120 @@
   };
   const MESSAGE_CHECK_INTERVAL_MS = 5000;
   let messageCheckIntervalId = null;
+  let messageObserver = null;
+  let processedNewClientMessages = new Set(); // Track processed new client messages
+  
+  // DOM query caching for performance
+  let cachedUnreadIcon = null;
+  let cachedNewClientFlag = null;
+  let cachedUnreadIconSelector = null;
+  let cachedNewClientFlagSelector = null;
+  let cacheTimestamp = 0;
+  const DOM_CACHE_TTL = 500; // Cache DOM queries for 500ms
 
   const clearMessageCheckInterval = () => {
     if (messageCheckIntervalId) {
       clearInterval(messageCheckIntervalId);
       messageCheckIntervalId = null;
+    }
+  };
+
+  const stopMessageObserver = () => {
+    if (messageObserver) {
+      try {
+        if (messageObserver.debounceTimer) {
+          clearTimeout(messageObserver.debounceTimer);
+          messageObserver.debounceTimer = null;
+        }
+        messageObserver.disconnect();
+      } catch (error) {
+        console.warn("Fiverr Assistant: Error disconnecting message observer", error);
+      }
+      messageObserver = null;
+    }
+    processedNewClientMessages.clear();
+    // Clear DOM cache when stopping observer
+    cachedUnreadIcon = null;
+    cachedNewClientFlag = null;
+    cacheTimestamp = 0;
+  };
+
+  // Function to activate the Fiverr tab
+  const activateFiverrTab = async () => {
+    if (!runtime) {
+      return;
+    }
+    try {
+      await sendMessageToRuntime({ type: "activateTab" });
+    } catch (error) {
+      console.warn("Fiverr Assistant: Failed to activate tab", error);
+    }
+  };
+
+  // Function to check and handle new client message instantly
+  const checkNewClientMessageInstantly = () => {
+    if (siteDomain !== "www.fiverr.com") {
+      return;
+    }
+
+    const unreadIconSelector = settings.selectorUnreadIcon || defaultSettings.selectorUnreadIcon;
+    const newClientFlagSelector = settings.selectorNewClientFlag || defaultSettings.selectorNewClientFlag;
+    
+    // Use cached DOM queries if available and fresh
+    const now = Date.now();
+    let hasMessage;
+    let newClientFlag;
+    
+    if (now - cacheTimestamp < DOM_CACHE_TTL && 
+        cachedUnreadIconSelector === unreadIconSelector && 
+        cachedNewClientFlagSelector === newClientFlagSelector &&
+        cachedUnreadIcon && document.body.contains(cachedUnreadIcon)) {
+      // Use cached results
+      hasMessage = cachedUnreadIcon;
+      newClientFlag = cachedNewClientFlag && document.body.contains(cachedNewClientFlag) ? cachedNewClientFlag : null;
+    } else {
+      // Refresh cache
+      hasMessage = document.querySelector(unreadIconSelector);
+      newClientFlag = hasMessage ? document.querySelector(newClientFlagSelector) : null;
+      
+      // Update cache
+      cachedUnreadIcon = hasMessage;
+      cachedNewClientFlag = newClientFlag;
+      cachedUnreadIconSelector = unreadIconSelector;
+      cachedNewClientFlagSelector = newClientFlagSelector;
+      cacheTimestamp = now;
+    }
+
+    if (hasMessage) {
+      if (newClientFlag) {
+        // Create a unique identifier for this new client message
+        // Use the flag element's position or parent structure as identifier
+        const messageId = newClientFlag.textContent || newClientFlag.getAttribute('data-id') || 
+                         (newClientFlag.parentElement ? newClientFlag.parentElement.textContent.substring(0, 50) : '') ||
+                         Date.now().toString();
+        
+        // Only process if we haven't seen this message before
+        if (!processedNewClientMessages.has(messageId)) {
+          processedNewClientMessages.add(messageId);
+          
+          // Play sound instantly
+          playAudio("new");
+          sendNotification("New client Message");
+          pauseAutoReload();
+          activateFiverrTab();
+          
+          console.log("Fiverr Assistant: New client message detected instantly, sound played");
+          
+          // Clean up old processed messages (keep only last 10)
+          if (processedNewClientMessages.size > 10) {
+            const firstItem = processedNewClientMessages.values().next().value;
+            processedNewClientMessages.delete(firstItem);
+          }
+          
+          // Invalidate cache after detecting new message
+          cacheTimestamp = 0;
+        }
+      }
     }
   };
 
@@ -555,7 +858,40 @@
     }
 
     const unreadIconSelector = settings.selectorUnreadIcon || defaultSettings.selectorUnreadIcon;
-    const hasMessage = document.querySelector(unreadIconSelector);
+    const newClientFlagSelector = settings.selectorNewClientFlag || defaultSettings.selectorNewClientFlag;
+    
+    // Use cached DOM queries if available and fresh
+    const now = Date.now();
+    let hasMessage;
+    let newClientFlag;
+    
+    if (now - cacheTimestamp < DOM_CACHE_TTL && 
+        cachedUnreadIconSelector === unreadIconSelector && 
+        cachedNewClientFlagSelector === newClientFlagSelector &&
+        cachedUnreadIcon && document.body.contains(cachedUnreadIcon)) {
+      // Use cached results
+      hasMessage = cachedUnreadIcon;
+      newClientFlag = cachedNewClientFlag && document.body.contains(cachedNewClientFlag) ? cachedNewClientFlag : null;
+    } else {
+      // Refresh cache
+      hasMessage = document.querySelector(unreadIconSelector);
+      newClientFlag = hasMessage ? document.querySelector(newClientFlagSelector) : null;
+      
+      // Update cache
+      cachedUnreadIcon = hasMessage;
+      cachedNewClientFlag = newClientFlag;
+      cachedUnreadIconSelector = unreadIconSelector;
+      cachedNewClientFlagSelector = newClientFlagSelector;
+      cacheTimestamp = now;
+    }
+
+    // Check if it's a new client message
+    if (hasMessage) {
+      if (newClientFlag) {
+        // New client message detected - activate the tab
+        activateFiverrTab();
+      }
+    }
 
     // Respect recent user interaction: do NOT auto-redirect to inbox
     // if the last click/keypress was within the last MIN_SECONDS_BETWEEN_ACTION_AND_RELOAD seconds.
@@ -572,6 +908,104 @@
     }
   };
 
+  const startMessageObserver = () => {
+    stopMessageObserver();
+
+    if (siteDomain !== "www.fiverr.com") {
+      return;
+    }
+
+    // Check immediately
+    checkNewClientMessageInstantly();
+
+    // Set up MutationObserver to watch for new client messages
+    try {
+      messageObserver = new MutationObserver((mutations) => {
+        // Filter mutations to only process relevant changes
+        // Skip if no mutations or if mutations don't affect message-related areas
+        if (!mutations || mutations.length === 0) {
+          return;
+        }
+        
+        // Check if any mutation affects message-related elements
+        const hasRelevantChanges = mutations.some(mutation => {
+          const target = mutation.target;
+          if (!target || !target.nodeType) return false;
+          
+          // Check if mutation is in message-related containers
+          const isInMessageArea = target.closest && (
+            target.closest('.messages-wrapper') ||
+            target.closest('.inbox-container') ||
+            target.closest('nav') ||
+            target.closest('header') ||
+            target.closest('[class*="message"]') ||
+            target.closest('[class*="inbox"]')
+          );
+          
+          // Also check if the target itself is a message-related element
+          const isMessageElement = target.classList && (
+            target.classList.contains('unread-icon') ||
+            target.classList.contains('messages-wrapper') ||
+            target.classList.contains('inbox-container') ||
+            target.matches && target.matches('[class*="message"]')
+          );
+          
+          return isInMessageArea || isMessageElement || mutation.type === 'childList';
+        });
+        
+        // Only process if there are relevant changes
+        if (!hasRelevantChanges) {
+          return;
+        }
+        
+        // Use increased debounce to reduce CPU usage
+        if (messageObserver.debounceTimer) {
+          clearTimeout(messageObserver.debounceTimer);
+        }
+        messageObserver.debounceTimer = setTimeout(() => {
+          // Invalidate cache before checking to ensure fresh results
+          cacheTimestamp = 0;
+          checkNewClientMessageInstantly();
+        }, 300); // Increased from 100ms to 300ms for better performance
+      });
+
+      // Try to find a more specific container for messages, otherwise observe body
+      const unreadIconSelector = settings.selectorUnreadIcon || defaultSettings.selectorUnreadIcon;
+      const unreadIcon = document.querySelector(unreadIconSelector);
+      let targetElement = null;
+      
+      // Try to narrow the observation scope
+      if (unreadIcon) {
+        // Try to find the closest message container
+        targetElement = unreadIcon.closest('.messages-wrapper') ||
+                       unreadIcon.closest('.inbox-container') ||
+                       unreadIcon.closest('nav') ||
+                       unreadIcon.closest('header');
+      }
+      
+      // Fallback to body if no specific container found
+      targetElement = targetElement || document.body;
+      
+      // Observe the target element for changes
+      // Use subtree: false when possible to reduce observation scope
+      const useSubtree = targetElement === document.body; // Only use subtree for body
+      
+      messageObserver.observe(targetElement || document.body || document.documentElement, {
+        childList: true,
+        subtree: useSubtree, // Narrow scope when possible
+        attributes: true,
+        attributeFilter: ['class', 'style', 'data-testid'] // Watch for class/style/data changes
+      });
+
+      console.log("Fiverr Assistant: Message observer started for instant new client detection", {
+        targetElement: targetElement ? targetElement.tagName : 'body',
+        useSubtree: useSubtree
+      });
+    } catch (error) {
+      console.warn("Fiverr Assistant: Failed to start message observer", error);
+    }
+  };
+
   const ensureMessageCheckInterval = () => {
     clearMessageCheckInterval();
 
@@ -581,6 +1015,9 @@
 
     runMessageCheck();
     messageCheckIntervalId = setInterval(runMessageCheck, MESSAGE_CHECK_INTERVAL_MS);
+    
+    // Start the observer for instant detection
+    startMessageObserver();
   };
   let isPrimaryTab = false;
   let primaryTabHeartbeatTimer = null;
@@ -1008,6 +1445,12 @@
     if (AUDIO_SETTING_KEYS.includes(key)) {
       ensureAudioBlob(key, value);
     }
+    // Invalidate DOM cache if selector settings changed
+    if (key === "selectorUnreadIcon" || key === "selectorNewClientFlag") {
+      cachedUnreadIcon = null;
+      cachedNewClientFlag = null;
+      cacheTimestamp = 0;
+    }
   };
 
   const hydrateSettings = async () => {
@@ -1146,11 +1589,34 @@
     return localStorage.getItem(id) || null;
   };
 
+  // Declare playAudio and sendNotification outside initialize so they're accessible to message observer
+  let playAudio = async () => {};
+  let sendNotification = () => {};
+  
+  // Track currently playing audio elements so we can stop them on user interaction
+  const playingAudioElements = new Set();
+  
+  // Function to stop all currently playing notification sounds
+  const stopAllNotificationSounds = () => {
+    playingAudioElements.forEach((audio) => {
+      try {
+        if (audio && !audio.paused) {
+          audio.pause();
+          audio.currentTime = 0;
+        }
+      } catch (error) {
+        console.warn("Fiverr Assistant: Error stopping audio", error);
+      }
+    });
+    playingAudioElements.clear();
+  };
+
   const deactivatePrimaryTabFeatures = () => {
     pauseAutoReload();
     stopMonitoringTracking();
     clearScheduledReload({ updateDisplay: false });
     removeStatusDisplay();
+    stopOfflineErrorChecking();
     releasePrimaryTab();
     if (primaryTabMonitorTimer) {
       clearInterval(primaryTabMonitorTimer);
@@ -1344,7 +1810,10 @@
 
         if (!statusUpdateIntervalId) {
           statusUpdateIntervalId = setInterval(() => {
-            updateStatusDisplay();
+            // Only update if page is visible to save CPU when tab is in background
+            if (!document.hidden) {
+              updateStatusDisplay();
+            }
           }, 1000);
         }
 
@@ -1434,7 +1903,9 @@
         stopMonitoringTracking();
         clearScheduledReload();
         clearMessageCheckInterval();
+        stopMessageObserver();
         removeStatusDisplay();
+        stopOfflineErrorChecking();
       };
 
       enableAutoReload = () => {
@@ -1444,6 +1915,7 @@
         ensureMessageCheckInterval();
         scheduleNextReload();
         updateStatusDisplay();
+        startOfflineErrorChecking();
       };
 
       scheduleNextReload = () => {
@@ -1531,7 +2003,7 @@
       updateStatusDisplay();
 
 
-      const playAudio = async (type) => {
+      playAudio = async (type) => {
         const settingKey = SOUND_TYPE_TO_SETTING_KEY[type] || SOUND_TYPE_TO_SETTING_KEY.default;
         const configuredUrl = getVal(settingKey) || settings[settingKey] || defaultSettings[settingKey] || "";
         const normalizedUrl = normalizeUrl(configuredUrl);
@@ -1581,6 +2053,8 @@
             return;
           }
           cleanedUp = true;
+          // Remove from tracking set
+          playingAudioElements.delete(audio);
           if (objectUrl) {
             URL.revokeObjectURL(objectUrl);
           }
@@ -1589,22 +2063,31 @@
           audio.removeEventListener("pause", cleanup);
         };
 
-        if (objectUrl) {
-          audio.addEventListener("ended", cleanup);
-          audio.addEventListener("error", cleanup);
-          audio.addEventListener("pause", cleanup);
-        }
+        // Add event listeners for cleanup
+        audio.addEventListener("ended", cleanup);
+        audio.addEventListener("error", cleanup);
+        audio.addEventListener("pause", () => {
+          // Remove from tracking set when paused (but don't cleanup objectUrl yet in case it resumes)
+          playingAudioElements.delete(audio);
+        });
 
         try {
           const playPromise = audio.play();
-          if (playPromise && typeof playPromise.catch === "function") {
-            playPromise.catch((error) => {
+          if (playPromise && typeof playPromise.then === "function") {
+            // Modern browsers - play() returns a promise
+            playPromise.then(() => {
+              // Audio started playing successfully, add to tracking set
+              playingAudioElements.add(audio);
+            }).catch((error) => {
               cleanup();
               console.warn("Audio playback blocked:", error, {
                 settingKey,
                 sourceUrl: normalizedUrl || configuredUrl,
               });
             });
+          } else {
+            // Older browsers or immediate play - add to tracking set
+            playingAudioElements.add(audio);
           }
           if (!objectUrl) {
             console.info("Fiverr Auto Reloader: playing audio directly from URL", {
@@ -1625,6 +2108,8 @@
 
       document.body.addEventListener("click", () => {
         lastAction = Date.now();
+        // Stop any playing notification sounds when user clicks
+        stopAllNotificationSounds();
         if (autoReload) {
           scheduleNextReload();
         } else {
@@ -1634,6 +2119,8 @@
 
       window.addEventListener("keydown", (event) => {
         lastAction = Date.now();
+        // Stop any playing notification sounds when user presses any key
+        stopAllNotificationSounds();
 
         if (event.code === "F8") {
           pauseAutoReload();
@@ -1694,7 +2181,7 @@
         }
       });
 
-      const sendNotification = (message) => {
+      sendNotification = (message) => {
         if ("Notification" in window) {
           Notification.requestPermission().then(function (permission) {
             if (permission === "granted") {
@@ -1722,6 +2209,8 @@
             playAudio("new");
             sendNotification("New client Message");
             pauseAutoReload();
+            // Activate the tab when new client message is detected
+            activateFiverrTab();
           } else {
             let targetClients = targetedClients.split(",");
             let isTargeted = targetClients.some((client) => client.trim() === "programerikram");
@@ -1749,6 +2238,9 @@
       }
       featuresInitialized = true;
       initializeTimeTracking();
+      if (autoReload && isPrimaryTab) {
+        startOfflineErrorChecking();
+      }
     } catch (error) {
       console.log(error);
       setTimeout(() => {
@@ -1771,6 +2263,31 @@
   // Initialize connection tracking on load
   if (isOnline) {
     startConnectionTracking();
+  }
+  
+  // Check page load status only once when page fully loads
+  // Use a single listener to avoid multiple checks
+  const handlePageLoad = () => {
+    if (pageLoadCheckDone) {
+      return; // Already checked this page load
+    }
+    
+    lastReloadCheckTime = Date.now();
+    if (siteDomain === "www.fiverr.com" && autoReload && isPrimaryTab) {
+      // Wait for page to fully load before checking
+      setTimeout(() => {
+        checkPageLoadStatus();
+      }, RELOAD_CHECK_DELAY);
+    }
+  };
+  
+  // Only check once when page is fully loaded
+  if (document.readyState === "complete") {
+    // Page already loaded
+    handlePageLoad();
+  } else {
+    // Wait for page to fully load
+    window.addEventListener("load", handlePageLoad, { once: true });
   }
   
   initialize();

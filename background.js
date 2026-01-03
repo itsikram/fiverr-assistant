@@ -120,6 +120,11 @@
 
     if (!autoReloadEnabled) {
       cancelEnsureFiverrTab();
+      stopErrorPageChecking();
+      stopPeriodicReload();
+    } else {
+      startErrorPageChecking();
+      startPeriodicReload();
     }
   };
 
@@ -332,6 +337,11 @@
   const FIVERR_HOME_URL = "https://www.fiverr.com/";
   let ensureTimeoutId = null;
   const pendingSettingsSends = new Map(); // Track pending settings sends to avoid duplicates
+  const errorPageReloadAttempts = new Map(); // Track reload attempts per tab
+  const MAX_ERROR_RELOAD_ATTEMPTS = 10;
+  let errorPageCheckIntervalId = null;
+  let periodicReloadIntervalId = null;
+  const PERIODIC_RELOAD_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes in milliseconds
 
   const cancelEnsureFiverrTab = () => {
     if (ensureTimeoutId) {
@@ -571,8 +581,12 @@
     autoReloadEnabled = coerceBoolean(nextValue, true);
     if (!autoReloadEnabled) {
       cancelEnsureFiverrTab();
+      stopErrorPageChecking();
+      stopPeriodicReload();
     } else {
       scheduleEnsureFiverrTab(500);
+      startErrorPageChecking();
+      startPeriodicReload();
     }
   };
 
@@ -760,6 +774,306 @@
     scheduleEnsureFiverrTab(200);
   });
 
+  // Check if a tab is showing an error page
+  const isErrorPage = (url) => {
+    if (!url || typeof url !== "string") {
+      return false;
+    }
+    // Firefox error pages
+    if (url.startsWith("about:neterror") || url.startsWith("about:certerror") || url.startsWith("about:blocked")) {
+      return true;
+    }
+    // Chrome error pages
+    if (url.startsWith("chrome-error://") || url.startsWith("chrome://error")) {
+      return true;
+    }
+    return false;
+  };
+
+  // Check if a tab is showing an error page by injecting a script
+  const checkTabForErrorPage = async (tabId) => {
+    if (!autoReloadEnabled) {
+      return false;
+    }
+    
+    try {
+      const tab = await new Promise((resolve, reject) => {
+        api.tabs.get(tabId, (tab) => {
+          if (api.runtime.lastError) {
+            reject(new Error(api.runtime.lastError.message));
+            return;
+          }
+          resolve(tab);
+        });
+      });
+
+      if (!tab || !tab.url) {
+        return false;
+      }
+
+      // Check if URL is an error page
+      if (isErrorPage(tab.url)) {
+        return true;
+      }
+
+      // If it's a Fiverr URL, try to inject script to check for error content
+      const isFiverrUrl = tab.url.startsWith("https://www.fiverr.com/") || tab.url.startsWith("https://fiverr.com/");
+      if (!isFiverrUrl) {
+        return false;
+      }
+
+      // Check if content script can access the page (if not, might be error page)
+      // Try to execute a simple script to check for error indicators
+      try {
+        const results = await new Promise((resolve, reject) => {
+          if (hasBrowserAPI && typeof api.tabs.executeScript === "function") {
+            try {
+              const result = api.tabs.executeScript(tabId, {
+                code: `
+                  (function() {
+                    const title = document.title.toLowerCase();
+                    const bodyText = document.body ? document.body.textContent.toLowerCase() : "";
+                    const errorIndicators = [
+                      "the connection has timed out",
+                      "connection has timed out",
+                      "taking too long to respond",
+                      "unable to connect",
+                      "no internet",
+                      "offline",
+                      "try again"
+                    ];
+                    return errorIndicators.some(indicator => 
+                      title.includes(indicator) || bodyText.includes(indicator)
+                    ) && (!document.querySelector('header, nav, [class*="header"], [class*="nav"]') || document.body.textContent.trim().length < 200);
+                  })();
+                `
+              });
+              if (result && typeof result.then === "function") {
+                result.then(resolve).catch(reject);
+              } else {
+                resolve(result);
+              }
+            } catch (e) {
+              reject(e);
+            }
+          } else {
+            api.tabs.executeScript(tabId, {
+              code: `
+                (function() {
+                  const title = document.title.toLowerCase();
+                  const bodyText = document.body ? document.body.textContent.toLowerCase() : "";
+                  const errorIndicators = [
+                    "the connection has timed out",
+                    "connection has timed out",
+                    "taking too long to respond",
+                    "unable to connect",
+                    "no internet",
+                    "offline",
+                    "try again"
+                  ];
+                  return errorIndicators.some(indicator => 
+                    title.includes(indicator) || bodyText.includes(indicator)
+                  ) && (!document.querySelector('header, nav, [class*="header"], [class*="nav"]') || document.body.textContent.trim().length < 200);
+                })();
+              `
+            }, (results) => {
+              if (api.runtime.lastError) {
+                // If we can't execute script, might be error page
+                reject(new Error(api.runtime.lastError.message));
+                return;
+              }
+              resolve(results && results[0]);
+            });
+          }
+        });
+
+        return results === true;
+      } catch (error) {
+        // If we can't execute script on the page, it might be an error page
+        // But also might be a permission issue, so check URL first
+        if (isErrorPage(tab.url)) {
+          return true;
+        }
+        // If it's a Fiverr URL but we can't execute script, might be error page
+        // Wait a bit and check URL again
+        return false;
+      }
+    } catch (error) {
+      console.warn("Fiverr Assistant: Error checking tab for error page", tabId, error);
+      return false;
+    }
+  };
+
+  // Reload a tab if it's showing an error page
+  const reloadErrorPage = async (tabId) => {
+    if (!autoReloadEnabled) {
+      return;
+    }
+
+    try {
+      const attempts = errorPageReloadAttempts.get(tabId) || 0;
+      if (attempts >= MAX_ERROR_RELOAD_ATTEMPTS) {
+        console.warn(`Fiverr Assistant: Max error page reload attempts (${MAX_ERROR_RELOAD_ATTEMPTS}) reached for tab ${tabId}`);
+        errorPageReloadAttempts.delete(tabId);
+        return;
+      }
+
+      console.log(`Fiverr Assistant: Reloading error page for tab ${tabId} (attempt ${attempts + 1}/${MAX_ERROR_RELOAD_ATTEMPTS})`);
+      errorPageReloadAttempts.set(tabId, attempts + 1);
+
+      api.tabs.reload(tabId, { bypassCache: false }, () => {
+        if (api.runtime.lastError) {
+          console.warn("Fiverr Assistant: Error reloading tab", api.runtime.lastError);
+          errorPageReloadAttempts.delete(tabId);
+        }
+      });
+    } catch (error) {
+      console.warn("Fiverr Assistant: Error in reloadErrorPage", error);
+      errorPageReloadAttempts.delete(tabId);
+    }
+  };
+
+  // Start periodic checking for error pages
+  const startErrorPageChecking = () => {
+    if (errorPageCheckIntervalId || !autoReloadEnabled) {
+      return;
+    }
+
+    errorPageCheckIntervalId = setInterval(async () => {
+      if (!autoReloadEnabled) {
+        stopErrorPageChecking();
+        return;
+      }
+
+      try {
+        // Get primary tab ID first
+        const primaryTabResult = await storageGet([PRIMARY_TAB_ID_STORAGE_KEY]);
+        const primaryTabId = primaryTabResult && primaryTabResult[PRIMARY_TAB_ID_STORAGE_KEY];
+        
+        if (!primaryTabId) {
+          return; // No primary tab set
+        }
+
+        // Check primary tab directly
+        try {
+          const primaryTab = await new Promise((resolve, reject) => {
+            api.tabs.get(primaryTabId, (tab) => {
+              if (api.runtime.lastError) {
+                reject(new Error(api.runtime.lastError.message));
+                return;
+              }
+              resolve(tab);
+            });
+          });
+
+          if (primaryTab) {
+            // Check if URL is an error page first (fastest check)
+            if (isErrorPage(primaryTab.url)) {
+              console.log(`Fiverr Assistant: Primary tab ${primaryTabId} has error page URL: ${primaryTab.url}`);
+              await reloadErrorPage(primaryTabId);
+              return;
+            }
+
+            // If it's a Fiverr URL or error page, check for error content
+            const isFiverrUrl = primaryTab.url && (primaryTab.url.includes("fiverr.com") || isErrorPage(primaryTab.url));
+            if (isFiverrUrl) {
+              const isError = await checkTabForErrorPage(primaryTabId);
+              if (isError) {
+                await reloadErrorPage(primaryTabId);
+              } else {
+                // Page loaded successfully, reset counter
+                errorPageReloadAttempts.delete(primaryTabId);
+              }
+            }
+          }
+        } catch (error) {
+          // Tab might not exist anymore
+          console.warn("Fiverr Assistant: Error checking primary tab for error page", error);
+        }
+      } catch (error) {
+        console.warn("Fiverr Assistant: Error in error page checking", error);
+      }
+    }, 10000); // Check every 10 seconds
+  };
+
+  // Stop periodic checking for error pages
+  const stopErrorPageChecking = () => {
+    if (errorPageCheckIntervalId) {
+      clearInterval(errorPageCheckIntervalId);
+      errorPageCheckIntervalId = null;
+    }
+    errorPageReloadAttempts.clear();
+  };
+
+  // Start periodic reload of primary tab every 5 minutes
+  const startPeriodicReload = () => {
+    if (periodicReloadIntervalId || !autoReloadEnabled) {
+      return;
+    }
+
+    console.log("Fiverr Assistant: Starting periodic reload (every 5 minutes)");
+    periodicReloadIntervalId = setInterval(async () => {
+      if (!autoReloadEnabled) {
+        stopPeriodicReload();
+        return;
+      }
+
+      try {
+        const primaryTabResult = await storageGet([PRIMARY_TAB_ID_STORAGE_KEY]);
+        const primaryTabId = primaryTabResult && primaryTabResult[PRIMARY_TAB_ID_STORAGE_KEY];
+        
+        if (!primaryTabId) {
+          console.log("Fiverr Assistant: No primary tab set for periodic reload");
+          return;
+        }
+
+        // Check if tab still exists and is a Fiverr tab
+        try {
+          const primaryTab = await new Promise((resolve, reject) => {
+            api.tabs.get(primaryTabId, (tab) => {
+              if (api.runtime.lastError) {
+                reject(new Error(api.runtime.lastError.message));
+                return;
+              }
+              resolve(tab);
+            });
+          });
+
+          if (primaryTab && primaryTab.url) {
+            const isFiverrUrl = primaryTab.url.includes("fiverr.com");
+            if (isFiverrUrl) {
+              console.log(`Fiverr Assistant: Periodic reload triggered for primary tab ${primaryTabId}`);
+              api.tabs.reload(primaryTabId, { bypassCache: false }, () => {
+                if (api.runtime.lastError) {
+                  console.warn("Fiverr Assistant: Error in periodic reload", api.runtime.lastError);
+                } else {
+                  console.log(`Fiverr Assistant: Successfully reloaded primary tab ${primaryTabId}`);
+                }
+              });
+            } else {
+              console.log(`Fiverr Assistant: Primary tab ${primaryTabId} is not a Fiverr URL, skipping periodic reload`);
+            }
+          }
+        } catch (error) {
+          console.warn("Fiverr Assistant: Primary tab not found for periodic reload", error);
+          // Tab might have been closed, stop periodic reload
+          stopPeriodicReload();
+        }
+      } catch (error) {
+        console.warn("Fiverr Assistant: Error in periodic reload", error);
+      }
+    }, PERIODIC_RELOAD_INTERVAL_MS);
+  };
+
+  // Stop periodic reload
+  const stopPeriodicReload = () => {
+    if (periodicReloadIntervalId) {
+      clearInterval(periodicReloadIntervalId);
+      periodicReloadIntervalId = null;
+      console.log("Fiverr Assistant: Stopped periodic reload");
+    }
+  };
+
   api.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     if (!changeInfo) {
       return;
@@ -771,6 +1085,20 @@
       const isFiverrUrl =
         typeof url === "string" &&
         (url.startsWith("https://www.fiverr.com/") || url.startsWith("https://fiverr.com/"));
+      
+      // Check if this is an error page
+      if (isErrorPage(url) && autoReloadEnabled) {
+        // Reset counter on URL change (new page load)
+        errorPageReloadAttempts.delete(tabId);
+        // Wait a bit then check and reload if still error
+        setTimeout(async () => {
+          const isError = await checkTabForErrorPage(tabId);
+          if (isError) {
+            await reloadErrorPage(tabId);
+          }
+        }, 2000);
+        return;
+      }
       
       if (isFiverrUrl && autoReloadEnabled) {
         // Send all settings to content script to activate reloader
@@ -798,7 +1126,19 @@
     const isFiverrUrl =
       typeof url === "string" &&
       (url.startsWith("https://www.fiverr.com/") || url.startsWith("https://fiverr.com/"));
-    if (!isFiverrUrl) {
+    
+    // Check if URL changed to an error page
+    if (isErrorPage(url) && autoReloadEnabled) {
+      errorPageReloadAttempts.delete(tabId);
+      setTimeout(async () => {
+        const isError = await checkTabForErrorPage(tabId);
+        if (isError) {
+          await reloadErrorPage(tabId);
+        }
+      }, 2000);
+    }
+    
+    if (!isFiverrUrl && !isErrorPage(url)) {
       scheduleEnsureFiverrTab(200);
       }
     }
@@ -845,6 +1185,44 @@
       const tabId =
         sender && sender.tab && typeof sender.tab.id === "number" ? sender.tab.id : null;
       sendResponse({ ok: typeof tabId === "number", tabId });
+      return false;
+    }
+
+    if (message.type === "activateTab") {
+      // Activate the primary Fiverr tab when new client message is detected
+      storageGet([PRIMARY_TAB_ID_STORAGE_KEY]).then((result) => {
+        const primaryTabId = result && result[PRIMARY_TAB_ID_STORAGE_KEY];
+        if (primaryTabId && typeof primaryTabId === "number") {
+          // Activate and focus the primary tab
+          api.tabs.update(primaryTabId, { active: true }, () => {
+            if (api.runtime.lastError) {
+              console.warn("Fiverr Assistant: Error activating tab", api.runtime.lastError);
+            } else {
+              console.log(`Fiverr Assistant: Activated primary tab ${primaryTabId} for new client message`);
+            }
+          });
+        } else {
+          // No primary tab set, try to find any Fiverr tab
+          api.tabs.query({ url: FIVERR_URL_PATTERNS }, (tabs) => {
+            if (api.runtime.lastError) {
+              console.warn("Fiverr Assistant: Error querying tabs", api.runtime.lastError);
+              return;
+            }
+            if (Array.isArray(tabs) && tabs.length > 0 && typeof tabs[0].id === "number") {
+              api.tabs.update(tabs[0].id, { active: true }, () => {
+                if (api.runtime.lastError) {
+                  console.warn("Fiverr Assistant: Error activating Fiverr tab", api.runtime.lastError);
+                } else {
+                  console.log(`Fiverr Assistant: Activated Fiverr tab ${tabs[0].id} for new client message`);
+                }
+              });
+            }
+          });
+        }
+      }).catch((error) => {
+        console.warn("Fiverr Assistant: Error getting primary tab ID for activation", error);
+      });
+      sendResponse({ ok: true });
       return false;
     }
 

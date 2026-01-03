@@ -11,6 +11,7 @@
     relStart: "30",
     relEnd: "180",
     autoReloadEnabled: true,
+    statsUpdateInterval: "1",
     selectorUnreadIcon: ".messages-wrapper .unread-icon",
     selectorNewClientFlag: ".first > div:nth-child(2) > div:nth-child(1) > span:nth-child(2)",
     selectorMessageContent: ".message-flow .content",
@@ -20,6 +21,7 @@
   const MONITORING_TIME_KEY = "farMonitoringTime";
   const CONNECTION_DATE_KEY = "farConnectionDate";
   const MONITORING_DATE_KEY = "farMonitoringDate";
+  const DAILY_STATS_PREFIX = "farDailyStats_";
   
   const getTodayDateString = () => {
     const now = new Date();
@@ -418,6 +420,11 @@
         const targetContent = document.getElementById(`tab-${targetTab}`);
         if (targetContent) {
           targetContent.classList.add("active");
+          
+          // If statistics tab is shown, update charts
+          if (targetTab === "statistics") {
+            setTimeout(updateCharts, 200);
+          }
         }
       });
     });
@@ -443,12 +450,35 @@
     return parts.join(" ");
   };
 
+  const saveDailyStats = async (date, connectionTime, monitoringTime, offlineTime) => {
+    try {
+      const statsKey = `${DAILY_STATS_PREFIX}${date}`;
+      const stats = {
+        date,
+        connectionTime: Math.round(connectionTime), // Ensure integer values
+        monitoringTime: Math.round(monitoringTime), // Ensure integer values
+        offlineTime: Math.round(offlineTime || 0), // Ensure integer values
+      };
+      await storage.set({ [statsKey]: stats });
+      console.log(`Saved daily stats for ${date}:`, stats);
+    } catch (error) {
+      console.error("Failed to save daily stats:", error);
+    }
+  };
+
+  const getAllDailyStatsKeys = async () => {
+    try {
+      const allData = await storage.get(null);
+      return Object.keys(allData).filter(key => key.startsWith(DAILY_STATS_PREFIX));
+    } catch (error) {
+      console.error("Failed to get daily stats keys:", error);
+      return [];
+    }
+  };
+
   const updateStatistics = async () => {
-    const connectionTimeEl = document.getElementById("connectionTime");
-    const monitoringTimeEl = document.getElementById("monitoringTime");
-    
-    if (!connectionTimeEl || !monitoringTimeEl) return;
-    
+    // Statistics are now only in the Statistics tab, not Settings tab
+    // This function updates statistics data and charts
     try {
       const today = getTodayDateString();
       const stored = await storage.get({
@@ -463,75 +493,72 @@
       let monitoringTime = 0;
       
       try {
-        // Only use stored time if it's from today
-        const connectionDate = localStorage.getItem(CONNECTION_DATE_KEY) || stored[CONNECTION_DATE_KEY] || "";
-        const monitoringDate = localStorage.getItem(MONITORING_DATE_KEY) || stored[MONITORING_DATE_KEY] || "";
+        // Get dates from storage (content.js saves to browser.storage.local)
+        const connectionDate = stored[CONNECTION_DATE_KEY] || "";
+        const monitoringDate = stored[MONITORING_DATE_KEY] || "";
         
+        console.log("Statistics debug:", {
+          today,
+          connectionDate,
+          monitoringDate,
+          storedConnectionTime: stored[CONNECTION_TIME_KEY],
+          storedMonitoringTime: stored[MONITORING_TIME_KEY]
+        });
+        
+        // Only use stored time if it's from today
         if (connectionDate === today) {
-          const localConnectionTime = localStorage.getItem(CONNECTION_TIME_KEY);
-          const storedConnectionTime = stored[CONNECTION_TIME_KEY] || 0;
-          if (localConnectionTime) {
-            const parsed = parseInt(localConnectionTime, 10);
-            if (!Number.isNaN(parsed)) {
-              connectionTime = Math.max(parsed, storedConnectionTime);
-            } else {
-              connectionTime = storedConnectionTime;
-            }
-          } else {
-            connectionTime = storedConnectionTime;
+          connectionTime = parseInt(stored[CONNECTION_TIME_KEY] || 0, 10);
+          if (Number.isNaN(connectionTime)) {
+            connectionTime = 0;
           }
         }
         
         if (monitoringDate === today) {
-          const localMonitoringTime = localStorage.getItem(MONITORING_TIME_KEY);
-          const storedMonitoringTime = stored[MONITORING_TIME_KEY] || 0;
-          if (localMonitoringTime) {
-            const parsed = parseInt(localMonitoringTime, 10);
-            if (!Number.isNaN(parsed)) {
-              monitoringTime = Math.max(parsed, storedMonitoringTime);
-            } else {
-              monitoringTime = storedMonitoringTime;
-            }
-          } else {
-            monitoringTime = storedMonitoringTime;
+          monitoringTime = parseInt(stored[MONITORING_TIME_KEY] || 0, 10);
+          if (Number.isNaN(monitoringTime)) {
+            monitoringTime = 0;
           }
         }
         
-        // Add current session time if tracking is active and from today
-        const connectionStart = localStorage.getItem("farConnectionStart");
-        if (connectionStart && connectionDate === today) {
-          const startTime = parseInt(connectionStart, 10);
-          if (!Number.isNaN(startTime)) {
-            const elapsed = Date.now() - startTime;
-            connectionTime += elapsed;
-          }
-        }
-        
-        const monitoringStart = localStorage.getItem("farMonitoringStart");
-        if (monitoringStart && monitoringDate === today) {
-          const startTime = parseInt(monitoringStart, 10);
-          if (!Number.isNaN(startTime)) {
-            const elapsed = Date.now() - startTime;
-            monitoringTime += elapsed;
-          }
-        }
-      } catch (_) {}
+        // Note: We can't access content script's localStorage from options page
+        // The current session time is already included in the stored values from content.js
+        // content.js updates the stored time every 30 seconds via updateTimeTracking()
+      } catch (error) {
+        console.error("Error retrieving statistics:", error);
+      }
       
-      connectionTimeEl.textContent = formatTime(connectionTime);
-      monitoringTimeEl.textContent = formatTime(monitoringTime);
+      // Calculate offline time (total elapsed time today - connection time)
+      const now = new Date();
+      const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
+      const totalElapsedToday = Date.now() - startOfDay.getTime();
+      const offlineTime = Math.max(0, totalElapsedToday - connectionTime);
+      
+      // Save daily stats for today
+      await saveDailyStats(today, connectionTime, monitoringTime, offlineTime);
+      
+      // Update charts if statistics tab is active
+      const statisticsTab = document.getElementById("tab-statistics");
+      if (statisticsTab && statisticsTab.classList.contains("active")) {
+        updateCharts();
+      }
     } catch (error) {
-      console.error("Failed to load statistics:", error);
-      connectionTimeEl.textContent = "Error";
-      monitoringTimeEl.textContent = "Error";
+      console.error("Failed to update statistics:", error);
     }
   };
 
   const resetStatistics = async () => {
-    if (!confirm("Are you sure you want to reset today's statistics? This action cannot be undone.")) {
+    if (!confirm("Are you sure you want to reset ALL statistics? This will delete all saved statistics data and cannot be undone.")) {
       return;
     }
     
     try {
+      // Get all daily stats keys and remove them
+      const allKeys = await getAllDailyStatsKeys();
+      if (allKeys.length > 0) {
+        await storage.remove(allKeys);
+      }
+      
+      // Reset current day statistics
       const today = getTodayDateString();
       await storage.set({
         [CONNECTION_TIME_KEY]: 0,
@@ -548,12 +575,344 @@
         localStorage.removeItem("farMonitoringStart");
       } catch (_) {}
       
-      await updateStatistics();
-      showStatus("Today's statistics reset successfully!");
+      // Update charts if statistics tab is active
+      const statisticsTab = document.getElementById("tab-statistics");
+      if (statisticsTab && statisticsTab.classList.contains("active")) {
+        updateCharts();
+      }
+      
+      showStatus("All statistics reset successfully!");
     } catch (error) {
       console.error("Failed to reset statistics:", error);
       showStatus("Error resetting statistics. Check the console for details.", 0);
     }
+  };
+
+  // Chart functionality
+  let currentView = "daily";
+  
+  // Simple Canvas Chart Implementation
+  const SimpleChart = {
+    drawLineChart: function(canvas, data, labels, color, bgColor) {
+      const ctx = canvas.getContext("2d");
+      
+      // Ensure canvas has proper dimensions
+      const containerWidth = canvas.parentElement.offsetWidth || 600;
+      const width = canvas.width = containerWidth;
+      const height = canvas.height = 300;
+      
+      // Clear canvas
+      ctx.clearRect(0, 0, width, height);
+      
+      if (!data || data.length === 0) {
+        ctx.fillStyle = "#64748b";
+        ctx.font = "14px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText("No data available", width / 2, height / 2);
+        return;
+      }
+      
+      const padding = { top: 30, right: 20, bottom: 40, left: 60 };
+      const chartWidth = width - padding.left - padding.right;
+      const chartHeight = height - padding.top - padding.bottom;
+      
+      const maxValue = Math.max(...data, 1);
+      const minValue = Math.min(0, ...data);
+      const valueRange = maxValue - minValue || 1;
+      
+      // Draw background
+      ctx.fillStyle = bgColor;
+      ctx.beginPath();
+      ctx.moveTo(padding.left, padding.top);
+      
+      data.forEach((value, index) => {
+        const x = padding.left + (index / (data.length - 1 || 1)) * chartWidth;
+        const y = padding.top + chartHeight - ((value - minValue) / valueRange) * chartHeight;
+        ctx.lineTo(x, y);
+      });
+      
+      ctx.lineTo(padding.left + chartWidth, padding.top + chartHeight);
+      ctx.lineTo(padding.left, padding.top + chartHeight);
+      ctx.closePath();
+      ctx.fill();
+      
+      // Draw line
+      ctx.strokeStyle = color;
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      
+      data.forEach((value, index) => {
+        const x = padding.left + (index / (data.length - 1 || 1)) * chartWidth;
+        const y = padding.top + chartHeight - ((value - minValue) / valueRange) * chartHeight;
+        if (index === 0) {
+          ctx.moveTo(x, y);
+        } else {
+          ctx.lineTo(x, y);
+        }
+      });
+      ctx.stroke();
+      
+      // Draw points
+      ctx.fillStyle = color;
+      data.forEach((value, index) => {
+        const x = padding.left + (index / (data.length - 1 || 1)) * chartWidth;
+        const y = padding.top + chartHeight - ((value - minValue) / valueRange) * chartHeight;
+        ctx.beginPath();
+        ctx.arc(x, y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      });
+      
+      // Draw Y-axis labels
+      ctx.fillStyle = "#64748b";
+      ctx.font = "11px Arial";
+      ctx.textAlign = "right";
+      const ySteps = 5;
+      for (let i = 0; i <= ySteps; i++) {
+        const value = minValue + (valueRange / ySteps) * i;
+        const y = padding.top + chartHeight - (i / ySteps) * chartHeight;
+        const label = formatTimeLabel(Math.round(value));
+        ctx.fillText(label, padding.left - 10, y + 4);
+      }
+      
+      // Draw X-axis labels
+      ctx.textAlign = "center";
+      ctx.font = "10px Arial";
+      const labelStep = Math.max(1, Math.floor(labels.length / 8));
+      labels.forEach((label, index) => {
+        if (index % labelStep === 0 || index === labels.length - 1) {
+          const x = padding.left + (index / (data.length - 1 || 1)) * chartWidth;
+          ctx.save();
+          ctx.translate(x, padding.top + chartHeight + 20);
+          ctx.rotate(-Math.PI / 4);
+          ctx.fillText(label, 0, 0);
+          ctx.restore();
+        }
+      });
+      
+      // Draw grid lines
+      ctx.strokeStyle = "#e2e8f0";
+      ctx.lineWidth = 1;
+      for (let i = 0; i <= ySteps; i++) {
+        const y = padding.top + (i / ySteps) * chartHeight;
+        ctx.beginPath();
+        ctx.moveTo(padding.left, y);
+        ctx.lineTo(padding.left + chartWidth, y);
+        ctx.stroke();
+      }
+    }
+  };
+
+  const formatTimeForChart = (milliseconds) => {
+    if (!milliseconds || milliseconds < 0) return 0;
+    return Math.round(milliseconds / 1000 / 60); // Convert to minutes
+  };
+
+  const formatTimeLabel = (minutes) => {
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+    return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+  };
+
+  const getDailyData = async (days = 30) => {
+    try {
+      const allKeys = await getAllDailyStatsKeys();
+      if (allKeys.length === 0) {
+        // No data yet, return empty array for requested days
+        const today = new Date();
+        const result = [];
+        for (let i = days - 1; i >= 0; i--) {
+          const date = new Date(today);
+          date.setDate(date.getDate() - i);
+          result.push({
+            date: getDateString(date),
+            connectionTime: 0,
+            monitoringTime: 0,
+            offlineTime: 0,
+          });
+        }
+        return result;
+      }
+
+      // Get all stats in one call
+      const keysObj = {};
+      allKeys.forEach(key => { keysObj[key] = null; });
+      const allData = await storage.get(keysObj);
+      
+      const stats = [];
+      allKeys.forEach(key => {
+        if (allData[key]) {
+          stats.push(allData[key]);
+        }
+      });
+      
+      console.log(`Retrieved ${stats.length} daily stats entries from storage`);
+      
+      // Sort by date
+      stats.sort((a, b) => a.date.localeCompare(b.date));
+      
+      // Fill in missing days with zeros
+      const today = new Date();
+      const result = [];
+      for (let i = days - 1; i >= 0; i--) {
+        const date = new Date(today);
+        date.setDate(date.getDate() - i);
+        const dateStr = getDateString(date);
+        const stat = stats.find(s => s.date === dateStr);
+        result.push({
+          date: dateStr,
+          connectionTime: stat ? (stat.connectionTime || 0) : 0,
+          monitoringTime: stat ? (stat.monitoringTime || 0) : 0,
+          offlineTime: stat ? (stat.offlineTime || 0) : 0,
+        });
+      }
+      return result;
+      
+      return result;
+    } catch (error) {
+      console.error("Failed to get daily data:", error);
+      return [];
+    }
+  };
+
+  const getDateString = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const getMonthlyData = async (months = 12) => {
+    try {
+      const allKeys = await getAllDailyStatsKeys();
+      if (allKeys.length === 0) {
+        return [];
+      }
+      
+      // Get all stats in one call
+      const keysObj = {};
+      allKeys.forEach(key => { keysObj[key] = null; });
+      const allData = await storage.get(keysObj);
+      
+      const stats = [];
+      allKeys.forEach(key => {
+        if (allData[key]) {
+          stats.push(allData[key]);
+        }
+      });
+      
+      // Group by month
+      const monthlyMap = new Map();
+      
+      stats.forEach(stat => {
+        const date = new Date(stat.date + "T00:00:00");
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+        
+        if (!monthlyMap.has(monthKey)) {
+          monthlyMap.set(monthKey, { connectionTime: 0, monitoringTime: 0, offlineTime: 0 });
+        }
+        const monthData = monthlyMap.get(monthKey);
+        monthData.connectionTime += stat.connectionTime || 0;
+        monthData.monitoringTime += stat.monitoringTime || 0;        
+        monthData.offlineTime += stat.offlineTime || 0;
+
+      });
+      
+      // Convert to array and sort
+      const monthlyArray = Array.from(monthlyMap.entries()).map(([month, data]) => ({
+        month,
+        connectionTime: data.connectionTime,
+        monitoringTime: data.monitoringTime,
+        offlineTime: data.offlineTime,
+      }));
+      
+      monthlyArray.sort((a, b) => a.month.localeCompare(b.month));
+      
+      // Get last N months
+      return monthlyArray.slice(-months);
+    } catch (error) {
+      console.error("Failed to get monthly data:", error);
+      return [];
+    }
+  };
+
+  const updateCharts = async () => {
+    const connectionCanvas = document.getElementById("connectionTimeChart");
+    const monitoringCanvas = document.getElementById("monitoringTimeChart");
+    const offlineCanvas = document.getElementById("offlineTimeChart");
+    
+    if (!connectionCanvas || !monitoringCanvas || !offlineCanvas) {
+      console.warn("Chart canvases not found");
+      return;
+    }
+    
+    try {
+      let labels, connectionData, monitoringData, offlineData;
+      
+      if (currentView === "daily") {
+        const dailyData = await getDailyData(30);
+        console.log("Daily data for charts:", dailyData.slice(0, 5)); // Log first 5 entries
+        labels = dailyData.map(d => {
+          const date = new Date(d.date + "T00:00:00");
+          return `${date.getMonth() + 1}/${date.getDate()}`;
+        });
+        connectionData = dailyData.map(d => formatTimeForChart(d.connectionTime));
+        monitoringData = dailyData.map(d => formatTimeForChart(d.monitoringTime));
+        offlineData = dailyData.map(d => formatTimeForChart(d.offlineTime || 0));
+      } else {
+        const monthlyData = await getMonthlyData(12);
+        console.log("Monthly data for charts:", monthlyData);
+        labels = monthlyData.map(d => {
+          const [year, month] = d.month.split("-");
+          const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+          return `${monthNames[parseInt(month) - 1]} ${year}`;
+        });
+        connectionData = monthlyData.map(d => formatTimeForChart(d.connectionTime));
+        monitoringData = monthlyData.map(d => formatTimeForChart(d.monitoringTime));
+        offlineData = monthlyData.map(d => formatTimeForChart(d.offlineTime || 0));
+      }
+      
+      console.log(`Updating charts with ${labels.length} data points (${currentView} view)`);
+      
+      // Draw charts using custom Canvas implementation
+      SimpleChart.drawLineChart(
+        connectionCanvas,
+        connectionData,
+        labels,
+        "#1dbf73",
+        "rgba(29, 191, 115, 0.1)"
+      );
+      
+      SimpleChart.drawLineChart(
+        monitoringCanvas,
+        monitoringData,
+        labels,
+        "#3b82f6",
+        "rgba(59, 130, 246, 0.1)"
+      );
+      
+      SimpleChart.drawLineChart(
+        offlineCanvas,
+        offlineData,
+        labels,
+        "#ef4444",
+        "rgba(239, 68, 68, 0.1)"
+      );
+    } catch (error) {
+      console.error("Failed to update charts:", error);
+    }
+  };
+
+  const initChartViewToggles = () => {
+    const toggles = document.querySelectorAll(".view-toggle");
+    toggles.forEach(toggle => {
+      toggle.addEventListener("click", () => {
+        toggles.forEach(t => t.classList.remove("active"));
+        toggle.classList.add("active");
+        currentView = toggle.getAttribute("data-view");
+        updateCharts();
+      });
+    });
   };
 
   document.addEventListener("DOMContentLoaded", () => {
@@ -561,9 +920,10 @@
     attachSoundControls();
     init();
     updateStatistics();
+    initChartViewToggles();
     
     // Update statistics every 5 seconds
-    setInterval(updateStatistics, 5000);
+    setInterval(updateStatistics, 1000);
     
     // Reset button handler
     const resetButton = document.getElementById("resetStats");

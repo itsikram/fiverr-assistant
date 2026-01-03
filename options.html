@@ -13,6 +13,7 @@
         <button type="button" class="tab-button active" data-tab="general">General</button>
         <button type="button" class="tab-button" data-tab="sounds">Sounds</button>
         <button type="button" class="tab-button" data-tab="selectors">Selectors</button>
+        <button type="button" class="tab-button" data-tab="statistics">Statistics</button>
         <button type="button" class="tab-button" data-tab="settings">Settings</button>
       </div>
 
@@ -168,21 +169,55 @@
           </section>
         </div>
 
+        <!-- Statistics Tab -->
+        <div class="tab-content" id="tab-statistics">
+          <section>
+            <h2 style="margin-top: 0; color: #1dbf73; font-size: 18px;">Statistics Overview</h2>
+            <div class="chart-controls">
+              <button type="button" class="view-toggle active" data-view="daily">Daily</button>
+              <button type="button" class="view-toggle" data-view="monthly">Monthly</button>
+            </div>
+            <div class="chart-section">
+              <h3 style="color: #475569; font-size: 16px; margin-bottom: 12px;">Internet Connection Time</h3>
+              <canvas id="connectionTimeChart"></canvas>
+            </div>
+            <div class="chart-section" style="margin-top: 24px;">
+              <h3 style="color: #475569; font-size: 16px; margin-bottom: 12px;">Assistant Monitoring Time</h3>
+              <canvas id="monitoringTimeChart"></canvas>
+            </div>
+            <div class="chart-section" style="margin-top: 24px;">
+              <h3 style="color: #475569; font-size: 16px; margin-bottom: 12px;">Offline Time</h3>
+              <canvas id="offlineTimeChart"></canvas>
+            </div>
+          </section>
+        </div>
+
         <!-- Settings Tab -->
         <div class="tab-content" id="tab-settings">
           <section>
-            <h2 style="margin-top: 0; color: #1dbf73; font-size: 18px;">Today's Statistics</h2>
-            <div class="stats-container">
-              <div class="stat-item">
-                <div class="stat-label">Internet Connection Time (Today)</div>
-                <div class="stat-value" id="connectionTime">Loading...</div>
+            <h2 style="margin-top: 0; color: #1dbf73; font-size: 18px;">Extension Settings</h2>
+            <label class="toggle-row">
+              <div class="toggle-text">
+                <span>Enable Auto Reload</span>
+                <small>Automatically reload Fiverr pages at random intervals</small>
               </div>
-              <div class="stat-item">
-                <div class="stat-label">Assistant Monitoring Time (Today)</div>
-                <div class="stat-value" id="monitoringTime">Loading...</div>
-              </div>
-            </div>
-            <button type="button" id="resetStats" class="secondary" style="margin-top: 16px;">Reset Today's Statistics</button>
+              <input type="checkbox" id="autoReloadEnabled" name="autoReloadEnabled" />
+            </label>
+          </section>
+          
+          <section>
+            <h2 style="color: #1dbf73; font-size: 18px;">Statistics Settings</h2>
+            <label>
+              <span>Statistics Update Interval (seconds)</span>
+              <input type="number" id="statsUpdateInterval" name="statsUpdateInterval" min="1" max="60" value="1" />
+              <small style="color: #64748b; font-weight: 400;">How often statistics are updated (1-60 seconds)</small>
+            </label>
+          </section>
+
+          <section>
+            <h2 style="color: #1dbf73; font-size: 18px;">Data Management</h2>
+            <button type="button" id="resetStats" class="secondary">Reset All Statistics</button>
+            <small style="color: #64748b; font-weight: 400; display: block; margin-top: 8px;">This will reset all saved statistics data. This action cannot be undone.</small>
           </section>
         </div>
 
