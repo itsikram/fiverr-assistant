@@ -1,4 +1,35 @@
 (async function () {
+  // Filter out known third-party errors to reduce console noise
+  const originalConsoleError = console.error;
+  console.error = function(...args) {
+    const errorString = args.join(' ');
+    // Filter out Qualtrics chunk loading errors
+    if (errorString.includes('Loading chunk') && errorString.includes('qualtrics.com')) {
+      return; // Suppress this error
+    }
+    // Call original console.error for all other errors
+    originalConsoleError.apply(console, args);
+  };
+
+  // Handle unhandled promise rejections from third-party scripts
+  window.addEventListener('unhandledrejection', (event) => {
+    const error = event.reason;
+    const errorMessage = error?.message || String(error || '');
+    const errorStack = error?.stack || '';
+    
+    // Filter out Qualtrics chunk loading errors
+    if (errorMessage.includes('Loading chunk') && (errorMessage.includes('qualtrics.com') || errorStack.includes('qualtrics.com'))) {
+      event.preventDefault(); // Suppress the error
+      return;
+    }
+    
+    // Filter out WebTransport errors (common third-party errors)
+    if (error?.name === 'WebTransportError' || errorMessage.includes('WebTransport')) {
+      event.preventDefault();
+      return;
+    }
+  });
+
   const hasBrowserAPI = typeof browser !== "undefined";
   const hasChromeAPI = typeof chrome !== "undefined";
 
@@ -81,18 +112,6 @@
     }
     statusDisplayElement = null;
   };
-  
-  // Cleanup time tracking on page unload
-  window.addEventListener("beforeunload", () => {
-    updateTimeTracking();
-    stopConnectionTracking();
-    stopMonitoringTracking();
-    stopOfflineErrorChecking();
-    if (timeTrackingIntervalId) {
-      clearInterval(timeTrackingIntervalId);
-      timeTrackingIntervalId = null;
-    }
-  });
 
   const readAutoReloadPreference = () => {
     try {
@@ -745,6 +764,18 @@
     }
   };
 
+  // Cleanup time tracking on page unload
+  window.addEventListener("beforeunload", () => {
+    updateTimeTracking();
+    stopConnectionTracking();
+    stopMonitoringTracking();
+    stopOfflineErrorChecking();
+    if (timeTrackingIntervalId) {
+      clearInterval(timeTrackingIntervalId);
+      timeTrackingIntervalId = null;
+    }
+  });
+
   const PRIMARY_TAB_KEY = "farPrimaryTab";
   const PRIMARY_TAB_HEARTBEAT_INTERVAL = 5000;
   const PRIMARY_TAB_STALE_THRESHOLD = PRIMARY_TAB_HEARTBEAT_INTERVAL * 3;
@@ -860,6 +891,29 @@
         if (!processedNewClientMessages.has(messageId)) {
           processedNewClientMessages.add(messageId);
           
+          // Try to extract client username from DOM
+          let clientUsername = null;
+          try {
+            // Try to find username in the message element or nearby
+            const messageElement = newClientFlag.closest('[class*="message"], [class*="conversation"], [class*="chat"]');
+            if (messageElement) {
+              const usernameElement = messageElement.querySelector('[class*="username"], [class*="name"], [class*="user"]');
+              if (usernameElement) {
+                clientUsername = usernameElement.textContent?.trim();
+              }
+            }
+            // Fallback: try to get from the flag's parent structure
+            if (!clientUsername && newClientFlag.parentElement) {
+              const parentText = newClientFlag.parentElement.textContent || '';
+              const usernameMatch = parentText.match(/(?:from|by|@)\s*([a-zA-Z0-9_-]+)/i);
+              if (usernameMatch) {
+                clientUsername = usernameMatch[1];
+              }
+            }
+          } catch (e) {
+            console.warn("Fiverr Assistant: Error extracting username", e);
+          }
+          
           // Play sound instantly
           playAudio("new");
           sendNotification("New client Message");
@@ -869,7 +923,16 @@
           
           activateFiverrTab();
           
-          console.log("Fiverr Assistant: New client message detected instantly, sound played, reloader paused for 5 minutes");
+          // Instantly redirect to inbox when new message is detected
+          if (window.location.href !== inboxUrl && isOnline) {
+            markPrimaryNavigation();
+            window.location.href = inboxUrl;
+          }
+          
+          console.log("Fiverr Assistant: New client message detected instantly, sound played, redirecting to inbox, reloader paused for 5 minutes", {
+            messageId,
+            clientUsername
+          });
           
           // Clean up old processed messages (keep only last 10)
           if (processedNewClientMessages.size > 10) {
@@ -878,6 +941,39 @@
           }
           
           // Invalidate cache after detecting new message
+          cacheTimestamp = 0;
+        }
+      } else {
+        // Has message but not a new client - could be an old client message
+        // Still show alert but with different message
+        const messageId = hasMessage.textContent || hasMessage.getAttribute('data-id') || 
+                         Date.now().toString();
+        
+        if (!processedNewClientMessages.has(messageId)) {
+          processedNewClientMessages.add(messageId);
+          
+          // Play appropriate sound based on targeted clients
+          const targetClients = (targetedClients || "").split(",").map(c => c.trim());
+          // Note: We can't determine if it's targeted without more context, so play old client sound
+          playAudio("old");
+          sendNotification("New Message");
+          
+          activateFiverrTab();
+          
+          // Instantly redirect to inbox when new message is detected
+          if (window.location.href !== inboxUrl && isOnline) {
+            markPrimaryNavigation();
+            window.location.href = inboxUrl;
+          }
+          
+          console.log("Fiverr Assistant: New message detected (not new client), redirecting to inbox");
+          
+          // Clean up old processed messages
+          if (processedNewClientMessages.size > 10) {
+            const firstItem = processedNewClientMessages.values().next().value;
+            processedNewClientMessages.delete(firstItem);
+          }
+          
           cacheTimestamp = 0;
         }
       }
@@ -1319,6 +1415,7 @@
 
   const writeCachedAudioRecord = async (key, value) => {
     if (!supportsIndexedDB) {
+      console.warn("Fiverr Assistant: IndexedDB not supported, cannot save audio to IndexedDB", { settingKey: key });
       return;
     }
     try {
@@ -1327,11 +1424,30 @@
         const transaction = db.transaction(AUDIO_STORE_NAME, "readwrite");
         const store = transaction.objectStore(AUDIO_STORE_NAME);
         const request = store.put(value, key);
-        request.onsuccess = () => resolve();
-        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          console.info("Fiverr Assistant: Audio file saved to IndexedDB", {
+            settingKey: key,
+            sourceUrl: value.sourceUrl,
+            blobSize: value.blob?.size || "unknown",
+            timestamp: value.timestamp,
+          });
+          resolve();
+        };
+        request.onerror = () => {
+          console.error("Fiverr Assistant: Failed to save audio to IndexedDB", {
+            settingKey: key,
+            sourceUrl: value.sourceUrl,
+            error: request.error?.message || "Unknown error",
+          });
+          reject(request.error);
+        };
       });
     } catch (error) {
-      console.warn("Fiverr Auto Reloader: failed to write cached audio", error);
+      console.error("Fiverr Assistant: Exception while saving audio to IndexedDB", {
+        settingKey: key,
+        sourceUrl: value?.sourceUrl,
+        error: error.message,
+      });
     }
   };
 
@@ -1355,42 +1471,72 @@
 
   const fetchAndCacheAudio = async (key, url) => {
     if (!supportsIndexedDB || !url) {
+      if (!supportsIndexedDB) {
+        console.warn("Fiverr Assistant: IndexedDB not supported, cannot save audio file", { settingKey: key });
+      }
       return null;
     }
     const normalizedUrl = normalizeUrl(url);
     if (!normalizedUrl) {
+      console.warn("Fiverr Assistant: Invalid audio URL", { settingKey: key, url });
       return null;
     }
     try {
+      console.log("Fiverr Assistant: Fetching audio file to save to IndexedDB", {
+        settingKey: key,
+        sourceUrl: normalizedUrl,
+      });
       const response = await fetch(normalizedUrl, { cache: "no-store" });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status} ${response.statusText}`);
       }
       const blob = await response.blob();
-      console.info("Fiverr Auto Reloader: cached audio via direct fetch", {
+      console.info("Fiverr Assistant: Audio file fetched, saving to IndexedDB", {
         settingKey: key,
         sourceUrl: normalizedUrl,
+        blobSize: blob.size,
+        blobType: blob.type,
       });
       await writeCachedAudioRecord(key, {
         sourceUrl: normalizedUrl,
         blob,
         timestamp: Date.now(),
       });
-      return blob;
-    } catch (error) {
-      console.warn("Fiverr Auto Reloader: failed to fetch audio for caching", error);
-      const fallbackBlob = await fetchAudioViaRuntime(normalizedUrl);
-      if (!fallbackBlob) {
-        return null;
-      }
-      console.info("Fiverr Auto Reloader: cached audio via background fetch", {
+      console.info("Fiverr Assistant: Audio file successfully saved to IndexedDB", {
         settingKey: key,
         sourceUrl: normalizedUrl,
+        blobSize: blob.size,
+      });
+      return blob;
+    } catch (error) {
+      console.warn("Fiverr Assistant: Failed to fetch audio directly, trying background fetch", {
+        settingKey: key,
+        sourceUrl: normalizedUrl,
+        error: error.message,
+      });
+      const fallbackBlob = await fetchAudioViaRuntime(normalizedUrl);
+      if (!fallbackBlob) {
+        console.error("Fiverr Assistant: Failed to fetch audio via background, cannot save to IndexedDB", {
+          settingKey: key,
+          sourceUrl: normalizedUrl,
+        });
+        return null;
+      }
+      console.info("Fiverr Assistant: Audio file fetched via background, saving to IndexedDB", {
+        settingKey: key,
+        sourceUrl: normalizedUrl,
+        blobSize: fallbackBlob.size,
+        blobType: fallbackBlob.type,
       });
       await writeCachedAudioRecord(key, {
         sourceUrl: normalizedUrl,
         blob: fallbackBlob,
         timestamp: Date.now(),
+      });
+      console.info("Fiverr Assistant: Audio file successfully saved to IndexedDB via background fetch", {
+        settingKey: key,
+        sourceUrl: normalizedUrl,
+        blobSize: fallbackBlob.size,
       });
       return fallbackBlob;
     }
@@ -1398,6 +1544,7 @@
 
   const ensureAudioBlob = async (key, url) => {
     if (!supportsIndexedDB) {
+      console.warn("Fiverr Assistant: IndexedDB not supported, cannot cache audio");
       return null;
     }
     const normalizedUrl = typeof url === "string" ? url.trim() : "";
@@ -1413,11 +1560,43 @@
     }
 
     const promise = (async () => {
-      const existing = await readCachedAudioRecord(key);
-      if (existing && existing.sourceUrl === normalizedUrl && existing.blob instanceof Blob) {
-        return existing.blob;
+      try {
+        const existing = await readCachedAudioRecord(key);
+        if (existing && existing.sourceUrl === normalizedUrl && existing.blob instanceof Blob) {
+          console.info("Fiverr Assistant: Audio already cached in IndexedDB", {
+            settingKey: key,
+            sourceUrl: normalizedUrl,
+          });
+          return existing.blob;
+        }
+        
+        // Audio not in cache, fetch and save it
+        console.log("Fiverr Assistant: Audio not in IndexedDB, fetching and saving...", {
+          settingKey: key,
+          sourceUrl: normalizedUrl,
+        });
+        const blob = await fetchAndCacheAudio(key, normalizedUrl);
+        if (blob) {
+          console.info("Fiverr Assistant: Audio successfully saved to IndexedDB", {
+            settingKey: key,
+            sourceUrl: normalizedUrl,
+            blobSize: blob.size,
+          });
+        } else {
+          console.warn("Fiverr Assistant: Failed to fetch and cache audio", {
+            settingKey: key,
+            sourceUrl: normalizedUrl,
+          });
+        }
+        return blob;
+      } catch (error) {
+        console.error("Fiverr Assistant: Error ensuring audio blob", {
+          settingKey: key,
+          sourceUrl: normalizedUrl,
+          error: error.message,
+        });
+        return null;
       }
-      return await fetchAndCacheAudio(key, normalizedUrl);
     })();
 
     inFlightAudioCache.set(cacheKey, promise);
@@ -1430,11 +1609,13 @@
 
   const warmAudioCache = async () => {
     if (!supportsIndexedDB) {
+      console.warn("Fiverr Assistant: IndexedDB not supported, cannot cache audio files");
       return;
     }
+    console.log("Fiverr Assistant: Warming audio cache - checking and saving all notification sounds to IndexedDB");
     const uniqueKeys = [...new Set(AUDIO_SETTING_KEYS)];
-    await Promise.all(
-      uniqueKeys.map((key) => {
+    const results = await Promise.allSettled(
+      uniqueKeys.map(async (key) => {
         let currentUrl = settings[key] || "";
         if (!currentUrl) {
           try {
@@ -1443,9 +1624,116 @@
             currentUrl = "";
           }
         }
-        return ensureAudioBlob(key, currentUrl);
+        const normalizedUrl = normalizeUrl(currentUrl);
+        if (normalizedUrl) {
+          const blob = await ensureAudioBlob(key, normalizedUrl);
+          if (blob) {
+            console.info("Fiverr Assistant: Audio file saved/verified in IndexedDB", {
+              settingKey: key,
+              sourceUrl: normalizedUrl,
+              blobSize: blob.size,
+            });
+            return { key, url: normalizedUrl, success: true, blobSize: blob.size };
+          } else {
+            console.warn("Fiverr Assistant: Failed to save audio file to IndexedDB", {
+              settingKey: key,
+              sourceUrl: normalizedUrl,
+            });
+            return { key, url: normalizedUrl, success: false };
+          }
+        } else {
+          console.log("Fiverr Assistant: No URL configured for audio setting", { settingKey: key });
+          return { key, url: null, success: true }; // No URL is not an error
+        }
       })
     );
+    
+    const successful = results.filter(r => r.status === "fulfilled" && r.value?.success).length;
+    const failed = results.filter(r => r.status === "rejected" || (r.status === "fulfilled" && !r.value?.success)).length;
+    console.log("Fiverr Assistant: Audio cache warm-up complete", {
+      total: uniqueKeys.length,
+      successful,
+      failed,
+    });
+  };
+
+  // Function to verify and save all audio files if not already saved
+  const verifyAndSaveAllAudioFiles = async () => {
+    if (!supportsIndexedDB) {
+      console.warn("Fiverr Assistant: IndexedDB not supported, cannot verify audio files");
+      return;
+    }
+    console.log("Fiverr Assistant: Verifying all notification sound files are saved to IndexedDB");
+    const uniqueKeys = [...new Set(AUDIO_SETTING_KEYS)];
+    const verificationResults = [];
+    
+    for (const key of uniqueKeys) {
+      let currentUrl = settings[key] || "";
+      if (!currentUrl) {
+        try {
+          currentUrl = localStorage.getItem(key) || "";
+        } catch (_) {
+          currentUrl = "";
+        }
+      }
+      const normalizedUrl = normalizeUrl(currentUrl);
+      
+      if (normalizedUrl) {
+        try {
+          // Check if already in cache
+          const cached = await readCachedAudioRecord(key);
+          if (cached && cached.sourceUrl === normalizedUrl && cached.blob instanceof Blob) {
+            console.log("Fiverr Assistant: Audio file already saved in IndexedDB", {
+              settingKey: key,
+              sourceUrl: normalizedUrl,
+              blobSize: cached.blob.size,
+            });
+            verificationResults.push({ key, url: normalizedUrl, status: "already_saved", blobSize: cached.blob.size });
+          } else {
+            // Not in cache, fetch and save
+            console.log("Fiverr Assistant: Audio file not in IndexedDB, fetching and saving...", {
+              settingKey: key,
+              sourceUrl: normalizedUrl,
+            });
+            const blob = await fetchAndCacheAudio(key, normalizedUrl);
+            if (blob) {
+              console.info("Fiverr Assistant: Audio file successfully saved to IndexedDB", {
+                settingKey: key,
+                sourceUrl: normalizedUrl,
+                blobSize: blob.size,
+              });
+              verificationResults.push({ key, url: normalizedUrl, status: "saved", blobSize: blob.size });
+            } else {
+              console.error("Fiverr Assistant: Failed to save audio file to IndexedDB", {
+                settingKey: key,
+                sourceUrl: normalizedUrl,
+              });
+              verificationResults.push({ key, url: normalizedUrl, status: "failed" });
+            }
+          }
+        } catch (error) {
+          console.error("Fiverr Assistant: Error verifying/saving audio file", {
+            settingKey: key,
+            sourceUrl: normalizedUrl,
+            error: error.message,
+          });
+          verificationResults.push({ key, url: normalizedUrl, status: "error", error: error.message });
+        }
+      } else {
+        verificationResults.push({ key, url: null, status: "no_url" });
+      }
+    }
+    
+    const summary = {
+      total: uniqueKeys.length,
+      already_saved: verificationResults.filter(r => r.status === "already_saved").length,
+      saved: verificationResults.filter(r => r.status === "saved").length,
+      failed: verificationResults.filter(r => r.status === "failed" || r.status === "error").length,
+      no_url: verificationResults.filter(r => r.status === "no_url").length,
+    };
+    
+    console.log("Fiverr Assistant: Audio file verification complete", summary);
+    return { results: verificationResults, summary };
   };
   let targetedClients = "";
   let pageLinks = [];
@@ -1473,7 +1761,29 @@
       extensionStorage.set({ [key]: value }).catch((error) => console.error("Failed to persist setting:", error));
     }
     if (AUDIO_SETTING_KEYS.includes(key)) {
-      ensureAudioBlob(key, value);
+      // Ensure audio file is saved to IndexedDB when setting is updated
+      const normalizedUrl = normalizeUrl(value);
+      if (normalizedUrl) {
+        console.log("Fiverr Assistant: Audio setting updated, ensuring file is saved to IndexedDB", {
+          settingKey: key,
+          sourceUrl: normalizedUrl,
+        });
+        ensureAudioBlob(key, normalizedUrl).catch((error) => {
+          console.error("Fiverr Assistant: Failed to save audio to IndexedDB", {
+            settingKey: key,
+            sourceUrl: normalizedUrl,
+            error: error.message,
+          });
+        });
+      } else {
+        // If URL is empty, remove from cache
+        deleteCachedAudioRecord(key).catch((error) => {
+          console.warn("Fiverr Assistant: Failed to delete cached audio", {
+            settingKey: key,
+            error: error.message,
+          });
+        });
+      }
     }
     // Invalidate DOM cache if selector settings changed
     if (key === "selectorUnreadIcon" || key === "selectorNewClientFlag") {
@@ -1689,7 +1999,26 @@
           } else {
             deactivatePrimaryTabFeatures();
           }
+          return;
         }
+        
+        if (message && message.type === "pauseAutoReloadFor15Minutes") {
+          // Trigger the same pause functionality as F8 key
+          if (featuresInitialized && typeof pauseAutoReload === "function") {
+            pauseAutoReload();
+            console.log("Fiverr Assistant: Auto-reload paused for 15 minutes from options page");
+            
+            // Resume after 15 minutes (900000 milliseconds)
+            setTimeout(() => {
+              if (!isF10Clicked && featuresInitialized) {
+                enableAutoReload();
+                console.log("Fiverr Assistant: Auto-reload resumed after 15-minute pause from options page");
+              }
+            }, 900000);
+          }
+          return;
+        }
+        
         return;
       }
 
@@ -2070,14 +2399,45 @@
         let objectUrl = null;
         let blobFromCache = null;
 
+        // Always try to use IndexedDB cache first for notifications
         if (supportsIndexedDB && normalizedUrl) {
           try {
+            // First, try to get from cache
             blobFromCache = await getCachedAudioBlobForUrl(settingKey, normalizedUrl);
+            
+            // If not in cache, fetch and save it to IndexedDB before playing
             if (!blobFromCache) {
+              console.log("Fiverr Assistant: Audio not in IndexedDB cache, fetching and saving before playing", {
+                settingKey,
+                sourceUrl: normalizedUrl,
+              });
               blobFromCache = await ensureAudioBlob(settingKey, normalizedUrl);
+              
+              if (blobFromCache) {
+                console.info("Fiverr Assistant: Audio fetched and saved to IndexedDB, now playing from cache", {
+                  settingKey,
+                  sourceUrl: normalizedUrl,
+                  blobSize: blobFromCache.size,
+                });
+              } else {
+                console.warn("Fiverr Assistant: Failed to fetch and cache audio, will play from URL", {
+                  settingKey,
+                  sourceUrl: normalizedUrl,
+                });
+              }
+            } else {
+              console.info("Fiverr Assistant: Playing notification sound from IndexedDB cache", {
+                settingKey,
+                sourceUrl: normalizedUrl,
+                blobSize: blobFromCache.size,
+              });
             }
           } catch (error) {
-            console.warn("Fiverr Auto Reloader: failed to load cached audio", error);
+            console.warn("Fiverr Assistant: Error loading audio from IndexedDB cache, falling back to URL", {
+              settingKey,
+              sourceUrl: normalizedUrl,
+              error: error.message,
+            });
           }
         } else if (supportsIndexedDB && !normalizedUrl) {
           try {
@@ -2087,15 +2447,22 @@
           }
         }
 
+        // Use cached blob if available, otherwise fall back to URL
         if (blobFromCache instanceof Blob) {
           objectUrl = URL.createObjectURL(blobFromCache);
           audioSource = objectUrl;
-          console.info("Fiverr Auto Reloader: playing audio from IndexedDB cache", {
+          console.info("Fiverr Assistant: Using IndexedDB cached audio for notification", {
+            settingKey,
+            sourceUrl: normalizedUrl,
+            blobSize: blobFromCache.size,
+          });
+        } else if (supportsIndexedDB && normalizedUrl) {
+          // If we couldn't get from cache but have a URL, try to cache it in background for next time
+          ensureAudioBlob(settingKey, normalizedUrl).catch(() => {});
+          console.info("Fiverr Assistant: Playing notification sound from URL (cache unavailable)", {
             settingKey,
             sourceUrl: normalizedUrl,
           });
-        } else if (supportsIndexedDB && normalizedUrl) {
-          ensureAudioBlob(settingKey, normalizedUrl).catch(() => {});
         }
 
         if (!audioSource) {
@@ -2147,8 +2514,14 @@
             // Older browsers or immediate play - add to tracking set
             playingAudioElements.add(audio);
           }
-          if (!objectUrl) {
-            console.info("Fiverr Auto Reloader: playing audio directly from URL", {
+          // Log whether playing from cache or URL
+          if (objectUrl) {
+            console.info("Fiverr Assistant: Notification sound playing from IndexedDB cache", {
+              settingKey,
+              sourceUrl: normalizedUrl || configuredUrl,
+            });
+          } else {
+            console.info("Fiverr Assistant: Notification sound playing from URL (cache not available)", {
               settingKey,
               sourceUrl: normalizedUrl || configuredUrl,
             });
@@ -2182,12 +2555,12 @@
 
         if (event.code === "F8") {
           pauseAutoReload();
-          alert("Fiverr Auto Reloader Disabled For 30 Muntes");
+          alert("Fiverr Auto Reloader Disabled For 15 Minutes");
           setTimeout(() => {
             if (!isF10Clicked) {
               enableAutoReload();
             }
-          }, 1800000);
+          }, 900000);
         }
 
         if (event.code === "F10") {
@@ -2264,6 +2637,21 @@
         if (hasMessage) {
           let newClientFlag = document.querySelector(newClientFlagSelector);
           if (newClientFlag) {
+            // Try to extract username
+            let clientUsername = null;
+            try {
+              const messageElement = newClientFlag.closest('[class*="message"], [class*="conversation"]');
+              if (messageElement) {
+                const usernameElement = messageElement.querySelector('[class*="username"], [class*="name"]');
+                if (usernameElement) {
+                  clientUsername = usernameElement.textContent?.trim();
+                }
+              }
+            } catch (e) {
+              console.warn("Fiverr Assistant: Error extracting username on page load", e);
+            }
+            
+            // Show alert for new client message
             playAudio("new");
             sendNotification("New client Message");
             // Pause auto-reload for 5 minutes when notification plays
@@ -2271,6 +2659,7 @@
             // Activate the tab when new client message is detected
             activateFiverrTab();
           } else {
+            // Show alert for old client message too
             let targetClients = targetedClients.split(",");
             let isTargeted = targetClients.some((client) => client.trim() === "programerikram");
             if (isTargeted) {

@@ -24,6 +24,10 @@
             <button type="button" id="activatePrimaryTab" class="primary">Activate Current Tab</button>
             <span id="primaryTabInfo" role="status" aria-live="polite"></span>
           </section>
+          <section class="primary-tab-section" style="text-align: center; margin-top: 16px;">
+            <button type="button" id="pauseAutoReload15Min" class="secondary">Stop Auto Reloader for 15 Minutes</button>
+            <span id="pauseStatus" role="status" aria-live="polite" style="display: block; margin-top: 8px; color: #64748b;"></span>
+          </section>
           <section>
             <label>
               <span>Fiverr Profile Name</span>
@@ -36,6 +40,11 @@
             <label>
               <span>Targeted Clients (comma separated)</span>
               <input type="text" id="targetedClients" name="targetedClients" />
+            </label>
+            <label>
+              <span>Ignore Clients (comma separated usernames)</span>
+              <input type="text" id="ignoreClients" name="ignoreClients" />
+              <small style="color: #64748b; font-weight: 400;">Notifications will be filtered for these usernames</small>
             </label>
           </section>
 

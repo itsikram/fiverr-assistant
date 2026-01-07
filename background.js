@@ -1250,6 +1250,8 @@
   // Initial check when background initializes.
   // This runs when the extension loads (including browser startup)
   console.log("Fiverr Assistant: Background script initialized");
+  console.log("Fiverr Assistant: Background script is running and ready for inspection");
+  console.log("Fiverr Assistant: API available:", !!api, "Storage available:", !!storage);
   
   // For Firefox, wait a bit for tabs to be restored on startup
   const initDelay = hasBrowserAPI ? 1000 : 500;
@@ -1287,5 +1289,24 @@
       });
     }
   }, 3000);
+
+  // Keepalive mechanism to ensure background script stays active for debugging
+  // This helps Firefox inspector attach properly
+  let keepAliveInterval = setInterval(() => {
+    // Just a no-op to keep the script context alive
+    if (typeof console !== 'undefined' && console.log) {
+      // Silent keepalive - only log if needed for debugging
+      // console.log("Fiverr Assistant: Background script keepalive");
+    }
+  }, 30000); // Every 30 seconds
+
+  // Store interval ID globally so it doesn't get garbage collected
+  if (typeof globalThis !== 'undefined') {
+    globalThis._farKeepAlive = keepAliveInterval;
+  } else if (typeof self !== 'undefined') {
+    self._farKeepAlive = keepAliveInterval;
+  } else if (typeof window !== 'undefined') {
+    window._farKeepAlive = keepAliveInterval;
+  }
 })();
 
