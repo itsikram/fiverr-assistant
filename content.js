@@ -797,6 +797,8 @@
   let messageObserver = null;
   let processedNewClientMessages = new Set(); // Track processed new client messages
   let notificationPauseTimeoutId = null; // Track timeout for 5-minute pause after notification
+  let lastNotificationTime = 0; // Track last notification time to prevent rapid repeats
+  const NOTIFICATION_COOLDOWN_MS = 5000; // 5 second cooldown between notifications
   
   // DOM query caching for performance
   let cachedUnreadIcon = null;
@@ -889,7 +891,9 @@
         
         // Only process if we haven't seen this message before
         if (!processedNewClientMessages.has(messageId)) {
+          // This is a new message, process it immediately
           processedNewClientMessages.add(messageId);
+          lastNotificationTime = Date.now();
           
           // Try to extract client username from DOM
           let clientUsername = null;
@@ -914,9 +918,13 @@
             console.warn("Fiverr Assistant: Error extracting username", e);
           }
           
-          // Play sound instantly
-          playAudio("new");
-          sendNotification("New client Message");
+          // Play sound instantly (if enabled in settings)
+          if (coerceBooleanSetting(settings.enable_new_client_sound, true)) {
+            playAudio("new");
+          }
+          if (coerceBooleanSetting(settings.enable_new_client_notification, true)) {
+            sendNotification("New client Message");
+          }
           
           // Pause auto-reload for 5 minutes when notification plays
           pauseAutoReloadForNotification();
@@ -934,31 +942,128 @@
             clientUsername
           });
           
-          // Clean up old processed messages (keep only last 10)
-          if (processedNewClientMessages.size > 10) {
+          // Clean up old processed messages (keep only last 20 for better tracking)
+          if (processedNewClientMessages.size > 20) {
             const firstItem = processedNewClientMessages.values().next().value;
             processedNewClientMessages.delete(firstItem);
           }
           
           // Invalidate cache after detecting new message
           cacheTimestamp = 0;
+        } else {
+          // Message already processed - check cooldown to prevent rapid repeated notifications
+          const timeSinceLastNotification = Date.now() - lastNotificationTime;
+          if (timeSinceLastNotification < NOTIFICATION_COOLDOWN_MS) {
+            console.log("Fiverr Assistant: New client message already processed, cooldown active - skipping duplicate notification");
+            return;
+          } else {
+            console.log("Fiverr Assistant: New client message already processed, but cooldown passed - this is likely a duplicate detection");
+          }
         }
       } else {
         // Has message but not a new client - could be an old client message
         // Still show alert but with different message
-        const messageId = hasMessage.textContent || hasMessage.getAttribute('data-id') || 
-                         Date.now().toString();
         
+        // Create a stable messageId by looking at the conversation/message element
+        // Try to find the actual conversation element to get a stable identifier
+        let messageId = null;
+        let useTimestampFallback = false;
+        
+        try {
+          // Try to find the conversation element that contains the unread icon
+          const conversationElement = hasMessage.closest('[class*="message"], [class*="conversation"], [class*="chat"], [class*="inbox-item"], li, a');
+          if (conversationElement) {
+            // Try to get a stable ID from the conversation element
+            messageId = conversationElement.getAttribute('data-id') || 
+                       conversationElement.getAttribute('data-conversation-id') ||
+                       conversationElement.getAttribute('id');
+            
+            // If we have an href, use it as the ID (most stable)
+            if (!messageId && conversationElement.href) {
+              const href = conversationElement.href;
+              // Extract conversation ID from URL if possible
+              const urlMatch = href.match(/\/inbox\/([^\/\?]+)/);
+              if (urlMatch) {
+                messageId = `old-client-${urlMatch[1]}`;
+              } else if (href.includes('fiverr.com')) {
+                // Use a hash of the URL for stability
+                messageId = `old-client-url-${href.split('?')[0]}`;
+              }
+            }
+            
+            // Fallback: use text content from conversation element (first 100 chars)
+            if (!messageId && conversationElement.textContent) {
+              const textContent = conversationElement.textContent.trim().substring(0, 100);
+              if (textContent && textContent.length > 10) {
+                messageId = `old-client-${textContent}`;
+              }
+            }
+          }
+        } catch (e) {
+          console.warn("Fiverr Assistant: Error extracting conversation ID", e);
+        }
+        
+        // Final fallback: use unread icon's parent structure
+        if (!messageId) {
+          try {
+            if (hasMessage.parentElement) {
+              const parentText = hasMessage.parentElement.textContent?.trim().substring(0, 100) || '';
+              if (parentText && parentText.length > 10) {
+                messageId = `old-client-${parentText}`;
+              }
+            }
+          } catch (e) {
+            console.warn("Fiverr Assistant: Error extracting parent text", e);
+          }
+        }
+        
+        // Last resort: use unread icon itself (but this is less stable)
+        if (!messageId) {
+          messageId = hasMessage.getAttribute('data-id') || 
+                     hasMessage.getAttribute('id');
+          if (!messageId && hasMessage.textContent) {
+            const iconText = hasMessage.textContent.trim().substring(0, 50);
+            if (iconText && iconText.length > 0) {
+              messageId = `old-client-icon-${iconText}`;
+            }
+          }
+        }
+        
+        // If still no stable ID, use a timestamp-based approach with cooldown protection
+        if (!messageId) {
+          // Use a combination of current URL and a rounded timestamp (to nearest 10 seconds)
+          // This prevents loops while still allowing notifications
+          const roundedTime = Math.floor(Date.now() / 10000) * 10000; // Round to nearest 10 seconds
+          const currentUrl = window.location.href.split('?')[0];
+          messageId = `old-client-fallback-${currentUrl}-${roundedTime}`;
+          useTimestampFallback = true;
+          console.log("Fiverr Assistant: Using timestamp-based fallback for messageId", messageId);
+        }
+        
+        // Check cooldown first if using timestamp fallback (to prevent rapid notifications)
+        if (useTimestampFallback) {
+          const timeSinceLastNotification = Date.now() - lastNotificationTime;
+          if (timeSinceLastNotification < NOTIFICATION_COOLDOWN_MS) {
+            console.log("Fiverr Assistant: Using timestamp fallback, cooldown active - skipping duplicate notification");
+            return;
+          }
+        }
+        
+        // Only process if we haven't seen this message before
         if (!processedNewClientMessages.has(messageId)) {
+          // This is a new message, process it immediately
           processedNewClientMessages.add(messageId);
+          lastNotificationTime = Date.now();
           
           // Play appropriate sound based on targeted clients
           const targetClients = (targetedClients || "").split(",").map(c => c.trim());
           // Note: We can't determine if it's targeted without more context, so play old client sound
-          playAudio("old");
-          sendNotification("New Message");
-          
-          activateFiverrTab();
+          if (coerceBooleanSetting(settings.enable_old_client_sound, true)) {
+            playAudio("old");
+          }
+          if (coerceBooleanSetting(settings.enable_old_client_notification, true)) {
+            sendNotification("New Message");
+          }
           
           // Instantly redirect to inbox when new message is detected
           if (window.location.href !== inboxUrl && isOnline) {
@@ -966,15 +1071,27 @@
             window.location.href = inboxUrl;
           }
           
-          console.log("Fiverr Assistant: New message detected (not new client), redirecting to inbox");
+          console.log("Fiverr Assistant: New message detected (not new client), redirecting to inbox (tab not focused)", {
+            messageId: messageId.substring(0, 100),
+            useTimestampFallback
+          });
           
-          // Clean up old processed messages
-          if (processedNewClientMessages.size > 10) {
+          // Clean up old processed messages (keep only last 20 for better tracking)
+          if (processedNewClientMessages.size > 20) {
             const firstItem = processedNewClientMessages.values().next().value;
             processedNewClientMessages.delete(firstItem);
           }
           
           cacheTimestamp = 0;
+        } else {
+          // Message already processed - check cooldown to prevent rapid repeated notifications
+          const timeSinceLastNotification = Date.now() - lastNotificationTime;
+          if (timeSinceLastNotification < NOTIFICATION_COOLDOWN_MS) {
+            console.log("Fiverr Assistant: Old client message already processed, cooldown active - skipping duplicate notification");
+            return;
+          } else {
+            console.log("Fiverr Assistant: Old client message already processed, but cooldown passed - this is likely a duplicate detection");
+          }
         }
       }
     }
@@ -1094,7 +1211,7 @@
           // Invalidate cache before checking to ensure fresh results
           cacheTimestamp = 0;
           checkNewClientMessageInstantly();
-        }, 50); // Reduced to 50ms for near-instant detection
+        }, 50); // Minimal debounce for near-instant detection (cooldown prevents loops)
       });
 
       // Try to find a more specific container for messages, otherwise observe body
@@ -1282,6 +1399,10 @@
     selectorUnreadIcon: ".seller-nav-right ul li:nth-child(3) .messages-wrapper .unread-icon",
     selectorNewClientFlag: ".first > div:nth-child(2) > div:nth-child(1) > span:nth-child(2)",
     selectorMessageContent: ".message-flow .content",
+    enable_new_client_sound: true,
+    enable_old_client_sound: true,
+    enable_new_client_notification: true,
+    enable_old_client_notification: true,
   };
 
   const settings = { ...defaultSettings };
@@ -2651,22 +2772,29 @@
               console.warn("Fiverr Assistant: Error extracting username on page load", e);
             }
             
-            // Show alert for new client message
-            playAudio("new");
-            sendNotification("New client Message");
+            // Show alert for new client message (respect sound & notification settings)
+            if (coerceBooleanSetting(settings.enable_new_client_sound, true)) {
+              playAudio("new");
+            }
+            if (coerceBooleanSetting(settings.enable_new_client_notification, true)) {
+              sendNotification("New client Message");
+            }
             // Pause auto-reload for 5 minutes when notification plays
             pauseAutoReloadForNotification();
             // Activate the tab when new client message is detected
             activateFiverrTab();
           } else {
-            // Show alert for old client message too
+            // Show alert for old client message too (respect sound & notification settings)
             let targetClients = targetedClients.split(",");
             let isTargeted = targetClients.some((client) => client.trim() === "programerikram");
-            if (isTargeted) {
-              playAudio("targeted");
-              sendNotification("Old client Message");
-            } else {
-              playAudio("old");
+            if (coerceBooleanSetting(settings.enable_old_client_sound, true)) {
+              if (isTargeted) {
+                playAudio("targeted");
+              } else {
+                playAudio("old");
+              }
+            }
+            if (coerceBooleanSetting(settings.enable_old_client_notification, true)) {
               sendNotification("Old client Message");
             }
           }
