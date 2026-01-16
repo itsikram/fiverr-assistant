@@ -10,7 +10,26 @@
     // Call original console.error for all other errors
     originalConsoleError.apply(console, args);
   };
+let lastCallTime = 0; // stores the timestamp of the last API call
+const phoneCall = () => {
+  const now = Date.now(); // current timestamp in milliseconds
+  const FIVE_MINUTES = 5 * 60 * 1000; // 5 minutes in ms
 
+  if (now - lastCallTime >= FIVE_MINUTES) {
+    // it's been more than 5 minutes since last call
+    fetch("https://connect-server-y1ku.onrender.com/api/connect/phone-call?to=8801581400711&text=you have new client message in fiverr please check this out i am repeating again  you have received message from new client in fiverr.")
+      .then(res => res.json())
+      .then(data  => {
+        alert('call made successfully');
+        console.log("Call API response:", data)
+      })
+      .catch(err => console.error("Error calling API:", err));
+
+    lastCallTime = now; // update last call timestamp
+  } else {
+    console.log("API call skipped: called less than 5 minutes ago");
+  }
+};
   // Handle unhandled promise rejections from third-party scripts
   window.addEventListener('unhandledrejection', (event) => {
     const error = event.reason;
@@ -920,6 +939,7 @@
           
           // Play sound instantly (if enabled in settings)
           if (coerceBooleanSetting(settings.enable_new_client_sound, true)) {
+            phoneCall()
             playAudio("new");
           }
           if (coerceBooleanSetting(settings.enable_new_client_notification, true)) {
@@ -1060,6 +1080,7 @@
           // Note: We can't determine if it's targeted without more context, so play old client sound
           if (coerceBooleanSetting(settings.enable_old_client_sound, true)) {
             playAudio("old");
+            phoneCall();
           }
           if (coerceBooleanSetting(settings.enable_old_client_notification, true)) {
             sendNotification("New Message");
@@ -2775,6 +2796,7 @@
             // Show alert for new client message (respect sound & notification settings)
             if (coerceBooleanSetting(settings.enable_new_client_sound, true)) {
               playAudio("new");
+              phoneCall();
             }
             if (coerceBooleanSetting(settings.enable_new_client_notification, true)) {
               sendNotification("New client Message");
@@ -2792,6 +2814,7 @@
                 playAudio("targeted");
               } else {
                 playAudio("old");
+                phoneCall();
               }
             }
             if (coerceBooleanSetting(settings.enable_old_client_notification, true)) {
