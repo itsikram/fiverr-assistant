@@ -132,7 +132,19 @@ const phoneCall = () => {
     statusDisplayElement = null;
   };
 
-  const readAutoReloadPreference = () => {
+  const readAutoReloadPreference = async () => {
+    // First try to read from chrome.storage.local (persistent across page reloads)
+    if (extensionStorage) {
+      try {
+        const result = await extensionStorage.get("autoReloadEnabled");
+        if (result && Object.prototype.hasOwnProperty.call(result, "autoReloadEnabled")) {
+          return coerceBooleanSetting(result.autoReloadEnabled, true);
+        }
+      } catch (error) {
+        console.warn("Fiverr Auto Reloader: unable to read auto reload preference from extension storage", error);
+      }
+    }
+    // Fallback to localStorage for backward compatibility
     try {
       const storedValue = localStorage.getItem("autoReloadEnabled");
       return coerceBooleanSetting(storedValue, true);
@@ -144,7 +156,7 @@ const phoneCall = () => {
 
   let siteDomain = window.location.hostname;
   let inboxUrl = "https://www.fiverr.com/inbox";
-  let autoReload = readAutoReloadPreference();
+  let autoReload = true; // Default to true, will be updated from storage
   var audioElement = false;
   var lastAction = Date.now();
   var isF10Clicked = false;
@@ -387,6 +399,36 @@ const phoneCall = () => {
       clearTimeout(notificationPauseTimeoutId);
       notificationPauseTimeoutId = null;
     }
+    // Clear any existing auto-reactivation timeout
+    if (autoReactivateTimeoutId) {
+      clearTimeout(autoReactivateTimeoutId);
+      autoReactivateTimeoutId = null;
+    }
+    // Save the stopped state to chrome.storage.local so it persists after page reload
+    if (extensionStorage) {
+      const reactivateTimestamp = Date.now() + AUTO_REACTIVATE_DELAY_MS;
+      extensionStorage.set({ 
+        autoReloadEnabled: false,
+        [AUTO_REACTIVATE_TIMESTAMP_KEY]: reactivateTimestamp
+      }).catch((error) => {
+        console.warn("Fiverr Assistant: Failed to save auto-reload stopped state", error);
+      });
+      
+      // Set timeout to auto-reactivate after 1 minute
+      autoReactivateTimeoutId = setTimeout(() => {
+        autoReactivateTimeoutId = null;
+        if (!isF10Clicked && featuresInitialized) {
+          enableAutoReload();
+          console.log("Fiverr Assistant: Auto-reload auto-reactivated after 1 minute");
+        }
+        // Remove the timestamp from storage
+        if (extensionStorage) {
+          extensionStorage.remove(AUTO_REACTIVATE_TIMESTAMP_KEY).catch(() => {});
+        }
+      }, AUTO_REACTIVATE_DELAY_MS);
+      
+      console.log("Fiverr Assistant: Auto-reload paused, will auto-reactivate in 1 minute");
+    }
   };
   let enableAutoReload = () => {
     autoReload = true;
@@ -399,6 +441,22 @@ const phoneCall = () => {
       startOfflineErrorChecking();
     } else {
       initialize();
+    }
+    // Clear auto-reactivation timeout if manually enabled before timeout
+    if (autoReactivateTimeoutId) {
+      clearTimeout(autoReactivateTimeoutId);
+      autoReactivateTimeoutId = null;
+    }
+    // Save the enabled state to chrome.storage.local so it persists after page reload
+    if (extensionStorage) {
+      extensionStorage.set({ 
+        autoReloadEnabled: true
+      }).then(() => {
+        // Remove reactivation timestamp if it exists
+        return extensionStorage.remove(AUTO_REACTIVATE_TIMESTAMP_KEY);
+      }).catch((error) => {
+        console.warn("Fiverr Assistant: Failed to save auto-reload enabled state", error);
+      });
     }
   };
 
@@ -914,37 +972,31 @@ const phoneCall = () => {
           processedNewClientMessages.add(messageId);
           lastNotificationTime = Date.now();
           
-          // Try to extract client username from DOM
-          let clientUsername = null;
-          try {
-            // Try to find username in the message element or nearby
-            const messageElement = newClientFlag.closest('[class*="message"], [class*="conversation"], [class*="chat"]');
-            if (messageElement) {
-              const usernameElement = messageElement.querySelector('[class*="username"], [class*="name"], [class*="user"]');
-              if (usernameElement) {
-                clientUsername = usernameElement.textContent?.trim();
-              }
+          // Try to extract client name from DOM using comprehensive extraction function
+          let clientName = extractClientName(newClientFlag);
+          
+          // Fallback: If extraction failed but messageId looks like a name, use it
+          // This handles cases where newClientFlag.textContent IS the name (like "Luciano")
+          if (!clientName && messageId && typeof messageId === 'string') {
+            const namePattern = /^[a-zA-Z0-9_-]{2,50}$/;
+            const excludedWords = /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat|the|a|an|and|or|but|is|are|was|were|has|have|had|will|would|could|should|may|might|can|must)$/i;
+            if (namePattern.test(messageId.trim()) && !excludedWords.test(messageId.trim())) {
+              clientName = messageId.trim();
             }
-            // Fallback: try to get from the flag's parent structure
-            if (!clientUsername && newClientFlag.parentElement) {
-              const parentText = newClientFlag.parentElement.textContent || '';
-              const usernameMatch = parentText.match(/(?:from|by|@)\s*([a-zA-Z0-9_-]+)/i);
-              if (usernameMatch) {
-                clientUsername = usernameMatch[1];
-              }
-            }
-          } catch (e) {
-            console.warn("Fiverr Assistant: Error extracting username", e);
           }
           
+          // Check if client is in ignored list - skip audio and notification if ignored
+          const isIgnored = clientName ? isClientIgnored(clientName) : false;
+          
+          if (!isIgnored) {
           // Play sound instantly (if enabled in settings)
           if (coerceBooleanSetting(settings.enable_new_client_sound, true)) {
             phoneCall()
             playAudio("new");
           }
           if (coerceBooleanSetting(settings.enable_new_client_notification, true)) {
-            sendNotification("New client Message");
-          }
+            sendNotification("New client Message", clientName);
+            }
           
           // Pause auto-reload for 5 minutes when notification plays
           pauseAutoReloadForNotification();
@@ -959,8 +1011,11 @@ const phoneCall = () => {
           
           console.log("Fiverr Assistant: New client message detected instantly, sound played, redirecting to inbox, reloader paused for 5 minutes", {
             messageId,
-            clientUsername
+            clientName
           });
+          } else {
+            console.log("Fiverr Assistant: Client is in ignored list, skipping audio, notification, tab activation, and redirect", { clientName });
+          }
           
           // Clean up old processed messages (keep only last 20 for better tracking)
           if (processedNewClientMessages.size > 20) {
@@ -1075,6 +1130,13 @@ const phoneCall = () => {
           processedNewClientMessages.add(messageId);
           lastNotificationTime = Date.now();
           
+          // Try to extract client name from DOM
+          let clientName = extractClientName(hasMessage);
+          
+          // Check if client is in ignored list - skip audio and notification if ignored
+          const isIgnored = clientName ? isClientIgnored(clientName) : false;
+          
+          if (!isIgnored) {
           // Play appropriate sound based on targeted clients
           const targetClients = (targetedClients || "").split(",").map(c => c.trim());
           // Note: We can't determine if it's targeted without more context, so play old client sound
@@ -1083,13 +1145,16 @@ const phoneCall = () => {
             phoneCall();
           }
           if (coerceBooleanSetting(settings.enable_old_client_notification, true)) {
-            sendNotification("New Message");
-          }
+            sendNotification("New Message", clientName);
+            }
           
           // Instantly redirect to inbox when new message is detected
           if (window.location.href !== inboxUrl && isOnline) {
             markPrimaryNavigation();
             window.location.href = inboxUrl;
+          }
+          } else {
+            console.log("Fiverr Assistant: Client is in ignored list, skipping audio, notification, and redirect", { clientName });
           }
           
           console.log("Fiverr Assistant: New message detected (not new client), redirecting to inbox (tab not focused)", {
@@ -1410,6 +1475,7 @@ const phoneCall = () => {
     profile: "",
     profileUsername: "",
     targetedClients: "",
+    ignoreClients: "",
     pageLinks: "",
     new_client_sound: defaultSound,
     targeted_client_sound: defaultSound,
@@ -1878,6 +1944,7 @@ const phoneCall = () => {
     return { results: verificationResults, summary };
   };
   let targetedClients = "";
+  let ignoreClients = "";
   let pageLinks = [];
   let minReloadingSecond = 30;
   let maxReloadingSecond = 180;
@@ -2056,6 +2123,7 @@ const phoneCall = () => {
     await warmAudioCache();
 
     targetedClients = settings.targetedClients || "";
+    ignoreClients = settings.ignoreClients || "";
     pageLinks = processPageLinks(settings.pageLinks);
     minReloadingSecond = parseInt(settings.relStart, 10) || 30;
     maxReloadingSecond = parseInt(settings.relEnd, 10) || 180;
@@ -2074,6 +2142,339 @@ const phoneCall = () => {
   // Declare playAudio and sendNotification outside initialize so they're accessible to message observer
   let playAudio = async () => {};
   let sendNotification = () => {};
+  
+  // Function to check if a client name is in the ignored clients list
+  const isClientIgnored = (clientName) => {
+    if (!clientName || typeof clientName !== 'string') {
+      return false;
+    }
+    
+    // Get ignoreClients from multiple sources (global variable, settings, localStorage)
+    let ignoreClientsList = ignoreClients || '';
+    
+    // Fallback to settings if global variable is empty
+    if (!ignoreClientsList && typeof settings !== 'undefined' && settings && settings.ignoreClients) {
+      ignoreClientsList = settings.ignoreClients;
+    }
+    
+    // Fallback to localStorage if still empty
+    if (!ignoreClientsList) {
+      try {
+        ignoreClientsList = getVal("ignoreClients") || '';
+      } catch (e) {
+        // Ignore errors
+      }
+    }
+    
+    if (!ignoreClientsList || ignoreClientsList.trim() === '') {
+      return false;
+    }
+    
+    const ignoredList = ignoreClientsList.split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
+    const clientNameLower = clientName.trim().toLowerCase();
+    
+    const isIgnored = ignoredList.includes(clientNameLower);
+    
+    // Debug logging only when client is found in ignored list
+    if (isIgnored) {
+      console.log("Fiverr Assistant: Client is in ignored list", { 
+        clientName, 
+        clientNameLower, 
+        ignoredList
+      });
+    }
+    
+    return isIgnored;
+  };
+  
+  // Function to extract client name from Fiverr chat HTML
+  const extractClientName = (element) => {
+    if (!element) return null;
+    
+    let clientName = null;
+    
+    try {
+      // Strategy 0: SIMPLEST - Check the element's own textContent first (most direct)
+      // This handles cases where textContent IS the name (like "Luciano")
+      const elementText = element.textContent?.trim();
+      if (elementText) {
+        // Simple name pattern: 2-50 chars, letters/numbers/underscores/hyphens
+        const simpleNamePattern = /^[a-zA-Z0-9_-]{2,50}$/;
+        // Common UI words to exclude
+        const excludedWords = /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat|the|a|an|and|or|but|is|are|was|were|has|have|had|will|would|could|should|may|might|can|must)$/i;
+        
+        // If textContent is a simple name, use it immediately
+        if (simpleNamePattern.test(elementText)) {
+          if (!excludedWords.test(elementText)) {
+            clientName = elementText;
+            return clientName; // Return early if we found it
+          }
+        }
+        
+        // If not a simple name, try to extract first word that looks like a name
+        const firstWordMatch = elementText.match(/^([a-zA-Z0-9_-]{2,50})(?:\s|$|,|\.|:)/);
+        if (firstWordMatch && firstWordMatch[1]) {
+          const potentialName = firstWordMatch[1];
+          if (simpleNamePattern.test(potentialName) && !excludedWords.test(potentialName)) {
+            clientName = potentialName;
+            return clientName; // Return early if we found it
+          }
+        }
+      }
+      
+      // Strategy 0.1: Check direct text nodes (not including child element text)
+      if (!clientName) {
+      let directText = '';
+      if (element.childNodes) {
+        for (const node of element.childNodes) {
+          if (node.nodeType === Node.TEXT_NODE) {
+            directText += node.textContent || '';
+          }
+        }
+      }
+      directText = directText.trim();
+      
+        if (directText) {
+          const simpleNamePattern = /^[a-zA-Z0-9_-]{2,50}$/;
+          const excludedWords = /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat|the|a|an|and|or|but)$/i;
+          
+          if (simpleNamePattern.test(directText) && !excludedWords.test(directText)) {
+          clientName = directText;
+            return clientName; // Return early if we found it
+          }
+        }
+      }
+      
+      // Strategy 0.5: Check parent element's text content for name patterns
+      if (!clientName && element.parentElement) {
+        const parentText = element.parentElement.textContent?.trim();
+        if (parentText) {
+          // Look for patterns like "Luciano" at the start, or "from Luciano", etc.
+          const patterns = [
+            /^([a-zA-Z0-9_-]{2,50})(?:\s|$)/,  // Name at start
+            /(?:from|by|message from|sent by)\s+([a-zA-Z0-9_-]{2,50})/i,
+            /@([a-zA-Z0-9_-]{2,50})/,
+            /^([A-Z][a-zA-Z0-9_-]{1,49})(?:\s|$)/  // Capitalized name at start
+          ];
+          
+          for (const pattern of patterns) {
+            const match = parentText.match(pattern);
+            if (match && match[1]) {
+              const potentialName = match[1];
+              // Validate it's not a common UI word
+              if (!potentialName.match(/^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat)$/i)) {
+                clientName = potentialName;
+                break;
+              }
+            }
+          }
+        }
+      }
+      
+      // Strategy 1: Look for username/name in common Fiverr chat selectors
+      const commonSelectors = [
+        '[class*="username"]',
+        '[class*="user-name"]',
+        '[class*="name"]',
+        '[class*="sender"]',
+        '[class*="author"]',
+        '[data-testid*="username"]',
+        '[data-testid*="name"]',
+        'a[href*="/users/"]',
+        '[class*="conversation"] [class*="title"]',
+        '[class*="chat"] [class*="title"]',
+        '[class*="inbox-item"] [class*="title"]'
+      ];
+      
+      // Try to find the conversation/message container first
+      const container = element.closest('[class*="message"], [class*="conversation"], [class*="chat"], [class*="inbox-item"], li, a');
+      
+      if (container) {
+        // Try each selector
+        for (const selector of commonSelectors) {
+          const nameElement = container.querySelector(selector);
+          if (nameElement) {
+            const text = nameElement.textContent?.trim();
+            if (text && text.length > 0 && text.length < 100) {
+              // Filter out common non-name text
+              if (!text.match(/^(new|message|unread|read|sent|received)$/i)) {
+                clientName = text;
+                break;
+              }
+            }
+          }
+        }
+        
+        // Strategy 2: Look for links to user profiles
+        if (!clientName) {
+          const userLink = container.querySelector('a[href*="/users/"]');
+          if (userLink) {
+            const href = userLink.getAttribute('href');
+            if (href) {
+              const urlMatch = href.match(/\/users\/([^\/\?]+)/);
+              if (urlMatch && urlMatch[1]) {
+                clientName = decodeURIComponent(urlMatch[1]);
+              } else {
+                const linkText = userLink.textContent?.trim();
+                if (linkText && linkText.length > 0 && linkText.length < 100) {
+                  clientName = linkText;
+                }
+              }
+            }
+          }
+        }
+        
+        // Strategy 3: Extract from title or heading elements
+        if (!clientName) {
+          const titleElement = container.querySelector('h1, h2, h3, h4, [class*="title"], [class*="heading"]');
+          if (titleElement) {
+            const titleText = titleElement.textContent?.trim();
+            if (titleText && titleText.length > 0 && titleText.length < 100) {
+              // Remove common prefixes/suffixes
+              const cleaned = titleText.replace(/^(new message|message from|from|by)\s*/i, '').trim();
+              if (cleaned && cleaned.length > 0) {
+                clientName = cleaned;
+              }
+            }
+          }
+        }
+        
+        // Strategy 4: Look for text patterns in the container
+        if (!clientName) {
+          const containerText = container.textContent || '';
+          // Try to match patterns like "from username", "by username", "@username"
+          const patterns = [
+            /(?:from|by|message from)\s+([a-zA-Z0-9_-]{2,50})/i,
+            /@([a-zA-Z0-9_-]{2,50})/,
+            /^([a-zA-Z0-9_-]{2,50})\s+(?:sent|wrote|says)/i
+          ];
+          
+          for (const pattern of patterns) {
+            const match = containerText.match(pattern);
+            if (match && match[1]) {
+              clientName = match[1];
+              break;
+            }
+          }
+        }
+        
+        // Strategy 5: Get first meaningful text from the container (excluding common UI elements)
+        if (!clientName) {
+          const allTextNodes = [];
+          const walker = document.createTreeWalker(
+            container,
+            NodeFilter.SHOW_TEXT,
+            {
+              acceptNode: (node) => {
+                const text = node.textContent?.trim();
+                if (text && text.length > 2 && text.length < 50) {
+                  // Exclude common UI text
+                  if (!text.match(/^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete)$/i)) {
+                    return NodeFilter.FILTER_ACCEPT;
+                  }
+                }
+                return NodeFilter.FILTER_REJECT;
+              }
+            }
+          );
+          
+          let node;
+          while ((node = walker.nextNode())) {
+            const text = node.textContent?.trim();
+            if (text && text.length > 2 && text.length < 50) {
+              allTextNodes.push(text);
+            }
+          }
+          
+          if (allTextNodes.length > 0) {
+            // Use the first meaningful text that looks like a name
+            for (const text of allTextNodes) {
+              if (text.match(/^[a-zA-Z0-9_-]{2,50}$/)) {
+                clientName = text;
+                break;
+              }
+            }
+          }
+        }
+      }
+      
+      // Strategy 6: Check sibling elements (name might be in a sibling span/div)
+      if (!clientName && element.parentElement) {
+        const siblings = Array.from(element.parentElement.children || []);
+        for (const sibling of siblings) {
+          if (sibling === element) continue;
+          const siblingText = sibling.textContent?.trim();
+          if (siblingText) {
+            const namePattern = /^[a-zA-Z0-9_-]{2,50}$/;
+            if (namePattern.test(siblingText) && !siblingText.match(/^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third)$/i)) {
+              clientName = siblingText;
+              break;
+            }
+          }
+        }
+      }
+      
+      // Strategy 7: Fallback - look in parent elements with better pattern matching
+      if (!clientName && element.parentElement) {
+        const parentText = element.parentElement.textContent || '';
+        const patterns = [
+          /(?:from|by|message from|sent by)\s+([a-zA-Z0-9_-]{2,50})/i,
+          /@([a-zA-Z0-9_-]{2,50})/,
+          /^([A-Z][a-zA-Z0-9_-]{1,49})(?:\s|$)/,  // Capitalized name at start
+          /^([a-zA-Z0-9_-]{2,50})(?:\s|$)/  // Any name-like text at start
+        ];
+        
+        for (const pattern of patterns) {
+          const match = parentText.match(pattern);
+          if (match && match[1]) {
+            const potentialName = match[1];
+            // Validate it's not a common UI word
+            if (!potentialName.match(/^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat)$/i)) {
+              clientName = potentialName;
+              break;
+            }
+          }
+        }
+      }
+      
+      // Strategy 8: Last resort - check if element's textContent is a simple name
+      // This handles cases where the flag element's textContent IS the name (like "Luciano")
+      if (!clientName) {
+        const text = element.textContent?.trim();
+        if (text) {
+          // Extract first word that looks like a name
+          const firstWordMatch = text.match(/^([a-zA-Z0-9_-]{2,50})(?:\s|$|,|\.|:)/);
+          if (firstWordMatch && firstWordMatch[1]) {
+            const potentialName = firstWordMatch[1];
+            // Only exclude obvious non-name words
+            if (!potentialName.match(/^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat|the|a|an|and|or|but)$/i)) {
+              clientName = potentialName;
+            }
+          }
+          // If no match but text is simple and looks like a name, use it
+          else if (text.match(/^[a-zA-Z0-9_-]{2,50}$/) && !text.match(/^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat|the|a|an|and|or|but)$/i)) {
+            clientName = text;
+          }
+        }
+      }
+      
+    } catch (e) {
+      console.warn("Fiverr Assistant: Error extracting client name", e);
+    }
+    
+    // Clean up the client name
+    if (clientName) {
+      clientName = clientName.trim();
+      // Remove extra whitespace and limit length
+      clientName = clientName.replace(/\s+/g, ' ').substring(0, 50);
+      // Return null if it's too short or looks invalid
+      if (clientName.length < 2) {
+        clientName = null;
+      }
+    }
+    
+    return clientName;
+  };
   
   // Track currently playing audio elements so we can stop them on user interaction
   const playingAudioElements = new Set();
@@ -2173,6 +2574,7 @@ const phoneCall = () => {
 
       // Use payload values directly instead of reading from localStorage to avoid timing issues
       targetedClients = message.payload.targetedClients !== undefined ? String(message.payload.targetedClients || "") : (getVal("targetedClients") || "");
+      ignoreClients = message.payload.ignoreClients !== undefined ? String(message.payload.ignoreClients || "") : (getVal("ignoreClients") || "");
       pageLinks = message.payload.pageLinks !== undefined ? processPageLinks(String(message.payload.pageLinks || "")) : processPageLinks(getVal("pageLinks"));
       minReloadingSecond = message.payload.relStart !== undefined ? (parseInt(String(message.payload.relStart), 10) || 30) : (parseInt(getVal("relStart"), 10) || minReloadingSecond);
       maxReloadingSecond = message.payload.relEnd !== undefined ? (parseInt(String(message.payload.relEnd), 10) || 180) : (parseInt(getVal("relEnd"), 10) || maxReloadingSecond);
@@ -2213,6 +2615,51 @@ const phoneCall = () => {
 
     initializePromise = (async () => {
       await hydrateSettings();
+
+      // Check for pending auto-reactivation after page reload
+      if (extensionStorage && !autoReload) {
+        try {
+          const result = await extensionStorage.get(AUTO_REACTIVATE_TIMESTAMP_KEY);
+          if (result && result[AUTO_REACTIVATE_TIMESTAMP_KEY]) {
+            const reactivateTimestamp = result[AUTO_REACTIVATE_TIMESTAMP_KEY];
+            const now = Date.now();
+            const remainingTime = reactivateTimestamp - now;
+            
+            if (remainingTime > 0) {
+              // There's a pending reactivation, set up the timeout
+              console.log(`Fiverr Assistant: Found pending auto-reactivation, will reactivate in ${Math.ceil(remainingTime / 1000)} seconds`);
+              autoReactivateTimeoutId = setTimeout(() => {
+                autoReactivateTimeoutId = null;
+                if (!isF10Clicked && featuresInitialized) {
+                  enableAutoReload();
+                  console.log("Fiverr Assistant: Auto-reload auto-reactivated after 1 minute");
+                }
+                // Remove the timestamp from storage
+                if (extensionStorage) {
+                  extensionStorage.remove(AUTO_REACTIVATE_TIMESTAMP_KEY).catch(() => {});
+                }
+              }, remainingTime);
+            } else {
+              // The timeout has already passed, reactivate immediately
+              console.log("Fiverr Assistant: Auto-reactivation timeout has passed, reactivating now");
+              if (featuresInitialized) {
+                enableAutoReload();
+              } else {
+                // If features aren't initialized yet, just set autoReload to true
+                // It will be properly initialized when features are ready
+                autoReload = true;
+                if (extensionStorage) {
+                  extensionStorage.set({ autoReloadEnabled: true }).then(() => {
+                    return extensionStorage.remove(AUTO_REACTIVATE_TIMESTAMP_KEY);
+                  }).catch(() => {});
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.warn("Fiverr Assistant: Failed to check for pending auto-reactivation", error);
+        }
+      }
 
       if (!autoReload) {
         removeStatusDisplay();
@@ -2412,6 +2859,36 @@ const phoneCall = () => {
           clearTimeout(notificationPauseTimeoutId);
           notificationPauseTimeoutId = null;
         }
+        // Clear any existing auto-reactivation timeout
+        if (autoReactivateTimeoutId) {
+          clearTimeout(autoReactivateTimeoutId);
+          autoReactivateTimeoutId = null;
+        }
+        // Save the stopped state to chrome.storage.local so it persists after page reload
+        if (extensionStorage) {
+          const reactivateTimestamp = Date.now() + AUTO_REACTIVATE_DELAY_MS;
+          extensionStorage.set({ 
+            autoReloadEnabled: false,
+            [AUTO_REACTIVATE_TIMESTAMP_KEY]: reactivateTimestamp
+          }).catch((error) => {
+            console.warn("Fiverr Assistant: Failed to save auto-reload stopped state", error);
+          });
+          
+          // Set timeout to auto-reactivate after 1 minute
+          autoReactivateTimeoutId = setTimeout(() => {
+            autoReactivateTimeoutId = null;
+            if (!isF10Clicked && featuresInitialized) {
+              enableAutoReload();
+              console.log("Fiverr Assistant: Auto-reload auto-reactivated after 1 minute");
+            }
+            // Remove the timestamp from storage
+            if (extensionStorage) {
+              extensionStorage.remove(AUTO_REACTIVATE_TIMESTAMP_KEY).catch(() => {});
+            }
+          }, AUTO_REACTIVATE_DELAY_MS);
+          
+          console.log("Fiverr Assistant: Auto-reload paused, will auto-reactivate in 1 minute");
+        }
       };
 
       // Redefine pauseAutoReloadForNotification to use local pauseAutoReload and enableAutoReload
@@ -2445,6 +2922,22 @@ const phoneCall = () => {
         scheduleNextReload();
         updateStatusDisplay();
         startOfflineErrorChecking();
+        // Clear auto-reactivation timeout if manually enabled before timeout
+        if (autoReactivateTimeoutId) {
+          clearTimeout(autoReactivateTimeoutId);
+          autoReactivateTimeoutId = null;
+        }
+        // Save the enabled state to chrome.storage.local so it persists after page reload
+        if (extensionStorage) {
+          extensionStorage.set({ 
+            autoReloadEnabled: true
+          }).then(() => {
+            // Remove reactivation timestamp if it exists
+            return extensionStorage.remove(AUTO_REACTIVATE_TIMESTAMP_KEY);
+          }).catch((error) => {
+            console.warn("Fiverr Assistant: Failed to save auto-reload enabled state", error);
+          });
+        }
       };
 
       scheduleNextReload = () => {
@@ -2754,16 +3247,27 @@ const phoneCall = () => {
         }
       });
 
-      sendNotification = (message) => {
+      sendNotification = (message, clientName = null) => {
         if ("Notification" in window) {
           Notification.requestPermission().then(function (permission) {
             if (permission === "granted") {
+              // Include client name in notification if available
+              let notificationTitle = message;
+              let notificationBody = "";
+              
+              if (clientName) {
+                notificationTitle = message;
+                notificationBody = `From: ${clientName}`;
+              } else {
+                notificationBody = message;
+              }
+              
               var options = {
-                body: message,
+                body: notificationBody,
                 icon: "https://fiverr-res.cloudinary.com/npm-assets/layout-service/favicon-32x32.8f21439.png",
                 tag: "fiverr-notification",
               };
-              new Notification(message, options);
+              new Notification(notificationTitle, options);
             }
           });
         } else {
@@ -2779,33 +3283,36 @@ const phoneCall = () => {
         if (hasMessage) {
           let newClientFlag = document.querySelector(newClientFlagSelector);
           if (newClientFlag) {
-            // Try to extract username
-            let clientUsername = null;
-            try {
-              const messageElement = newClientFlag.closest('[class*="message"], [class*="conversation"]');
-              if (messageElement) {
-                const usernameElement = messageElement.querySelector('[class*="username"], [class*="name"]');
-                if (usernameElement) {
-                  clientUsername = usernameElement.textContent?.trim();
-                }
-              }
-            } catch (e) {
-              console.warn("Fiverr Assistant: Error extracting username on page load", e);
-            }
+            // Try to extract client name using comprehensive extraction function
+            let clientName = extractClientName(newClientFlag);
             
+            // Check if client is in ignored list - skip audio and notification if ignored
+            const isIgnored = clientName ? isClientIgnored(clientName) : false;
+            
+            if (!isIgnored) {
             // Show alert for new client message (respect sound & notification settings)
             if (coerceBooleanSetting(settings.enable_new_client_sound, true)) {
               playAudio("new");
               phoneCall();
             }
             if (coerceBooleanSetting(settings.enable_new_client_notification, true)) {
-              sendNotification("New client Message");
+              sendNotification("New client Message", clientName);
             }
             // Pause auto-reload for 5 minutes when notification plays
             pauseAutoReloadForNotification();
             // Activate the tab when new client message is detected
             activateFiverrTab();
+            } else {
+              console.log("Fiverr Assistant: Client is in ignored list, skipping audio, notification, and tab activation", { clientName });
+            }
           } else {
+            // Try to extract client name for old client messages
+            let clientName = extractClientName(hasMessage);
+            
+            // Check if client is in ignored list - skip audio and notification if ignored
+            const isIgnored = clientName ? isClientIgnored(clientName) : false;
+            
+            if (!isIgnored) {
             // Show alert for old client message too (respect sound & notification settings)
             let targetClients = targetedClients.split(",");
             let isTargeted = targetClients.some((client) => client.trim() === "programerikram");
@@ -2818,7 +3325,10 @@ const phoneCall = () => {
               }
             }
             if (coerceBooleanSetting(settings.enable_old_client_notification, true)) {
-              sendNotification("Old client Message");
+              sendNotification("Old client Message", clientName);
+              }
+            } else {
+              console.log("Fiverr Assistant: Client is in ignored list, skipping audio and notification", { clientName });
             }
           }
         }

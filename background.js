@@ -223,6 +223,9 @@
         }
       }
       
+      // Read the current autoReloadEnabled setting from storage
+      const currentAutoReloadEnabled = coerceBoolean(allSettings.autoReloadEnabled, true);
+      
       const settingsPayload = {
         relStart: allSettings.relStart || "30",
         relEnd: allSettings.relEnd || "180",
@@ -230,7 +233,7 @@
         targetedClients: allSettings.targetedClients || "",
         ...allSettings, // Spread all other settings
         pageLinks: pageLinks, // Override with generated pageLinks if needed
-        autoReloadEnabled: true // Ensure this is always true (overrides any existing value)
+        autoReloadEnabled: currentAutoReloadEnabled // Use the stored value, don't force to true
       };
       
       console.log("Fiverr Assistant: Settings payload prepared", {
@@ -390,6 +393,13 @@
 
   const checkAndActivateFiverrTab = async () => {
     try {
+      // Check if auto-reload is enabled before proceeding
+      await refreshAutoReloadSetting();
+      if (!autoReloadEnabled) {
+        console.log("Fiverr Assistant: Auto-reload is disabled, skipping tab activation");
+        return;
+      }
+      
       console.log("Fiverr Assistant: Checking for Fiverr tabs...");
       let tabs = [];
       
@@ -426,12 +436,11 @@
       console.log(`Fiverr Assistant: Found ${tabs.length} Fiverr tab(s)`);
 
       if (tabs.length === 0) {
-        // No Fiverr tab exists, enable auto-reload and create a tab
+        // No Fiverr tab exists, create a tab only if auto-reload is enabled
         console.log("Fiverr Assistant: No Fiverr tabs found. Creating new tab and activating reloader...");
         try {
-          await storageSet({ [AUTO_RELOAD_KEY]: true });
-          autoReloadEnabled = true;
-          console.log("Fiverr Assistant: Auto-reload enabled in storage");
+          // Don't force enable auto-reload, respect the current setting
+          console.log("Fiverr Assistant: Auto-reload is enabled, creating tab");
           
           const createdTab = await new Promise((resolve, reject) => {
             api.tabs.create({ url: FIVERR_HOME_URL }, (tab) => {
@@ -498,9 +507,8 @@
         // Fiverr tabs exist, check for designated primary tab or use first tab
         console.log("Fiverr Assistant: Fiverr tabs exist. Checking for designated primary tab...");
         try {
-          await storageSet({ [AUTO_RELOAD_KEY]: true });
-          autoReloadEnabled = true;
-          console.log("Fiverr Assistant: Auto-reload enabled in storage");
+          // Don't force enable auto-reload, respect the current setting
+          console.log("Fiverr Assistant: Auto-reload is enabled, processing existing tabs");
           
           // Check if there's a designated primary tab ID
           let primaryTabId = null;
@@ -697,6 +705,14 @@
                  }
                });
             } else {
+              // No Fiverr tabs available, check if auto-reload is enabled before creating a new tab
+              await refreshAutoReloadSetting();
+              if (!autoReloadEnabled) {
+                console.log("Fiverr Assistant: Auto-reload is disabled, not creating new tab");
+                await storageRemove(PRIMARY_TAB_ID_STORAGE_KEY);
+                return;
+              }
+              
               // No Fiverr tabs available, create a new one and activate it
               console.log("Fiverr Assistant: No Fiverr tabs available, creating new activated tab...");
               try {
