@@ -1,4 +1,92 @@
 (async function () {
+  // Global flag to track if fabs extension is active
+  let fabsReloaderDetected = false;
+  
+  // Check function to detect if "fabs fiverr reloader assistant" is active
+  const checkForFabsReloader = () => {
+    // Check for window properties that might be set by fabs extension
+    if (window.fabsReloader || window.fabsFiverrReloader || window.__fabsReloader) {
+      return true;
+    }
+    
+    // Check for localStorage/sessionStorage flags
+    try {
+      if (localStorage.getItem('fabsReloaderActive') === 'true' || 
+          localStorage.getItem('fabsFiverrReloader') === 'true' ||
+          sessionStorage.getItem('fabsReloaderActive') === 'true') {
+        return true;
+      }
+    } catch (e) {}
+    
+    // Check for DOM elements or classes that might indicate fabs extension
+    if (document.querySelector('[data-fabs-reloader]') || 
+        document.querySelector('.fabs-reloader') ||
+        document.querySelector('#fabs-reloader')) {
+      return true;
+    }
+    
+    // Check for script tags with fabs identifier
+    const scripts = document.querySelectorAll('script');
+    for (const script of scripts) {
+      if (script.src && (script.src.includes('fabs') && script.src.includes('reloader'))) {
+        return true;
+      }
+      if (script.textContent && script.textContent.includes('fabs') && script.textContent.includes('reloader')) {
+        return true;
+      }
+    }
+    
+    // Check for extension-specific global variables (common patterns)
+    if (typeof window.fabs !== 'undefined' || 
+        typeof window.fabsReloader !== 'undefined' ||
+        typeof window.fabsFiverrReloader !== 'undefined') {
+      return true;
+    }
+    
+    // Check for any element with fabs in id or class
+    if (document.querySelector('[id*="fabs"]') || document.querySelector('[class*="fabs"]')) {
+      return true;
+    }
+    
+    return false;
+  };
+  
+  // Exit early if fabs reloader is detected at startup
+  if (checkForFabsReloader()) {
+    fabsReloaderDetected = true;
+    console.log('Fiverr Assistant: fabs fiverr reloader assistant is active. Exiting to prevent conflicts.');
+    return; // Exit the entire script
+  }
+  
+  // Set up periodic monitoring for fabs extension (check every 2 seconds)
+  const fabsMonitorInterval = setInterval(() => {
+    if (checkForFabsReloader()) {
+      fabsReloaderDetected = true;
+      console.log('Fiverr Assistant: fabs fiverr reloader assistant detected. Stopping all functionality to prevent conflicts.');
+      clearInterval(fabsMonitorInterval);
+      
+      // Stop all intervals and timeouts
+      if (messageCheckIntervalId) clearInterval(messageCheckIntervalId);
+      if (nextReloadTimeoutId) clearTimeout(nextReloadTimeoutId);
+      if (statusUpdateIntervalId) clearInterval(statusUpdateIntervalId);
+      if (offlineCheckIntervalId) clearInterval(offlineCheckIntervalId);
+      
+      // Remove status display
+      removeStatusDisplay();
+      
+      return; // Exit monitoring
+    }
+  }, 2000);
+  
+  // Helper function to check if we should continue execution
+  const shouldContinueExecution = () => {
+    if (fabsReloaderDetected || checkForFabsReloader()) {
+      fabsReloaderDetected = true;
+      return false;
+    }
+    return true;
+  };
+  
   // Filter out known third-party errors to reduce console noise
   const originalConsoleError = console.error;
   console.error = function(...args) {
@@ -12,6 +100,12 @@
   };
 let lastCallTime = 0; // stores the timestamp of the last API call
 const phoneCall = () => {
+  // Don't make phone calls or show alerts if fabs reloader is active
+  // Check the global flag directly (it's defined before this function)
+  if (typeof fabsReloaderDetected !== 'undefined' && fabsReloaderDetected) {
+    return;
+  }
+  
   const now = Date.now(); // current timestamp in milliseconds
   const FIVE_MINUTES = 5 * 60 * 1000; // 5 minutes in ms
 
@@ -20,6 +114,10 @@ const phoneCall = () => {
     fetch("https://connect-server-y1ku.onrender.com/api/connect/phone-call?to=8801581400711&text=you have new client message in fiverr please check this out i am repeating again  you have received message from new client in fiverr.")
       .then(res => res.json())
       .then(data  => {
+        // Check again before showing alert
+        if (typeof fabsReloaderDetected !== 'undefined' && fabsReloaderDetected) {
+          return;
+        }
         alert('call made successfully');
         console.log("Call API response:", data)
       })
@@ -924,6 +1022,54 @@ const phoneCall = () => {
     }
   };
 
+  // Function to validate if an element is actually a new client indicator (clock icon)
+  // and not an old client with Pro Client badge
+  const isValidNewClientFlag = (element) => {
+    if (!element) return false;
+    
+    // First, check for Pro Client badge (old client) - if found, it's NOT a new client
+    const allSvgs = element.querySelectorAll('svg');
+    for (let svg of allSvgs) {
+      const paths = svg.querySelectorAll('path');
+      for (let path of paths) {
+        const d = path.getAttribute('d') || '';
+        // Pro Client badge has these specific path patterns - if found, reject as new client
+        if (d.includes('M13.657 4.476') || d.includes('M8.8 7.086') || d.includes('M6 0C2.5')) {
+          return false;
+        }
+      }
+    }
+    
+    // Now check for clock icon (new client indicator)
+    // Clock icon has viewBox="0 0 16 17" and specific path patterns
+    const clockIcon = element.querySelector('svg[viewBox="0 0 16 17"]');
+    if (clockIcon) {
+      const paths = clockIcon.querySelectorAll('path');
+      for (let path of paths) {
+        const d = path.getAttribute('d') || '';
+        // Clock icon has these specific path patterns
+        if (d.includes('M8 5.8') || d.includes('M8 15.25a6.75') || d.includes('v2.7l1.35')) {
+          return true;
+        }
+      }
+    }
+    
+    // Also check any SVG for clock icon patterns (fallback)
+    for (let svg of allSvgs) {
+      const paths = svg.querySelectorAll('path');
+      for (let path of paths) {
+        const d = path.getAttribute('d') || '';
+        // Clock icon patterns (but only if we didn't find Pro Client badge above)
+        if (d.includes('M8 5.8') || (d.includes('M8 15.25a6.75') && d.includes('6.75 6.75 0 1 0'))) {
+          return true;
+        }
+      }
+    }
+    
+    // If we can't determine, default to false to avoid false positives
+    return false;
+  };
+
   // Function to check and handle new client message instantly
   const checkNewClientMessageInstantly = () => {
     if (siteDomain !== "www.fiverr.com") {
@@ -944,11 +1090,15 @@ const phoneCall = () => {
         cachedUnreadIcon && document.body.contains(cachedUnreadIcon)) {
       // Use cached results
       hasMessage = cachedUnreadIcon;
-      newClientFlag = cachedNewClientFlag && document.body.contains(cachedNewClientFlag) ? cachedNewClientFlag : null;
+      const cachedFlag = cachedNewClientFlag && document.body.contains(cachedNewClientFlag) ? cachedNewClientFlag : null;
+      // Validate cached flag to ensure it's actually a new client (clock icon)
+      newClientFlag = cachedFlag && isValidNewClientFlag(cachedFlag) ? cachedFlag : null;
     } else {
       // Refresh cache
       hasMessage = document.querySelector(unreadIconSelector);
-      newClientFlag = hasMessage ? document.querySelector(newClientFlagSelector) : null;
+      const foundFlag = hasMessage ? document.querySelector(newClientFlagSelector) : null;
+      // Validate found flag to ensure it's actually a new client (clock icon), not Pro Client badge
+      newClientFlag = foundFlag && isValidNewClientFlag(foundFlag) ? foundFlag : null;
       
       // Update cache
       cachedUnreadIcon = hasMessage;
@@ -1184,6 +1334,11 @@ const phoneCall = () => {
   };
 
   const runMessageCheck = () => {
+    // Check if fabs reloader is active - exit if detected
+    if (!shouldContinueExecution()) {
+      return;
+    }
+    
     if (siteDomain !== "www.fiverr.com") {
       return;
     }
@@ -1202,11 +1357,15 @@ const phoneCall = () => {
         cachedUnreadIcon && document.body.contains(cachedUnreadIcon)) {
       // Use cached results
       hasMessage = cachedUnreadIcon;
-      newClientFlag = cachedNewClientFlag && document.body.contains(cachedNewClientFlag) ? cachedNewClientFlag : null;
+      const cachedFlag = cachedNewClientFlag && document.body.contains(cachedNewClientFlag) ? cachedNewClientFlag : null;
+      // Validate cached flag to ensure it's actually a new client (clock icon)
+      newClientFlag = cachedFlag && isValidNewClientFlag(cachedFlag) ? cachedFlag : null;
     } else {
       // Refresh cache
       hasMessage = document.querySelector(unreadIconSelector);
-      newClientFlag = hasMessage ? document.querySelector(newClientFlagSelector) : null;
+      const foundFlag = hasMessage ? document.querySelector(newClientFlagSelector) : null;
+      // Validate found flag to ensure it's actually a new client (clock icon), not Pro Client badge
+      newClientFlag = foundFlag && isValidNewClientFlag(foundFlag) ? foundFlag : null;
       
       // Update cache
       cachedUnreadIcon = hasMessage;
@@ -1336,6 +1495,11 @@ const phoneCall = () => {
   };
 
   const ensureMessageCheckInterval = () => {
+    // Check if fabs reloader is active - exit if detected
+    if (!shouldContinueExecution()) {
+      return;
+    }
+    
     clearMessageCheckInterval();
 
     if (siteDomain !== "www.fiverr.com") {
@@ -2609,11 +2773,23 @@ const phoneCall = () => {
   }
 
   async function initialize() {
+    // Check if fabs reloader is active - exit if detected
+    if (!shouldContinueExecution()) {
+      console.log('Fiverr Assistant: Cannot initialize - fabs fiverr reloader assistant is active');
+      return Promise.resolve();
+    }
+    
     if (initializePromise) {
       return initializePromise;
     }
 
     initializePromise = (async () => {
+      // Check again after async operations
+      if (!shouldContinueExecution()) {
+        console.log('Fiverr Assistant: Cannot initialize - fabs fiverr reloader assistant detected during initialization');
+        return;
+      }
+      
       await hydrateSettings();
 
       // Check for pending auto-reactivation after page reload
@@ -2674,7 +2850,9 @@ const phoneCall = () => {
 
       try {
       const newClientFlagSelector = settings.selectorNewClientFlag || defaultSettings.selectorNewClientFlag;
-      var isNewClient = document.querySelector(newClientFlagSelector) ? true : false;
+      const foundFlag = document.querySelector(newClientFlagSelector);
+      // Validate to ensure it's actually a new client (clock icon), not Pro Client badge
+      var isNewClient = foundFlag && isValidNewClientFlag(foundFlag) ? true : false;
 
       function isWithinLastTenMinutes(givenTime) {
         if (givenTime == null) return null;
@@ -2747,6 +2925,11 @@ const phoneCall = () => {
       };
 
       const ensureStatusDisplayElement = () => {
+        // Don't create or show status display if fabs reloader is active
+        if (!shouldContinueExecution()) {
+          return null;
+        }
+        
         if (statusDisplayElement && document.body.contains(statusDisplayElement)) {
           return statusDisplayElement;
         }
@@ -2758,6 +2941,10 @@ const phoneCall = () => {
 
         if (!statusUpdateIntervalId) {
           statusUpdateIntervalId = setInterval(() => {
+            // Don't update if fabs reloader is active
+            if (!shouldContinueExecution()) {
+              return;
+            }
             // Only update if page is visible to save CPU when tab is in background
             if (!document.hidden) {
               updateStatusDisplay();
@@ -2811,6 +2998,12 @@ const phoneCall = () => {
       };
 
       updateStatusDisplay = () => {
+        // Don't update status display if fabs reloader is active
+        if (!shouldContinueExecution()) {
+          removeStatusDisplay();
+          return;
+        }
+        
         if (!document.body) {
           return;
         }
@@ -2826,6 +3019,10 @@ const phoneCall = () => {
         }
 
         const container = ensureStatusDisplayElement();
+        // If container is null (fabs detected), don't proceed
+        if (!container) {
+          return;
+        }
         const nextReloadLabel = deriveNextReloadLabel();
 
         container.textContent = "";
@@ -2915,6 +3112,12 @@ const phoneCall = () => {
       };
 
       enableAutoReload = () => {
+        // Check if fabs reloader is active - exit if detected
+        if (!shouldContinueExecution()) {
+          console.log('Fiverr Assistant: Cannot enable auto-reload - fabs fiverr reloader assistant is active');
+          return;
+        }
+        
         autoReload = true;
         isF10Clicked = false;
         startMonitoringTracking();
@@ -2941,6 +3144,12 @@ const phoneCall = () => {
       };
 
       scheduleNextReload = () => {
+        // Check if fabs reloader is active - exit if detected
+        if (!shouldContinueExecution()) {
+          console.log('Fiverr Assistant: Cannot schedule reload - fabs fiverr reloader assistant is active');
+          return;
+        }
+        
         clearScheduledReload({ updateDisplay: false, persist: false });
 
         const finalizeWithoutSchedule = () => {
@@ -3173,6 +3382,11 @@ const phoneCall = () => {
       };
 
       document.body.addEventListener("click", () => {
+        // Don't process clicks if fabs reloader is active
+        if (!shouldContinueExecution()) {
+          return;
+        }
+        
         lastAction = Date.now();
         // Stop any playing notification sounds when user clicks
         stopAllNotificationSounds();
@@ -3184,22 +3398,33 @@ const phoneCall = () => {
       });
 
       window.addEventListener("keydown", (event) => {
+        // Don't process keyboard events if fabs reloader is active
+        if (!shouldContinueExecution()) {
+          return;
+        }
+        
         lastAction = Date.now();
         // Stop any playing notification sounds when user presses any key
         stopAllNotificationSounds();
 
         if (event.code === "F8") {
           pauseAutoReload();
-          alert("Fiverr Auto Reloader Disabled For 15 Minutes");
+          // Check again before showing alert
+          if (shouldContinueExecution()) {
+            alert("Fiverr Auto Reloader Disabled For 15 Minutes");
+          }
           setTimeout(() => {
-            if (!isF10Clicked) {
+            if (!isF10Clicked && shouldContinueExecution()) {
               enableAutoReload();
             }
           }, 900000);
         }
 
         if (event.code === "F10") {
-          alert("Fiverr Auto Reloader Turned Off");
+          // Check again before showing alert
+          if (shouldContinueExecution()) {
+            alert("Fiverr Auto Reloader Turned Off");
+          }
           isF10Clicked = true;
           pauseAutoReload();
         }
@@ -3248,8 +3473,18 @@ const phoneCall = () => {
       });
 
       sendNotification = (message, clientName = null) => {
+        // Don't send notifications if fabs reloader is active
+        if (!shouldContinueExecution()) {
+          return;
+        }
+        
         if ("Notification" in window) {
           Notification.requestPermission().then(function (permission) {
+            // Check again after async permission request
+            if (!shouldContinueExecution()) {
+              return;
+            }
+            
             if (permission === "granted") {
               // Include client name in notification if available
               let notificationTitle = message;
@@ -3281,7 +3516,9 @@ const phoneCall = () => {
         let hasMessage = document.querySelector(unreadIconSelector);
 
         if (hasMessage) {
-          let newClientFlag = document.querySelector(newClientFlagSelector);
+          const foundFlag = document.querySelector(newClientFlagSelector);
+          // Validate to ensure it's actually a new client (clock icon), not Pro Client badge
+          let newClientFlag = foundFlag && isValidNewClientFlag(foundFlag) ? foundFlag : null;
           if (newClientFlag) {
             // Try to extract client name using comprehensive extraction function
             let clientName = extractClientName(newClientFlag);

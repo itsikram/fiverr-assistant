@@ -1,10 +1,61 @@
 (() => {
+  // Check if "fabs fiverr reloader assistant" extension is active
+  const checkForFabsExtension = async () => {
+    try {
+      // Check for fabs extension runtime ID (common extension IDs)
+      const possibleFabsIds = [
+        'fabs-reloader',
+        'fabsfiverrreloader',
+        'fabs-fiverr-reloader'
+      ];
+      
+      // Try to detect by checking if extension storage has fabs-related keys
+      const hasBrowserAPI = typeof browser !== "undefined";
+      const api = hasBrowserAPI ? browser : chrome;
+      if (api && api.storage && api.storage.local) {
+        try {
+          const storage = api.storage.local;
+          const keys = await new Promise((resolve) => {
+            if (hasBrowserAPI && typeof storage.get === "function" && storage.get.length <= 1) {
+              storage.get(null).then(resolve).catch(() => resolve({}));
+            } else {
+              storage.get(null, (result) => {
+                resolve(result || {});
+              });
+            }
+          });
+          
+          // Check if any storage keys indicate fabs extension
+          const storageKeys = Object.keys(keys || {});
+          if (storageKeys.some(key => key.toLowerCase().includes('fabs') && key.toLowerCase().includes('reloader'))) {
+            return true;
+          }
+        } catch (e) {
+          // Ignore storage errors
+        }
+      }
+    } catch (e) {
+      // Ignore detection errors
+    }
+    return false;
+  };
+  
   const hasBrowserAPI = typeof browser !== "undefined";
   const api = hasBrowserAPI ? browser : chrome;
 
   if (!api || !api.tabs || !api.runtime) {
     return;
   }
+  
+  // Check for fabs extension and exit if found
+  checkForFabsExtension().then(isActive => {
+    if (isActive) {
+      console.log('Fiverr Assistant: fabs fiverr reloader assistant detected. Background script exiting to prevent conflicts.');
+      return; // Exit the background script
+    }
+  }).catch(() => {
+    // Continue if check fails
+  });
 
   const storage =
     hasBrowserAPI && browser.storage && browser.storage.local
