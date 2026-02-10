@@ -1283,17 +1283,42 @@ const phoneCall = () => {
           // Try to extract client name from DOM
           let clientName = extractClientName(hasMessage);
           
+          console.log("Fiverr Assistant: Extracted client name for old client message", {
+            clientName,
+            messageId: messageId ? messageId.substring(0, 100) : null
+          });
+          
           // Check if client is in ignored list - skip audio and notification if ignored
           const isIgnored = clientName ? isClientIgnored(clientName) : false;
           
           if (!isIgnored) {
-          // Play appropriate sound based on targeted clients
-          const targetClients = (targetedClients || "").split(",").map(c => c.trim());
-          // Note: We can't determine if it's targeted without more context, so play old client sound
-          if (coerceBooleanSetting(settings.enable_old_client_sound, true)) {
-            playAudio("old");
-            phoneCall();
+          // Check if client is targeted and play appropriate sound
+          const isTargeted = clientName ? isClientTargeted(clientName) : false;
+          
+          console.log("Fiverr Assistant: Sound decision for old client message", {
+            clientName,
+            isTargeted,
+            isIgnored,
+            enableOldClientSound: coerceBooleanSetting(settings.enable_old_client_sound, true)
+          });
+          
+          if (isTargeted) {
+            // Play targeted client sound
+            if (coerceBooleanSetting(settings.enable_old_client_sound, true)) {
+              console.log("Fiverr Assistant: Playing targeted client sound for", clientName);
+              playAudio("targeted");
+            } else {
+              console.log("Fiverr Assistant: Targeted client sound is disabled in settings");
+            }
+          } else {
+            // Play old client sound for non-targeted clients
+            if (coerceBooleanSetting(settings.enable_old_client_sound, true)) {
+              console.log("Fiverr Assistant: Playing old client sound for", clientName);
+              playAudio("old");
+              phoneCall();
+            }
           }
+          
           if (coerceBooleanSetting(settings.enable_old_client_notification, true)) {
             sendNotification("New Message", clientName);
             }
@@ -2351,6 +2376,59 @@ const phoneCall = () => {
     return isIgnored;
   };
   
+  // Function to check if a client name is in the targeted clients list
+  const isClientTargeted = (clientName) => {
+    if (!clientName || typeof clientName !== 'string') {
+      console.log("Fiverr Assistant: isClientTargeted - invalid clientName", { clientName });
+      return false;
+    }
+    
+    // Get targetedClients from multiple sources (global variable, settings, localStorage)
+    let targetedClientsList = targetedClients || '';
+    
+    // Fallback to settings if global variable is empty
+    if (!targetedClientsList && typeof settings !== 'undefined' && settings && settings.targetedClients) {
+      targetedClientsList = settings.targetedClients;
+    }
+    
+    // Fallback to localStorage if still empty
+    if (!targetedClientsList) {
+      try {
+        targetedClientsList = getVal("targetedClients") || '';
+      } catch (e) {
+        // Ignore errors
+      }
+    }
+    
+    // Always log for debugging
+    console.log("Fiverr Assistant: Checking if client is targeted", {
+      clientName,
+      targetedClientsList,
+      targetedClientsGlobal: targetedClients,
+      settingsTargetedClients: typeof settings !== 'undefined' && settings ? settings.targetedClients : 'settings undefined'
+    });
+    
+    if (!targetedClientsList || targetedClientsList.trim() === '') {
+      console.log("Fiverr Assistant: No targeted clients list found");
+      return false;
+    }
+    
+    const targetedList = targetedClientsList.split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
+    const clientNameLower = clientName.trim().toLowerCase();
+    
+    const isTargeted = targetedList.includes(clientNameLower);
+    
+    // Always log the comparison result for debugging
+    console.log("Fiverr Assistant: Targeted client check result", { 
+      clientName, 
+      clientNameLower, 
+      targetedList,
+      isTargeted
+    });
+    
+    return isTargeted;
+  };
+  
   // Function to extract client name from Fiverr chat HTML
   const extractClientName = (element) => {
     if (!element) return null;
@@ -3143,6 +3221,51 @@ const phoneCall = () => {
         }
       };
 
+      // Helper function to check if any tabs in the current window are loading
+      const checkForLoadingTabs = () => {
+        return new Promise((resolve) => {
+          if (!runtime || !runtime.sendMessage) {
+            resolve(false);
+            return;
+          }
+
+          try {
+            if (hasBrowserAPI && typeof runtime.sendMessage === "function" && runtime.sendMessage.length <= 2) {
+              // Firefox API - Promise-based
+              runtime.sendMessage({ type: "checkLoadingTabs" })
+                .then((response) => {
+                  if (response && typeof response.hasLoadingTabs === "boolean") {
+                    resolve(response.hasLoadingTabs);
+                  } else {
+                    resolve(false);
+                  }
+                })
+                .catch((error) => {
+                  console.warn("Fiverr Assistant: Error checking for loading tabs", error);
+                  resolve(false);
+                });
+            } else {
+              // Chrome API - Callback-based
+              runtime.sendMessage({ type: "checkLoadingTabs" }, (response) => {
+                if (chrome.runtime && chrome.runtime.lastError) {
+                  console.warn("Fiverr Assistant: Error checking for loading tabs", chrome.runtime.lastError);
+                  resolve(false);
+                  return;
+                }
+                if (response && typeof response.hasLoadingTabs === "boolean") {
+                  resolve(response.hasLoadingTabs);
+                } else {
+                  resolve(false);
+                }
+              });
+            }
+          } catch (error) {
+            console.warn("Fiverr Assistant: Error checking for loading tabs", error);
+            resolve(false);
+          }
+        });
+      };
+
       scheduleNextReload = () => {
         // Check if fabs reloader is active - exit if detected
         if (!shouldContinueExecution()) {
@@ -3215,19 +3338,44 @@ const phoneCall = () => {
             return;
           }
 
-          const randomInt = Math.floor(Math.random() * pageLinks.length);
-          const fallbackLink = "/users/" + (getVal("profileUsername") || "") + "/seller_dashboard";
-          const goToLink = pageLinks[randomInt] || fallbackLink;
-          const newLink = new URL("https://www.fiverr.com" + goToLink).toString();
+          // Check if any other tabs in the current window are loading
+          checkForLoadingTabs().then((hasLoadingTabs) => {
+            if (hasLoadingTabs) {
+              console.log("Fiverr Assistant: Other tabs are loading, rescheduling reload instead of reloading now");
+              scheduleNextReload();
+              return;
+            }
 
-          // Check if we need to reset for a new day before incrementing
-          checkAndResetDailyCount();
-          reloadCount += 1;
-          nextReloadTimestamp = null;
-          persistReloadState();
-          updateStatusDisplay();
-          markPrimaryNavigation();
-          window.location.href = newLink;
+            // No tabs are loading, proceed with reload
+            const randomInt = Math.floor(Math.random() * pageLinks.length);
+            const fallbackLink = "/users/" + (getVal("profileUsername") || "") + "/seller_dashboard";
+            const goToLink = pageLinks[randomInt] || fallbackLink;
+            const newLink = new URL("https://www.fiverr.com" + goToLink).toString();
+
+            // Check if we need to reset for a new day before incrementing
+            checkAndResetDailyCount();
+            reloadCount += 1;
+            nextReloadTimestamp = null;
+            persistReloadState();
+            updateStatusDisplay();
+            markPrimaryNavigation();
+            window.location.href = newLink;
+          }).catch((error) => {
+            console.warn("Fiverr Assistant: Error checking for loading tabs, proceeding with reload", error);
+            // If check fails, proceed with reload to avoid blocking
+            const randomInt = Math.floor(Math.random() * pageLinks.length);
+            const fallbackLink = "/users/" + (getVal("profileUsername") || "") + "/seller_dashboard";
+            const goToLink = pageLinks[randomInt] || fallbackLink;
+            const newLink = new URL("https://www.fiverr.com" + goToLink).toString();
+
+            checkAndResetDailyCount();
+            reloadCount += 1;
+            nextReloadTimestamp = null;
+            persistReloadState();
+            updateStatusDisplay();
+            markPrimaryNavigation();
+            window.location.href = newLink;
+          });
         }, delay);
       };
 
@@ -3238,6 +3386,13 @@ const phoneCall = () => {
         const settingKey = SOUND_TYPE_TO_SETTING_KEY[type] || SOUND_TYPE_TO_SETTING_KEY.default;
         const configuredUrl = getVal(settingKey) || settings[settingKey] || defaultSettings[settingKey] || "";
         const normalizedUrl = normalizeUrl(configuredUrl);
+        
+        console.log("Fiverr Assistant: playAudio called", {
+          type,
+          settingKey,
+          configuredUrl: configuredUrl ? configuredUrl.substring(0, 100) : "empty",
+          normalizedUrl: normalizedUrl ? normalizedUrl.substring(0, 100) : "empty"
+        });
 
         let audioSource = configuredUrl;
         let objectUrl = null;
@@ -3546,17 +3701,34 @@ const phoneCall = () => {
             // Try to extract client name for old client messages
             let clientName = extractClientName(hasMessage);
             
+            console.log("Fiverr Assistant: Extracted client name for old client message (inbox page)", {
+              clientName
+            });
+            
             // Check if client is in ignored list - skip audio and notification if ignored
             const isIgnored = clientName ? isClientIgnored(clientName) : false;
             
             if (!isIgnored) {
-            // Show alert for old client message too (respect sound & notification settings)
-            let targetClients = targetedClients.split(",");
-            let isTargeted = targetClients.some((client) => client.trim() === "programerikram");
+            // Check if client is targeted and play appropriate sound
+            const isTargeted = clientName ? isClientTargeted(clientName) : false;
+            
+            console.log("Fiverr Assistant: Sound decision for old client message (inbox page)", {
+              clientName,
+              isTargeted,
+              isIgnored,
+              enableOldClientSound: coerceBooleanSetting(settings.enable_old_client_sound, true)
+            });
+            
             if (coerceBooleanSetting(settings.enable_old_client_sound, true)) {
               if (isTargeted) {
+                const targetedSoundUrl = getVal("targeted_client_sound") || settings.targeted_client_sound || defaultSettings.targeted_client_sound || "";
+                console.log("Fiverr Assistant: Playing targeted client sound for", {
+                  clientName,
+                  targetedSoundUrl: targetedSoundUrl ? targetedSoundUrl.substring(0, 100) : "not configured"
+                });
                 playAudio("targeted");
               } else {
+                console.log("Fiverr Assistant: Playing old client sound for", clientName);
                 playAudio("old");
                 phoneCall();
               }

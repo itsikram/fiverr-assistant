@@ -1293,6 +1293,48 @@
       return false;
     }
 
+    if (message.type === "checkLoadingTabs") {
+      // Check if any tabs in the current window are loading
+      const currentTabId = sender && sender.tab && typeof sender.tab.id === "number" ? sender.tab.id : null;
+      if (currentTabId === null) {
+        sendResponse({ ok: false, hasLoadingTabs: false });
+        return false;
+      }
+
+      // Get the current tab to find its window ID
+      api.tabs.get(currentTabId, (currentTab) => {
+        if (api.runtime.lastError) {
+          console.warn("Fiverr Assistant: Error getting current tab", api.runtime.lastError);
+          sendResponse({ ok: false, hasLoadingTabs: false });
+          return;
+        }
+
+        const windowId = currentTab && typeof currentTab.windowId === "number" ? currentTab.windowId : null;
+        if (windowId === null) {
+          sendResponse({ ok: false, hasLoadingTabs: false });
+          return;
+        }
+
+        // Query all tabs in the current window
+        api.tabs.query({ windowId: windowId }, (tabs) => {
+          if (api.runtime.lastError) {
+            console.warn("Fiverr Assistant: Error querying tabs in window", api.runtime.lastError);
+            sendResponse({ ok: false, hasLoadingTabs: false });
+            return;
+          }
+
+          // Check if any tab (other than the current one) is loading
+          const hasLoadingTabs = Array.isArray(tabs) && tabs.some((tab) => {
+            return tab.id !== currentTabId && tab.status === "loading";
+          });
+
+          console.log(`Fiverr Assistant: Checked for loading tabs in window ${windowId}, found: ${hasLoadingTabs}`);
+          sendResponse({ ok: true, hasLoadingTabs: hasLoadingTabs });
+        });
+      });
+      return true; // Keep the message channel open for async response
+    }
+
     if (message.type !== "fetchAudio") {
       return false;
     }
