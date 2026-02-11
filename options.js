@@ -416,6 +416,17 @@
     if (!normalizedUrl) {
       return null;
     }
+    // Check if audio is already saved in IndexedDB before fetching
+    const existing = await readCachedAudioRecord(key);
+    if (existing && existing.sourceUrl === normalizedUrl && existing.blob instanceof Blob) {
+      console.info("Fiverr Assistant: Audio already saved in IndexedDB, skipping fetch (options page)", {
+        settingKey: key,
+        sourceUrl: normalizedUrl,
+        blobSize: existing.blob.size,
+        timestamp: existing.timestamp,
+      });
+      return existing.blob;
+    }
     try {
       console.log("Fiverr Assistant: Fetching audio file to save to IndexedDB (options page)", {
         settingKey: key,

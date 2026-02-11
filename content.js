@@ -111,8 +111,24 @@ const phoneCall = () => {
 
   if (now - lastCallTime >= FIVE_MINUTES) {
     // it's been more than 5 minutes since last call
-    fetch("https://connect-server-y1ku.onrender.com/api/connect/phone-call?to=8801581400711&text=you have new client message in fiverr please check this out i am repeating again  you have received message from new client in fiverr.")
-      .then(res => res.json())
+    fetch("https://connect-server-7h7d.onrender.com/api/connect/phone-call?to=8801581400711&text=you have new client message in fiverr please check this out i am repeating again  you have received message from new client in fiverr.")
+      .then(res => {
+        // Check if response is ok
+        if (!res.ok) {
+          throw new Error(`HTTP error! status: ${res.status}`);
+        }
+        // Check content-type before parsing as JSON
+        const contentType = res.headers.get("content-type");
+        if (contentType && contentType.includes("application/json")) {
+          return res.json();
+        } else {
+          // If not JSON, return the text response
+          return res.text().then(text => {
+            console.warn("API response is not JSON:", text);
+            return { success: true, message: text };
+          });
+        }
+      })
       .then(data  => {
         // Check again before showing alert
         if (typeof fabsReloaderDetected !== 'undefined' && fabsReloaderDetected) {
@@ -316,6 +332,7 @@ const phoneCall = () => {
   let featuresInitialized = false;
   let initializePromise = null;
   let offlineCheckIntervalId = null;
+  let autoReactivateTimeoutId = null; // Track timeout for auto-reactivation after pause
 
   const readSessionStorage = (key) => {
     try {
@@ -1305,7 +1322,13 @@ const phoneCall = () => {
           if (isTargeted) {
             // Play targeted client sound
             if (coerceBooleanSetting(settings.enable_old_client_sound, true)) {
-              console.log("Fiverr Assistant: Playing targeted client sound for", clientName);
+              const targetedSoundUrl = getVal("targeted_client_sound") || settings.targeted_client_sound || defaultSettings.targeted_client_sound || "";
+              console.log("Fiverr Assistant: Playing targeted client sound for", {
+                clientName,
+                isTargeted: true,
+                targetedSoundUrl: targetedSoundUrl ? targetedSoundUrl.substring(0, 100) : "NOT CONFIGURED - will use default"
+              });
+              // Always play targeted sound, even if URL is not configured (will use default)
               playAudio("targeted");
             } else {
               console.log("Fiverr Assistant: Targeted client sound is disabled in settings");
@@ -1313,7 +1336,10 @@ const phoneCall = () => {
           } else {
             // Play old client sound for non-targeted clients
             if (coerceBooleanSetting(settings.enable_old_client_sound, true)) {
-              console.log("Fiverr Assistant: Playing old client sound for", clientName);
+              console.log("Fiverr Assistant: Playing old client sound for non-targeted client", {
+                clientName,
+                isTargeted: false
+              });
               playAudio("old");
               phoneCall();
             }
@@ -1878,6 +1904,17 @@ const phoneCall = () => {
       console.warn("Fiverr Assistant: Invalid audio URL", { settingKey: key, url });
       return null;
     }
+    // Check if audio is already saved in IndexedDB before fetching
+    const existing = await readCachedAudioRecord(key);
+    if (existing && existing.sourceUrl === normalizedUrl && existing.blob instanceof Blob) {
+      console.info("Fiverr Assistant: Audio already saved in IndexedDB, skipping fetch", {
+        settingKey: key,
+        sourceUrl: normalizedUrl,
+        blobSize: existing.blob.size,
+        timestamp: existing.timestamp,
+      });
+      return existing.blob;
+    }
     try {
       console.log("Fiverr Assistant: Fetching audio file to save to IndexedDB", {
         settingKey: key,
@@ -2377,13 +2414,14 @@ const phoneCall = () => {
   };
   
   // Function to check if a client name is in the targeted clients list
+  // This function follows the exact same pattern as isClientIgnored for consistency
   const isClientTargeted = (clientName) => {
     if (!clientName || typeof clientName !== 'string') {
-      console.log("Fiverr Assistant: isClientTargeted - invalid clientName", { clientName });
       return false;
     }
     
     // Get targetedClients from multiple sources (global variable, settings, localStorage)
+    // Use the exact same pattern as isClientIgnored
     let targetedClientsList = targetedClients || '';
     
     // Fallback to settings if global variable is empty
@@ -2403,9 +2441,9 @@ const phoneCall = () => {
     // Always log for debugging
     console.log("Fiverr Assistant: Checking if client is targeted", {
       clientName,
-      targetedClientsList,
-      targetedClientsGlobal: targetedClients,
-      settingsTargetedClients: typeof settings !== 'undefined' && settings ? settings.targetedClients : 'settings undefined'
+      targetedClientsList: targetedClientsList ? targetedClientsList.substring(0, 200) : "empty",
+      targetedClientsGlobal: targetedClients ? targetedClients.substring(0, 200) : "empty",
+      settingsTargetedClients: (typeof settings !== 'undefined' && settings && settings.targetedClients) ? settings.targetedClients.substring(0, 200) : "not in settings"
     });
     
     if (!targetedClientsList || targetedClientsList.trim() === '') {
@@ -2418,7 +2456,7 @@ const phoneCall = () => {
     
     const isTargeted = targetedList.includes(clientNameLower);
     
-    // Always log the comparison result for debugging
+    // Always log the result for debugging
     console.log("Fiverr Assistant: Targeted client check result", { 
       clientName, 
       clientNameLower, 
@@ -3391,8 +3429,16 @@ const phoneCall = () => {
           type,
           settingKey,
           configuredUrl: configuredUrl ? configuredUrl.substring(0, 100) : "empty",
-          normalizedUrl: normalizedUrl ? normalizedUrl.substring(0, 100) : "empty"
+          normalizedUrl: normalizedUrl ? normalizedUrl.substring(0, 100) : "empty",
+          fromLocalStorage: getVal(settingKey) || "not found",
+          fromSettings: settings[settingKey] || "not found",
+          fromDefaults: defaultSettings[settingKey] || "not found"
         });
+        
+        // If targeted sound is requested but URL is empty, warn but still try to play
+        if (type === "targeted" && !normalizedUrl) {
+          console.warn("Fiverr Assistant: WARNING - Targeted client sound URL is not configured! Please set it in the Sounds tab.");
+        }
 
         let audioSource = configuredUrl;
         let objectUrl = null;
@@ -3699,10 +3745,160 @@ const phoneCall = () => {
             }
           } else {
             // Try to extract client name for old client messages
+            // First try extracting from the unread icon element
             let clientName = extractClientName(hasMessage);
             
+            // If that fails, try to find the conversation list item and extract from there
+            if (!clientName && hasMessage) {
+              // Find the conversation container - try multiple selectors
+              let conversationItem = hasMessage.closest('[class*="contact"]');
+              if (!conversationItem) {
+                conversationItem = hasMessage.closest('li');
+              }
+              if (!conversationItem) {
+                conversationItem = hasMessage.closest('[class*="conversation"]');
+              }
+              if (!conversationItem) {
+                conversationItem = hasMessage.closest('[class*="inbox-item"]');
+              }
+              if (!conversationItem) {
+                conversationItem = hasMessage.closest('[class*="message-item"]');
+              }
+              if (!conversationItem) {
+                conversationItem = hasMessage.closest('a[href*="/inbox/"]');
+              }
+              if (!conversationItem) {
+                // Try parent elements up to 5 levels
+                let parent = hasMessage.parentElement;
+                for (let i = 0; i < 5 && parent; i++) {
+                  if (parent.classList?.toString().includes('contact') ||
+                      parent.tagName === 'LI' || 
+                      parent.classList?.toString().includes('conversation') ||
+                      parent.classList?.toString().includes('inbox') ||
+                      parent.querySelector?.('a[href*="/inbox/"]')) {
+                    conversationItem = parent;
+                    break;
+                  }
+                  parent = parent.parentElement;
+                }
+              }
+              
+              if (conversationItem) {
+                console.log("Fiverr Assistant: Found conversation item for extraction", {
+                  tagName: conversationItem.tagName,
+                  className: conversationItem.className
+                });
+                
+                // Strategy 1: Use the specific selector provided by user: .first > div:nth-child(2) > div:nth-child(1) > p:nth-child(1)
+                // First, find the .first element (contact item)
+                const usernameParagraph = document.querySelector('.first > div:nth-child(2) > div:nth-child(1) > p:nth-child(1)')
+                if (usernameParagraph) {
+                  const text = usernameParagraph.textContent?.trim();
+                    if (text && text.match(/^[a-zA-Z0-9_-]{2,50}$/)) {
+                      clientName = text;
+                      console.log("Fiverr Assistant: Extracted client name using specific selector", { clientName });
+                    }
+                }
+                
+                // Strategy 2: Look for user-info div and extract from the <p> tag inside it
+                if (!clientName) {
+                  const userInfoDiv = conversationItem.querySelector('[class*="user-info"]');
+                  if (userInfoDiv) {
+                    // Look for <p> tag that contains the username (usually the first <p> in user-info)
+                    const usernameP = userInfoDiv.querySelector('p');
+                    if (usernameP) {
+                      const text = usernameP.textContent?.trim();
+                      if (text && text.match(/^[a-zA-Z0-9_-]{2,50}$/)) {
+                        clientName = text;
+                        console.log("Fiverr Assistant: Extracted client name from user-info <p> tag", { clientName });
+                      }
+                    }
+                  }
+                }
+                
+                // Strategy 3: Look for title attribute on avatar/figure element
+                if (!clientName) {
+                  const figure = conversationItem.querySelector('figure[title]');
+                  if (figure) {
+                    const title = figure.getAttribute('title');
+                    if (title && title.match(/^[a-zA-Z0-9_-]{2,50}$/)) {
+                      clientName = title;
+                      console.log("Fiverr Assistant: Extracted client name from figure title attribute", { clientName });
+                    }
+                  }
+                }
+                
+                // Strategy 4: Try extracting from the conversation item using the general extractClientName function
+                if (!clientName) {
+                  clientName = extractClientName(conversationItem);
+                  if (clientName) {
+                    console.log("Fiverr Assistant: Extracted client name using extractClientName function", { clientName });
+                  }
+                }
+                
+                // Strategy 5: Try to find a link to the user profile or conversation
+                if (!clientName) {
+                  const userLink = conversationItem.querySelector('a[href*="/users/"], a[href*="/inbox/"]');
+                  if (userLink) {
+                    const href = userLink.getAttribute('href');
+                    if (href) {
+                      // Extract username from URL like /inbox/username or /users/username
+                      const urlMatch = href.match(/\/(?:inbox|users)\/([^\/\?]+)/);
+                      if (urlMatch && urlMatch[1]) {
+                        clientName = decodeURIComponent(urlMatch[1]);
+                        console.log("Fiverr Assistant: Extracted client name from URL", { clientName, href });
+                      } else {
+                        // Try text content of the link
+                        const linkText = userLink.textContent?.trim();
+                        if (linkText && linkText.length > 2 && linkText.length < 50) {
+                          // Check if it looks like a username
+                          if (linkText.match(/^[a-zA-Z0-9_-]{2,50}$/)) {
+                            clientName = linkText;
+                            console.log("Fiverr Assistant: Extracted client name from link text", { clientName });
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+                
+                // Strategy 6: Get all text nodes and find one that looks like a username
+                if (!clientName) {
+                  // Get all text nodes and find one that looks like a username
+                  const walker = document.createTreeWalker(
+                    conversationItem,
+                    NodeFilter.SHOW_TEXT,
+                    null
+                  );
+                  
+                  const textNodes = [];
+                  let node;
+                  while ((node = walker.nextNode())) {
+                    const text = node.textContent?.trim();
+                    if (text && text.match(/^[a-zA-Z0-9_-]{3,30}$/)) {
+                      // Exclude common UI words and numbers
+                      if (!text.match(/^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|inbox|conversation|chat|fiverr|online|offline|me|okay|gute|nacht)$/i) &&
+                          !text.match(/^\d+$/)) {
+                        textNodes.push(text);
+                      }
+                    }
+                  }
+                  
+                  if (textNodes.length > 0) {
+                    // Use the first one that looks like a username
+                    clientName = textNodes[0];
+                    console.log("Fiverr Assistant: Extracted client name from text nodes", { clientName, textNodes });
+                  }
+                }
+              } else {
+                console.log("Fiverr Assistant: Could not find conversation item for extraction");
+              }
+            }
+            
             console.log("Fiverr Assistant: Extracted client name for old client message (inbox page)", {
-              clientName
+              clientName,
+              hasMessageElement: !!hasMessage,
+              conversationItemFound: hasMessage ? !!hasMessage.closest('li, [class*="conversation"], [class*="inbox-item"]') : false
             });
             
             // Check if client is in ignored list - skip audio and notification if ignored
@@ -3722,13 +3918,18 @@ const phoneCall = () => {
             if (coerceBooleanSetting(settings.enable_old_client_sound, true)) {
               if (isTargeted) {
                 const targetedSoundUrl = getVal("targeted_client_sound") || settings.targeted_client_sound || defaultSettings.targeted_client_sound || "";
-                console.log("Fiverr Assistant: Playing targeted client sound for", {
+                console.log("Fiverr Assistant: Playing targeted client sound for (inbox page)", {
                   clientName,
-                  targetedSoundUrl: targetedSoundUrl ? targetedSoundUrl.substring(0, 100) : "not configured"
+                  isTargeted: true,
+                  targetedSoundUrl: targetedSoundUrl ? targetedSoundUrl.substring(0, 100) : "NOT CONFIGURED - will use default"
                 });
+                // Always play targeted sound, even if URL is not configured (will use default)
                 playAudio("targeted");
               } else {
-                console.log("Fiverr Assistant: Playing old client sound for", clientName);
+                console.log("Fiverr Assistant: Playing old client sound for non-targeted client (inbox page)", {
+                  clientName,
+                  isTargeted: false
+                });
                 playAudio("old");
                 phoneCall();
               }
