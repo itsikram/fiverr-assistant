@@ -361,6 +361,8 @@
       ".far-ia-chat-row{margin-bottom:6px;}" +
       ".far-ia-chat-input-row{display:flex;gap:8px;align-items:flex-end;}" +
       ".far-ia-chat-input{flex:1;min-height:40px;padding:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;resize:vertical;}" +
+      ".far-ia-seller-note{width:100%;min-height:64px;max-height:140px;box-sizing:border-box;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;line-height:1.4;resize:vertical;font:inherit;}" +
+      ".far-ia-seller-note:focus{outline:2px solid rgba(29,191,115,0.35);outline-offset:1px;}" +
       ".far-ia-small{font-size:11px;color:#64748b;}" +
       ".far-ia-ai-toggle{display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:8px;border:1px solid #c4c4c4;background:#fff;color:#222;cursor:pointer;padding:0;}" +
       ".far-ia-ai-toggle:hover{background:#f5f5f5;}" +
@@ -541,7 +543,7 @@
       closeModal();
     }
 
-    function openTaskExplanationModal() {
+    function openTaskExplanationModal(sellerPrivateNote) {
       const wrap = document.createElement("div");
       wrap.className = "far-ia-backdrop far-ia-task-modal";
       wrap.setAttribute("role", "dialog");
@@ -571,7 +573,11 @@
       const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
       const sys =
         TASK_SUMMARY_SYSTEM_PROMPT + "Base the summary only on the thread and any attached images.";
-      const userText = "Seller display name: " + sellerName + "\n\nConversation:\n" + transcript;
+      let userText = "Seller display name: " + sellerName + "\n\nConversation:\n" + transcript;
+      const noteExtra = (sellerPrivateNote && String(sellerPrivateNote).trim()) || "";
+      if (noteExtra) {
+        userText += "\n\nSeller focus for this summary (optional nuance only; stay faithful to the thread):\n" + noteExtra;
+      }
       const userContent = buildUserContentWithImages(userText, imageUrls, getSettings);
 
       errEl.style.display = "none";
@@ -624,9 +630,12 @@
         '<div class="far-ia-head"><span class="far-ia-title">AI inbox assistant</span><button type="button" class="far-ia-btn" data-x style="max-width:72px">Close</button></div>' +
         '<div class="far-ia-body">' +
         '<p class="far-ia-small">Uses the visible conversation as context. Buyer image attachments in the thread are included for vision-capable models (e.g. gpt-4o-mini). Paste the output into Fiverr when ready.</p>' +
+        '<label class="far-ia-small" for="far-ia-seller-note" style="font-weight:600;color:#475569">Your note to the AI (optional)</label>' +
+        '<textarea id="far-ia-seller-note" class="far-ia-seller-note" data-seller-note rows="3" placeholder="Tone, constraints, price to mention or avoid, deadline, context not in the thread… Not sent to the buyer." aria-label="Private note for AI"></textarea>' +
         '<div class="far-ia-presets">' +
         '<button type="button" class="far-ia-btn" data-a="first">Generate first message — short welcome; invite requirements</button>' +
         '<button type="button" class="far-ia-btn" data-a="reply">Generate professional response — reply to buyer’s last message</button>' +
+        '<button type="button" class="far-ia-btn" data-a="clarify">Generate clarification message — ask focused questions from the thread</button>' +
         '<div class="far-ia-cost-row">' +
         '<input type="text" class="far-ia-cost-input" data-cost-input placeholder="$ / price" title="Your price to mention in the cost message" aria-label="Your cost or price" />' +
         '<button type="button" class="far-ia-btn far-ia-cost-btn" data-a="cost">Generate cost message</button>' +
@@ -658,7 +667,18 @@
       const chatLog = dlg.querySelector("[data-chat-log]");
       const chatIn = dlg.querySelector("[data-chat-in]");
       const costInput = dlg.querySelector("[data-cost-input]");
+      const noteTa = dlg.querySelector("[data-seller-note]");
       const insertBtn = dlg.querySelector("[data-insert]");
+
+      function appendSellerNoteForApi(baseUserText) {
+        const n = noteTa ? String(noteTa.value || "").trim() : "";
+        if (!n) return baseUserText;
+        return (
+          baseUserText +
+          "\n\n---\nSeller private note for this generation (internal—work into the buyer-facing text naturally; never quote or attribute this note):\n" +
+          n
+        );
+      }
       if (sendTa && sendTa.tagName === "TEXTAREA") {
         insertBtn.style.display = "";
         insertBtn.addEventListener("click", () => {
@@ -692,12 +712,20 @@
           case "first":
             return (
               ctx +
-              "Task: Write a short first reply for a new or early thread: thank them, show you take their project seriously, and invite clear requirements or next details. Sound capable and easy to work with—no hype. Output only the message."
+              "Task: Write a short first reply for a new or early thread. Thank them and show you take their project seriously. " +
+              "If the buyer has already described their task, goals, or requirements in the thread, reflect that understanding and respond to what they said—do not ask them to “send requirements” or repeat a generic laundry list of things you need. " +
+              "Only ask for further details or clarifications for gaps that are actually missing from their messages. If the thread has no real task content yet, then it is fine to invite what you need to proceed. Sound capable and easy to work with—no hype. Output only the message."
             );
           case "reply":
             return (
               ctx +
               "Task: Reply professionally to the buyer’s latest message using full thread context. Address their points clearly, show understanding, and where appropriate signal readiness to move forward once scope is aligned—dependable and solution-oriented, never pushy. Output only the message."
+            );
+          case "clarify":
+            return (
+              ctx +
+              "Task: Write one short professional message whose purpose is to get clearer on the buyer’s task before quoting or starting work. Base it only on what appears in the thread: briefly mirror what you understood so far, then ask a small number of specific, concrete questions that would remove real ambiguity (e.g. deliverables, format, deadline, references, constraints)—not a generic ‘please send requirements’ dump. " +
+              "If the thread is vague, say so politely and invite the missing pieces. If they already gave enough detail, ask only the few remaining gaps. Collaborative tone, no blame, no invented assumptions. Output only the message."
             );
           case "cost": {
             const myCost = (costInput && String(costInput.value || "").trim()) || "";
@@ -743,7 +771,7 @@
           sellerName +
           ". Aim for a reply that leaves the buyer confident this seller is reliable and the right fit—without pressure or empty claims.";
         const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
-        const userText = presetInstruction(kind, transcript);
+        const userText = appendSellerNoteForApi(presetInstruction(kind, transcript));
         const userContent = buildUserContentWithImages(userText, imageUrls, getSettings);
         openaiChatCompletion(getSettings, [
           { role: "system", content: sys },
@@ -768,7 +796,8 @@
         b.addEventListener("click", () => {
           const kind = b.getAttribute("data-a");
           if (kind === "task") {
-            openTaskExplanationModal();
+            const taskNote = noteTa ? String(noteTa.value || "").trim() : "";
+            openTaskExplanationModal(taskNote);
             return;
           }
           runPreset(kind);
@@ -781,8 +810,9 @@
       });
 
       dlg.querySelector("[data-chat-send]").addEventListener("click", () => {
-        const q = (chatIn.value || "").trim();
+        let q = (chatIn.value || "").trim();
         if (!q) return;
+        const noteBlock = noteTa ? String(noteTa.value || "").trim() : "";
         err.style.display = "none";
         logChat("user", q);
         chatIn.value = "";
@@ -799,13 +829,21 @@
         const messages = [{ role: "system", content: sys }];
         let firstUserContentForHistory = null;
         if (chatPanelHistory.length === 0) {
-          const firstText = "Fiverr thread (context):\n" + transcript + "\n\nUser request:\n" + q;
+          let firstText = "Fiverr thread (context):\n" + transcript + "\n\nUser request:\n" + q;
+          if (noteBlock) {
+            firstText +=
+              "\n\n---\nSeller private note (internal—do not paste verbatim to the buyer):\n" + noteBlock;
+          }
           firstUserContentForHistory = buildUserContentWithImages(firstText, imageUrls, getSettings);
           messages.push({ role: "user", content: firstUserContentForHistory });
         } else {
           const cap = chatPanelHistory.slice(-CHAT_HISTORY_MAX_TURNS);
           messages.push(...cap);
-          messages.push({ role: "user", content: q });
+          const followText =
+            noteBlock
+              ? q + "\n\n---\nSeller private note (internal—do not paste verbatim):\n" + noteBlock
+              : q;
+          messages.push({ role: "user", content: followText });
         }
 
         openaiChatCompletion(getSettings, messages)
@@ -818,7 +856,16 @@
                 { role: "assistant", content: t }
               );
             } else {
-              chatPanelHistory.push({ role: "user", content: q }, { role: "assistant", content: t });
+              chatPanelHistory.push(
+                {
+                  role: "user",
+                  content:
+                    noteBlock
+                      ? q + "\n\n---\nSeller private note (internal):\n" + noteBlock
+                      : q,
+                },
+                { role: "assistant", content: t }
+              );
             }
           })
           .catch((e) => {

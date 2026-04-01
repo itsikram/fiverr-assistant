@@ -280,6 +280,18 @@ const phoneCall = () => {
   const RELOAD_DATE_KEY = "farReloadDate";
   const NEXT_RELOAD_TIMESTAMP_KEY = "farNextReloadTimestamp";
   const MIN_SECONDS_BETWEEN_ACTION_AND_RELOAD = 60;
+  /** On `/inbox` only: after keyup/click, block auto navigation reload for this long (ms). */
+  const INBOX_USER_ACTIVITY_RELOAD_COOLDOWN_MS = 5 * 60 * 1000;
+  let inboxUserActivityReloadBlockedUntil = 0;
+
+  const isFiverrInboxPage = () => {
+    try {
+      const p = window.location.pathname || "";
+      return p === "/inbox" || p.startsWith("/inbox/");
+    } catch (_) {
+      return false;
+    }
+  };
   const CONNECTION_TIME_KEY = "farConnectionTime";
   const MONITORING_TIME_KEY = "farMonitoringTime";
   const CONNECTION_DATE_KEY = "farConnectionDate";
@@ -3428,6 +3440,32 @@ const phoneCall = () => {
     playingAudioElements.clear();
   };
 
+  let inboxReloadHoldoffListenersStarted = false;
+  const startInboxReloadActivityHoldoff = () => {
+    if (inboxReloadHoldoffListenersStarted) {
+      return;
+    }
+    inboxReloadHoldoffListenersStarted = true;
+    const onInboxUserActivity = () => {
+      if (!shouldContinueExecution()) {
+        return;
+      }
+      if (!isFiverrInboxPage()) {
+        return;
+      }
+      inboxUserActivityReloadBlockedUntil = Date.now() + INBOX_USER_ACTIVITY_RELOAD_COOLDOWN_MS;
+      lastAction = Date.now();
+      stopAllNotificationSounds();
+      if (autoReload) {
+        scheduleNextReload();
+      } else {
+        updateStatusDisplay();
+      }
+    };
+    document.addEventListener("click", onInboxUserActivity, true);
+    window.addEventListener("keyup", onInboxUserActivity, true);
+  };
+
   const deactivatePrimaryTabFeatures = () => {
     pauseAutoReload();
     stopMonitoringTracking();
@@ -3567,6 +3605,7 @@ const phoneCall = () => {
         shouldContinueExecution()
       ) {
         startInboxTranslateComposer();
+        startInboxReloadActivityHoldoff();
       }
 
       // Check for pending auto-reactivation after page reload
@@ -4033,6 +4072,12 @@ const phoneCall = () => {
 
           const diffInSecond = (Date.now() - lastAction) / 1000;
           if (diffInSecond <= MIN_SECONDS_BETWEEN_ACTION_AND_RELOAD) {
+            scheduleNextReload();
+            return;
+          }
+
+          const nowTs = Date.now();
+          if (isFiverrInboxPage() && nowTs < inboxUserActivityReloadBlockedUntil) {
             scheduleNextReload();
             return;
           }
