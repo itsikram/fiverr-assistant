@@ -1033,6 +1033,7 @@ const phoneCall = () => {
       messageObserver = null;
     }
     processedNewClientMessages.clear();
+    clearNewClientAutoReplySchedule();
     // Clear DOM cache when stopping observer
     cachedUnreadIcon = null;
     cachedNewClientFlag = null;
@@ -1181,6 +1182,8 @@ const phoneCall = () => {
           pauseAutoReloadForNotification();
           
           activateFiverrTab();
+
+          scheduleNewClientAutoReply(messageId, newClientFlag, clientName);
           
           // Instantly redirect to inbox when new message is detected
           if (window.location.href !== inboxUrl && isOnline) {
@@ -1724,6 +1727,7 @@ const phoneCall = () => {
     openaiModel: "gpt-4o-mini",
     inboxMessageListSelector: "",
     inboxMessageRowSelector: "",
+    autoReplyNewClientAfter30Min: false,
   };
 
   const settings = { ...defaultSettings };
@@ -3034,7 +3038,229 @@ const phoneCall = () => {
   // Declare playAudio and sendNotification outside initialize so they're accessible to message observer
   let playAudio = async () => {};
   let sendNotification = () => {};
-  
+
+  const NEW_CLIENT_AUTO_REPLY_DELAY_MS = 30 * 60 * 1000;
+  const NEW_CLIENT_AUTO_REPLY_RETRY_MS = 5 * 60 * 1000;
+  const NEW_CLIENT_AUTO_REPLY_MAX_RETRIES = 24;
+  const AUTO_REPLY_SESSION_PREFIX = "farNewClientAutoSent:";
+
+  /** @type {{ timeoutId: ReturnType<typeof setTimeout> | null, messageId: string, inboxUsername: string, retryCount: number } | null} */
+  let newClientAutoReplyState = null;
+
+  function extractInboxUsernameNearFlag(flagEl) {
+    if (!flagEl || typeof flagEl.querySelectorAll !== "function") {
+      return null;
+    }
+    let el = flagEl;
+    for (let depth = 0; depth < 14 && el; depth++) {
+      const links = el.querySelectorAll('a[href*="/inbox/"]');
+      for (let i = 0; i < links.length; i++) {
+        try {
+          const href = links[i].href;
+          if (!href || !/fiverr\.com/i.test(href)) {
+            continue;
+          }
+          const u = new URL(href);
+          const seg = u.pathname.match(/^\/inbox\/([^/]+)/i);
+          if (!seg) {
+            continue;
+          }
+          const raw = decodeURIComponent(seg[1]).trim().toLowerCase();
+          if (raw && !["offers", "templates"].includes(raw)) {
+            return raw;
+          }
+        } catch (_) {}
+      }
+      el = el.parentElement;
+    }
+    return null;
+  }
+
+  function clearNewClientAutoReplySchedule() {
+    if (newClientAutoReplyState && newClientAutoReplyState.timeoutId) {
+      clearTimeout(newClientAutoReplyState.timeoutId);
+    }
+    newClientAutoReplyState = null;
+  }
+
+  function scheduleNewClientAutoReply(messageId, flagEl, clientName) {
+    if (!coerceBooleanSetting(settings.autoReplyNewClientAfter30Min, false)) {
+      return;
+    }
+    const fromLink = extractInboxUsernameNearFlag(flagEl);
+    let inboxUser = fromLink;
+    if (!inboxUser && clientName) {
+      inboxUser = String(clientName).trim().toLowerCase().replace(/^@/, "");
+    }
+    if (!inboxUser) {
+      console.warn(
+        "Fiverr Assistant: New-client auto-reply not scheduled — could not resolve inbox username from the notification row (open thread from list so the link includes /inbox/username)."
+      );
+      return;
+    }
+    clearNewClientAutoReplySchedule();
+    newClientAutoReplyState = {
+      timeoutId: null,
+      messageId: String(messageId),
+      inboxUsername: inboxUser,
+      retryCount: 0,
+    };
+    newClientAutoReplyState.timeoutId = setTimeout(() => {
+      newClientAutoReplyState.timeoutId = null;
+      tickNewClientAutoReply();
+    }, NEW_CLIENT_AUTO_REPLY_DELAY_MS);
+    console.log("Fiverr Assistant: New-client auto-reply scheduled (30 min)", {
+      messageId,
+      inboxUsername: inboxUser,
+    });
+  }
+
+  function tickNewClientAutoReply() {
+    attemptNewClientAutoReplySend().then((sent) => {
+      if (!newClientAutoReplyState) {
+        return;
+      }
+      if (sent) {
+        clearNewClientAutoReplySchedule();
+        return;
+      }
+      if (newClientAutoReplyState.retryCount >= NEW_CLIENT_AUTO_REPLY_MAX_RETRIES) {
+        clearNewClientAutoReplySchedule();
+        console.log("Fiverr Assistant: New-client auto-reply stopped after max retries");
+        return;
+      }
+      newClientAutoReplyState.retryCount += 1;
+      newClientAutoReplyState.timeoutId = setTimeout(() => {
+        if (newClientAutoReplyState) {
+          newClientAutoReplyState.timeoutId = null;
+        }
+        tickNewClientAutoReply();
+      }, NEW_CLIENT_AUTO_REPLY_RETRY_MS);
+    });
+  }
+
+  function triggerFiverrInboxSendMessage(textareaEl) {
+    if (!textareaEl || textareaEl.id !== "send-message-text-area") {
+      return false;
+    }
+    const form = textareaEl.closest("form");
+    if (form) {
+      const sub = form.querySelector('button[type="submit"]');
+      if (sub && !sub.disabled) {
+        sub.click();
+        return true;
+      }
+    }
+    let n = textareaEl.parentElement;
+    for (let i = 0; i < 10 && n; i++) {
+      const buttons = n.querySelectorAll("button");
+      for (let j = 0; j < buttons.length; j++) {
+        const b = buttons[j];
+        if (b.disabled) {
+          continue;
+        }
+        const label = (b.textContent || "").trim().toLowerCase();
+        if (label === "send") {
+          b.click();
+          return true;
+        }
+      }
+      n = n.parentElement;
+    }
+    return false;
+  }
+
+  async function attemptNewClientAutoReplySend() {
+    if (!shouldContinueExecution()) {
+      return false;
+    }
+    if (!isPrimaryTab) {
+      return false;
+    }
+    if (!coerceBooleanSetting(settings.autoReplyNewClientAfter30Min, false)) {
+      return false;
+    }
+    const st = newClientAutoReplyState;
+    if (!st || !st.messageId) {
+      return false;
+    }
+    if (siteDomain !== "www.fiverr.com") {
+      return false;
+    }
+
+    const path = window.location.pathname || "";
+    const m = path.match(/^\/inbox\/([^/]+)/i);
+    if (!m) {
+      return false;
+    }
+    const currentUser = decodeURIComponent(m[1]).trim().toLowerCase();
+    if (["offers", "templates"].includes(currentUser)) {
+      return false;
+    }
+    if (st.inboxUsername && currentUser !== st.inboxUsername) {
+      return false;
+    }
+
+    if (typeof window.FarInboxAi === "undefined" || !window.FarInboxAi.isLastInboxMessageFromBuyer) {
+      return false;
+    }
+    const getAi = () => ({
+      profile: settings.profile,
+      profileUsername: settings.profileUsername,
+      openaiApiKey: settings.openaiApiKey,
+      openaiModel: settings.openaiModel,
+      inboxMessageListSelector: settings.inboxMessageListSelector,
+      inboxMessageRowSelector: settings.inboxMessageRowSelector,
+    });
+    if (!window.FarInboxAi.isLastInboxMessageFromBuyer(getAi)) {
+      return false;
+    }
+
+    const sessKey = AUTO_REPLY_SESSION_PREFIX + st.messageId;
+    try {
+      if (sessionStorage.getItem(sessKey)) {
+        return false;
+      }
+    } catch (_) {}
+
+    const ta = document.getElementById("send-message-text-area");
+    if (!ta || !document.body.contains(ta)) {
+      return false;
+    }
+
+    if (coerceBooleanSetting(settings.enable_new_client_sound, true)) {
+      try {
+        await playAudio("new");
+      } catch (_) {}
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+
+    let text = "";
+    try {
+      text = await window.FarInboxAi.generatePresetReply("first", getAi);
+    } catch (e) {
+      console.warn("Fiverr Assistant: New-client auto-reply OpenAI failed", e);
+      return false;
+    }
+    text = (text && String(text).trim()) || "";
+    if (!text) {
+      return false;
+    }
+
+    ta.value = text;
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+    ta.dispatchEvent(new Event("change", { bubbles: true }));
+
+    const sent = triggerFiverrInboxSendMessage(ta);
+    if (sent) {
+      try {
+        sessionStorage.setItem(sessKey, "1");
+      } catch (_) {}
+      console.log("Fiverr Assistant: New-client auto-reply sent");
+    }
+    return sent;
+  }
+
   // Function to check if a client name is in the ignored clients list
   const isClientIgnored = (clientName) => {
     if (!clientName || typeof clientName !== 'string') {
@@ -4446,6 +4672,14 @@ const phoneCall = () => {
             pauseAutoReloadForNotification();
             // Activate the tab when new client message is detected
             activateFiverrTab();
+            const autoMsgId =
+              newClientFlag.textContent ||
+              newClientFlag.getAttribute("data-id") ||
+              (newClientFlag.parentElement
+                ? newClientFlag.parentElement.textContent.substring(0, 50)
+                : "") ||
+              "new-client-" + Date.now();
+            scheduleNewClientAutoReply(autoMsgId, newClientFlag, clientName);
             } else {
               console.log("Fiverr Assistant: Client is in ignored list, skipping audio, notification, and tab activation", { clientName });
             }

@@ -122,6 +122,13 @@
               <span>Inbox message row selector (optional override)</span>
               <input type="text" id="inboxMessageRowSelector" name="inboxMessageRowSelector" placeholder=".message-flow .message" />
             </label>
+            <label class="toggle-row">
+              <div class="toggle-text">
+                <span>Auto-reply to new clients after 30 minutes</span>
+                <small>If enabled: when a <strong>new client</strong> is detected, the extension waits 30 minutes. If you still have not replied (last message in that thread is from the buyer), it plays the <strong>new client notification sound</strong> as an alarm, generates the same “first message” as the AI assistant, fills the composer, and clicks Send. Only runs on the <strong>primary</strong> tab, only when you are open on that client’s <code>/inbox/username</code> thread. Requires OpenAI key and profile settings above. Ignored clients are excluded.</small>
+              </div>
+              <input type="checkbox" id="autoReplyNewClientAfter30Min" name="autoReplyNewClientAfter30Min" />
+            </label>
           </section>
 
           <section>

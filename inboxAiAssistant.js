@@ -265,6 +265,168 @@
     return { lines, text: joined, imageUrls: cappedUrls };
   }
 
+  /**
+   * Role of the last visible inbox message row (chronological), or null if none.
+   * @param {() => object} getSettings
+   * @returns {"seller"|"buyer"|"unknown"|null}
+   */
+  function getLastInboxMessageRole(getSettings) {
+    const { listSel, rowSel } = resolveSelectors(getSettings);
+    const sellerUser = getSellerUsername(getSettings);
+    const scopeEl = document.querySelector(listSel);
+    const rowSelParts = rowSel.trim().split(/\s+/);
+    const rowRelative = rowSelParts.length > 1 ? rowSelParts.slice(1).join(" ") : rowSel;
+    const rows = Array.from(
+      scopeEl ? scopeEl.querySelectorAll(rowRelative) : document.querySelectorAll(rowSel)
+    );
+    const seen = new Set();
+    let lastRole = null;
+
+    rows.forEach((el) => {
+      const id = el.id || el.getAttribute("data-id") || "";
+      const key = id || el.outerHTML.slice(0, 200);
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      let role = "unknown";
+      const av = el.querySelector('[data-track-tag="avatar"]');
+      const track = av && av.getAttribute("data-track-value");
+      if (track && sellerUser && String(track).toLowerCase() === sellerUser) {
+        role = "seller";
+      } else {
+        const header = el.querySelector(".header") || el;
+        const ps = header.querySelectorAll('p[data-track-tag="typography"], p');
+        for (let i = 0; i < ps.length; i++) {
+          const t = (ps[i].textContent || "").trim();
+          if (t === "Me") {
+            role = "seller";
+            break;
+          }
+          if (t && t.length > 0 && t !== "Me") {
+            role = "buyer";
+            break;
+          }
+        }
+      }
+
+      const body = el.querySelector(".message-content") || el;
+      const textParts = [];
+      body.querySelectorAll('p[data-track-tag="typography"]').forEach((p) => {
+        const tx = (p.textContent || "").replace(/\s+/g, " ").trim();
+        if (
+          !tx ||
+          /^(WE HAVE YOUR BACK|Learn more|This message relates to:|Translate to English)$/i.test(tx) ||
+          tx.length < 2
+        ) {
+          return;
+        }
+        textParts.push(tx);
+      });
+      if (textParts.length === 0) {
+        body.querySelectorAll("p").forEach((p) => {
+          const tx = (p.textContent || "").replace(/\s+/g, " ").trim();
+          if (tx && tx.length > 2 && tx.length < 8000) textParts.push(tx);
+        });
+      }
+      const text = textParts.join("\n").trim();
+      const images = extractImageUrlsFromMessageRow(el);
+      if (!text && images.length === 0) return;
+
+      lastRole = role;
+    });
+
+    return lastRole;
+  }
+
+  function isLastInboxMessageFromBuyer(getSettings) {
+    return getLastInboxMessageRole(getSettings) === "buyer";
+  }
+
+  /**
+   * @param {string} kind
+   * @param {string} transcript
+   * @param {() => object} getSettings
+   * @param {{ costPrice?: string }} presetOptions
+   */
+  function buildPresetUserText(kind, transcript, getSettings, presetOptions) {
+    const opt = presetOptions || {};
+    const costPrice = (opt.costPrice && String(opt.costPrice).trim()) || "";
+    const sellerName = getSellerDisplayName(getSettings);
+    const ctx = "Seller name for natural use: " + sellerName + "\n\nThread transcript:\n" + transcript + "\n";
+    switch (kind) {
+      case "first":
+        return (
+          ctx +
+          "Task: Write a short first reply for a new or early thread. Thank them and show you take their project seriously. " +
+          "If the buyer has already described their task, goals, or requirements in the thread, reflect that understanding and respond to what they said—do not ask them to “send requirements” or repeat a generic laundry list of things you need. " +
+          "Only ask for further details or clarifications for gaps that are actually missing from their messages. If the thread has no real task content yet, then it is fine to invite what you need to proceed. Sound capable and easy to work with—no hype. Output only the message."
+        );
+      case "reply":
+        return (
+          ctx +
+          "Task: Reply professionally to the buyer’s latest message using full thread context. Address their points clearly, show understanding, and where appropriate signal readiness to move forward once scope is aligned—dependable and solution-oriented, never pushy. Output only the message."
+        );
+      case "clarify":
+        return (
+          ctx +
+          "Task: Write one short professional message whose purpose is to get clearer on the buyer’s task before quoting or starting work. Base it only on what appears in the thread: briefly mirror what you understood so far, then ask a small number of specific, concrete questions that would remove real ambiguity (e.g. deliverables, format, deadline, references, constraints)—not a generic ‘please send requirements’ dump. " +
+          "If the thread is vague, say so politely and invite the missing pieces. If they already gave enough detail, ask only the few remaining gaps. Collaborative tone, no blame, no invented assumptions. Output only the message."
+        );
+      case "cost": {
+        const withPrice = costPrice
+          ? " The seller’s stated price to communicate is: " +
+            costPrice +
+            ". Quote that figure confidently and professionally; keep it consistent with the thread context; do not add other dollar amounts unless they already appear in the transcript."
+          : " Use only amounts or ranges discussed in the thread; if budget/pricing is unknown, ask professional clarifying questions—do not invent numbers.";
+        return (
+          ctx +
+          "Task: One message about pricing." +
+          withPrice +
+          " Sound confident and fair; briefly tie price to value only when supported by the thread. Output only the message."
+        );
+      }
+      case "quote":
+        return (
+          ctx +
+          "Task: A structured quote-style message: scope, deliverables, timeline, revision policy if inferable; otherwise neutral professional wording. No invented specifics. Present it so the buyer can compare options and feel confident proceeding—clear headings or lines are fine inside the message text. Output only the message."
+        );
+      case "cool":
+        return ctx + "Task: A cool-down / de-escalation message: empathy, commitment to fix, professional. Output only the message.";
+      case "postdelivery":
+        return (
+          ctx +
+          "Task: One message for the buyer around or after order delivery, based only on what appears in the thread (scope, gig, revisions if mentioned). Goals: (1) Thank them and confirm you stand behind the delivery as agreed. (2) Invite them to flag any genuine error, bug, or mismatch with the agreed scope that you will correct—professional and constructive. (3) Clearly and politely explain that once the work is delivered per the order, any new ideas, redesigns, extra features, or changes they want after delivery are not treated as revisions under that order: revisions (if the gig/order included them) apply to refining the agreed deliverable within scope, not open-ended post-delivery change requests. Suggest that new or additional work after delivery can be handled through a new custom offer or order if they need it—without sounding hostile or refusing legitimate fixes for mistakes in what was delivered. (4) Keep it short, professional, and Fiverr-appropriate. Do not invent package details, revision counts, or guarantees not supported by the conversation. Output only the message."
+        );
+      default:
+        return ctx;
+    }
+  }
+
+  /**
+   * @param {string} kind preset id (e.g. "first")
+   * @param {() => object} getSettings
+   * @returns {Promise<string>}
+   */
+  async function generatePresetReply(kind, getSettings) {
+    const sellerName = getSellerDisplayName(getSettings);
+    const sys =
+      BASE_SYSTEM_PROMPT +
+      " Seller display name (use when natural): " +
+      sellerName +
+      ". Aim for a reply that leaves the buyer confident this seller is reliable and the right fit—without pressure or empty claims.";
+    const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
+    const userText = buildPresetUserText(kind, transcript, getSettings, { costPrice: "" });
+    const userContent = buildUserContentWithImages(userText, imageUrls, getSettings);
+    return openaiChatCompletion(
+      getSettings,
+      [
+        { role: "system", content: sys },
+        { role: "user", content: userContent },
+      ],
+      { temperature: 0.45 }
+    );
+  }
+
   function stripFencesAndPreamble(text) {
     if (!text || typeof text !== "string") return "";
     let t = text.trim();
@@ -706,56 +868,8 @@
       }
 
       function presetInstruction(kind, transcript) {
-        const sellerName = getSellerDisplayName(getSettings);
-        const ctx = "Seller name for natural use: " + sellerName + "\n\nThread transcript:\n" + transcript + "\n";
-        switch (kind) {
-          case "first":
-            return (
-              ctx +
-              "Task: Write a short first reply for a new or early thread. Thank them and show you take their project seriously. " +
-              "If the buyer has already described their task, goals, or requirements in the thread, reflect that understanding and respond to what they said—do not ask them to “send requirements” or repeat a generic laundry list of things you need. " +
-              "Only ask for further details or clarifications for gaps that are actually missing from their messages. If the thread has no real task content yet, then it is fine to invite what you need to proceed. Sound capable and easy to work with—no hype. Output only the message."
-            );
-          case "reply":
-            return (
-              ctx +
-              "Task: Reply professionally to the buyer’s latest message using full thread context. Address their points clearly, show understanding, and where appropriate signal readiness to move forward once scope is aligned—dependable and solution-oriented, never pushy. Output only the message."
-            );
-          case "clarify":
-            return (
-              ctx +
-              "Task: Write one short professional message whose purpose is to get clearer on the buyer’s task before quoting or starting work. Base it only on what appears in the thread: briefly mirror what you understood so far, then ask a small number of specific, concrete questions that would remove real ambiguity (e.g. deliverables, format, deadline, references, constraints)—not a generic ‘please send requirements’ dump. " +
-              "If the thread is vague, say so politely and invite the missing pieces. If they already gave enough detail, ask only the few remaining gaps. Collaborative tone, no blame, no invented assumptions. Output only the message."
-            );
-          case "cost": {
-            const myCost = (costInput && String(costInput.value || "").trim()) || "";
-            const withPrice = myCost
-              ? " The seller’s stated price to communicate is: " +
-                myCost +
-                ". Quote that figure confidently and professionally; keep it consistent with the thread context; do not add other dollar amounts unless they already appear in the transcript."
-              : " Use only amounts or ranges discussed in the thread; if budget/pricing is unknown, ask professional clarifying questions—do not invent numbers.";
-            return (
-              ctx +
-              "Task: One message about pricing." +
-              withPrice +
-              " Sound confident and fair; briefly tie price to value only when supported by the thread. Output only the message."
-            );
-          }
-          case "quote":
-            return (
-              ctx +
-              "Task: A structured quote-style message: scope, deliverables, timeline, revision policy if inferable; otherwise neutral professional wording. No invented specifics. Present it so the buyer can compare options and feel confident proceeding—clear headings or lines are fine inside the message text. Output only the message."
-            );
-          case "cool":
-            return ctx + "Task: A cool-down / de-escalation message: empathy, commitment to fix, professional. Output only the message.";
-          case "postdelivery":
-            return (
-              ctx +
-              "Task: One message for the buyer around or after order delivery, based only on what appears in the thread (scope, gig, revisions if mentioned). Goals: (1) Thank them and confirm you stand behind the delivery as agreed. (2) Invite them to flag any genuine error, bug, or mismatch with the agreed scope that you will correct—professional and constructive. (3) Clearly and politely explain that once the work is delivered per the order, any new ideas, redesigns, extra features, or changes they want after delivery are not treated as revisions under that order: revisions (if the gig/order included them) apply to refining the agreed deliverable within scope, not open-ended post-delivery change requests. Suggest that new or additional work after delivery can be handled through a new custom offer or order if they need it—without sounding hostile or refusing legitimate fixes for mistakes in what was delivered. (4) Keep it short, professional, and Fiverr-appropriate. Do not invent package details, revision counts, or guarantees not supported by the conversation. Output only the message."
-            );
-          default:
-            return ctx;
-        }
+        const myCost = (costInput && String(costInput.value || "").trim()) || "";
+        return buildPresetUserText(kind, transcript, getSettings, { costPrice: myCost });
       }
 
       function runPreset(kind) {
@@ -888,6 +1002,9 @@
     attachToolbarButton,
     buildInboxTranscript,
     startCustomOfferDescriptionHelper,
+    generatePresetReply,
+    isLastInboxMessageFromBuyer,
+    getLastInboxMessageRole,
     /** exposed for tests / debugging only */
     _constants: {
       INBOX_MESSAGE_LIST_SELECTOR,

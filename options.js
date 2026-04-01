@@ -29,6 +29,7 @@
     openaiModel: "gpt-4o-mini",
     inboxMessageListSelector: "",
     inboxMessageRowSelector: "",
+    autoReplyNewClientAfter30Min: false,
   };
   const PRIMARY_TAB_ID_STORAGE_KEY = "farPrimaryTabId";
   const CONNECTION_TIME_KEY = "farConnectionTime";
