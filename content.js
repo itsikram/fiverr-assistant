@@ -1708,6 +1708,10 @@ const phoneCall = () => {
     inboxTranslateEnabled: "true",
     inboxTranslateClientLang: "",
     inboxTranslateDebounceMs: "500",
+    openaiApiKey: "",
+    openaiModel: "gpt-4o-mini",
+    inboxMessageListSelector: "",
+    inboxMessageRowSelector: "",
   };
 
   const settings = { ...defaultSettings };
@@ -2529,6 +2533,7 @@ const phoneCall = () => {
     style.textContent =
       ".far-inbox-translate-root{display:flex;align-items:flex-start;gap:8px;width:100%;min-width:0;box-sizing:border-box;}" +
       ".far-inbox-translate-left{display:flex;flex-direction:column;align-items:center;flex-shrink:0;padding-top:4px;}" +
+      ".far-inbox-translate-toolbar-row{display:flex;flex-direction:row;align-items:center;gap:6px;}" +
       ".far-inbox-translate-toggle{display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:8px;border:1px solid #c4c4c4;background:#fff;color:#222325;cursor:pointer;padding:0;font-family:inherit;}" +
       ".far-inbox-translate-toggle:hover{background:#f5f5f5;}" +
       ".far-inbox-translate-toggle--active{background:#1dbf73;color:#fff;border-color:#1dbf73;}" +
@@ -2749,7 +2754,21 @@ const phoneCall = () => {
     customInput.setAttribute("aria-label", "Custom language code");
     customWrap.appendChild(customInput);
 
-    leftCol.appendChild(toggle);
+    const toolbarRow = document.createElement("div");
+    toolbarRow.className = "far-inbox-translate-toolbar-row";
+    toolbarRow.appendChild(toggle);
+    leftCol.appendChild(toolbarRow);
+
+    if (typeof window.FarInboxAi !== "undefined" && window.FarInboxAi.attachToolbarButton) {
+      window.FarInboxAi.attachToolbarButton(toolbarRow, sendTa, root, () => ({
+        profile: settings.profile,
+        profileUsername: settings.profileUsername,
+        openaiApiKey: settings.openaiApiKey,
+        openaiModel: settings.openaiModel,
+        inboxMessageListSelector: settings.inboxMessageListSelector,
+        inboxMessageRowSelector: settings.inboxMessageRowSelector,
+      }));
+    }
 
     const col = document.createElement("div");
     col.style.cssText = "flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;";

@@ -25,6 +25,10 @@
     inboxTranslateEnabled: true,
     inboxTranslateClientLang: "",
     inboxTranslateDebounceMs: "500",
+    openaiApiKey: "",
+    openaiModel: "gpt-4o-mini",
+    inboxMessageListSelector: "",
+    inboxMessageRowSelector: "",
   };
   const PRIMARY_TAB_ID_STORAGE_KEY = "farPrimaryTabId";
   const CONNECTION_TIME_KEY = "farConnectionTime";

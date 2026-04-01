@@ -104,6 +104,27 @@
           </section>
 
           <section>
+            <h3>AI inbox assistant (OpenAI)</h3>
+            <p class="hint">Uses your API key only in this browser; it is not logged. Seller name comes from “Fiverr Profile Name” above.</p>
+            <label>
+              <span>OpenAI API key</span>
+              <input type="password" id="openaiApiKey" name="openaiApiKey" autocomplete="new-password" spellcheck="false" placeholder="sk-..." />
+            </label>
+            <label>
+              <span>Chat model</span>
+              <input type="text" id="openaiModel" name="openaiModel" placeholder="gpt-4o-mini" />
+            </label>
+            <label>
+              <span>Inbox message list selector (optional override)</span>
+              <input type="text" id="inboxMessageListSelector" name="inboxMessageListSelector" placeholder=".message-flow" />
+            </label>
+            <label>
+              <span>Inbox message row selector (optional override)</span>
+              <input type="text" id="inboxMessageRowSelector" name="inboxMessageRowSelector" placeholder=".message-flow .message" />
+            </label>
+          </section>
+
+          <section>
             <label>
               <span>Fiverr Pages (comma separated URLs)</span>
               <textarea id="pageLinks" name="pageLinks" rows="4"></textarea>

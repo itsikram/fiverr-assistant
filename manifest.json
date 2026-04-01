@@ -1,7 +1,7 @@
 {
   "manifest_version": 2,
   "name": "Fiverr Assistant & Auto Reloader",
-  "version": "1.9.9",
+  "version": "1.9.10",
   "description": "Injects the Fiverr auto reloader script into fiverr.com to monitor messages and auto-navigate as configured. also notify you when you have a new client or old client.",
   "background": {
     "scripts": [
@@ -16,7 +16,8 @@
         "https://fiverr.com/*"
       ],
       "js": [
-        "content.js"
+        "content.js",
+        "inboxAiAssistant.js"
       ],
       "run_at": "document_idle"
     }
