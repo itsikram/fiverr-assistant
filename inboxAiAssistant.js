@@ -21,14 +21,21 @@
   const INBOX_MESSAGE_ROW_SELECTOR = ".message-flow .message";
 
   const BASE_SYSTEM_PROMPT = [
-    "You help a Fiverr seller draft inbox replies.",
+    "You help a Fiverr seller draft inbox replies that read like a seasoned professional buyers want to work with.",
     "Output ONLY the final message text the seller can paste into Fiverr.",
     "No preamble like 'Sure, here is' or 'Here is a message'. No markdown code fences.",
     "No meta-commentary unless the user explicitly asks for analysis.",
-    "Tone: professional, friendly, appropriate for Fiverr.",
+    "Tone: polished, courteous, and quietly confident—clear structure, correct grammar, full sentences. Sound human, not robotic or stiff.",
+    "Build trust and make choosing this seller feel easy: mirror the buyer's goals in your own words, show you understood their messages, and end with one clear next step (e.g. what you need from them or that you're ready to proceed once details are confirmed).",
+    "Win through competence, not hype: no begging ('please hire me'), no fake urgency, no exaggerated promises, no invented credentials or stats. Avoid generic flattery and stacking exclamation marks.",
     "Use the seller's display name naturally when it fits (e.g. sign-off); do not repeat it every sentence.",
-    "Never invent specific prices, deadlines, or deliverables not grounded in the conversation; if unknown, ask concise clarifying questions instead of guessing.",
+    "Never invent specific prices, deadlines, deliverables, ratings, reviews, or portfolio claims not grounded in the conversation; if unknown, ask concise professional clarifying questions instead of guessing.",
   ].join(" ");
+
+  /** Task explanation (BN/EN) stays neutral—no sales voice */
+  const TASK_SUMMARY_SYSTEM_PROMPT =
+    "Summarize the buyer's request from the Fiverr thread accurately and neutrally. No selling, pitching, or persuasion. " +
+    "Output ONLY two labeled sections in this exact format (no text before BN):\n\nBN:\n<text in Bangla>\n\nEN:\n<text in English>\n\n";
 
   function getSellerDisplayName(getSettings) {
     const s = getSettings();
@@ -310,8 +317,7 @@
       const sellerName = getSellerDisplayName(getSettings);
       const { text: transcript } = buildInboxTranscript(getSettings);
       const sys =
-        BASE_SYSTEM_PROMPT +
-        " For this task only: output two labeled sections exactly in this format (no extra text before BN):\n\nBN:\n<text in Bangla>\n\nEN:\n<text in English>\n\nSummarize what the client wants based on the thread.";
+        TASK_SUMMARY_SYSTEM_PROMPT + "Base the summary only on the thread.";
       const user = "Seller display name: " + sellerName + "\n\nConversation:\n" + transcript;
 
       errEl.style.display = "none";
@@ -373,6 +379,7 @@
         "</div>" +
         '<button type="button" class="far-ia-btn" data-a="quote">Generate quote message — structured quote; no invented specifics</button>' +
         '<button type="button" class="far-ia-btn" data-a="cool">Generate cool-down message — de-escalation, empathy</button>' +
+        '<button type="button" class="far-ia-btn" data-a="postdelivery">After delivery — set expectations (revisions vs new work; reduce post-delivery scope creep)</button>' +
         '<button type="button" class="far-ia-btn" data-a="task">Generate task explanation — Bangla + English (new window)</button>' +
         "</div>" +
         '<textarea class="far-ia-out" readonly placeholder="Generated message appears here…" data-out></textarea>' +
@@ -432,10 +439,13 @@
           case "first":
             return (
               ctx +
-              "Task: Write a short first reply for a new or early thread: thank them for reaching out and invite them to share requirements. Output only the message."
+              "Task: Write a short first reply for a new or early thread: thank them, show you take their project seriously, and invite clear requirements or next details. Sound capable and easy to work with—no hype. Output only the message."
             );
           case "reply":
-            return ctx + "Task: Reply professionally to the buyer’s latest message using full thread context. Output only the message.";
+            return (
+              ctx +
+              "Task: Reply professionally to the buyer’s latest message using full thread context. Address their points clearly, show understanding, and where appropriate signal readiness to move forward once scope is aligned—dependable and solution-oriented, never pushy. Output only the message."
+            );
           case "cost": {
             const myCost = (costInput && String(costInput.value || "").trim()) || "";
             const withPrice = myCost
@@ -443,15 +453,25 @@
                 myCost +
                 ". Quote that figure confidently and professionally; keep it consistent with the thread context; do not add other dollar amounts unless they already appear in the transcript."
               : " Use only amounts or ranges discussed in the thread; if budget/pricing is unknown, ask professional clarifying questions—do not invent numbers.";
-            return ctx + "Task: One message about pricing." + withPrice + " Output only the message.";
+            return (
+              ctx +
+              "Task: One message about pricing." +
+              withPrice +
+              " Sound confident and fair; briefly tie price to value only when supported by the thread. Output only the message."
+            );
           }
           case "quote":
             return (
               ctx +
-              "Task: A structured quote-style message: scope, deliverables, timeline, revision policy if inferable; otherwise neutral professional wording. No invented specifics. Output only the message."
+              "Task: A structured quote-style message: scope, deliverables, timeline, revision policy if inferable; otherwise neutral professional wording. No invented specifics. Present it so the buyer can compare options and feel confident proceeding—clear headings or lines are fine inside the message text. Output only the message."
             );
           case "cool":
             return ctx + "Task: A cool-down / de-escalation message: empathy, commitment to fix, professional. Output only the message.";
+          case "postdelivery":
+            return (
+              ctx +
+              "Task: One message for the buyer around or after order delivery, based only on what appears in the thread (scope, gig, revisions if mentioned). Goals: (1) Thank them and confirm you stand behind the delivery. (2) Invite them to point out any genuine mistake or bug you should fix within the agreed scope. (3) Politely clarify the difference between revisions/fixes covered by the order and brand-new requests or changes outside what was agreed—without sounding defensive; suggest that larger or new scope can be handled via a new custom offer if needed. (4) Keep it short, professional, and Fiverr-appropriate. Do not invent package details, revision counts, or guarantees not supported by the conversation. Output only the message."
+            );
           default:
             return ctx;
         }
@@ -465,7 +485,10 @@
         setLoading(true);
         const sellerName = getSellerDisplayName(getSettings);
         const sys =
-          BASE_SYSTEM_PROMPT + " Seller display name (use when natural): " + sellerName + ".";
+          BASE_SYSTEM_PROMPT +
+          " Seller display name (use when natural): " +
+          sellerName +
+          ". Aim for a reply that leaves the buyer confident this seller is reliable and the right fit—without pressure or empty claims.";
         const user = presetInstruction(kind);
         openaiChatCompletion(getSettings, [
           { role: "system", content: sys },
@@ -516,7 +539,7 @@
           BASE_SYSTEM_PROMPT +
           " Seller: " +
           sellerName +
-          ". Default: reply with paste-ready single message only. If the user asks for analysis, you may use short bullets without filler phrases.";
+          ". Default: paste-ready single message only, same professional standard—trust-building and clear, not salesy. If the user asks for analysis, you may use short bullets without filler phrases.";
 
         const messages = [{ role: "system", content: sys }];
         if (chatPanelHistory.length === 0) {
