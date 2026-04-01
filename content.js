@@ -2992,6 +2992,16 @@ const phoneCall = () => {
     }
     ensureInboxTranslateStyles();
     tryEnhanceInboxTranslate();
+    if (typeof window.FarInboxAi !== "undefined" && window.FarInboxAi.startCustomOfferDescriptionHelper) {
+      window.FarInboxAi.startCustomOfferDescriptionHelper(() => ({
+        profile: settings.profile,
+        profileUsername: settings.profileUsername,
+        openaiApiKey: settings.openaiApiKey,
+        openaiModel: settings.openaiModel,
+        inboxMessageListSelector: settings.inboxMessageListSelector,
+        inboxMessageRowSelector: settings.inboxMessageRowSelector,
+      }));
+    }
     inboxTranslateComposerObserver = new MutationObserver(() => {
       if (inboxTranslateEnhanceScheduled) {
         return;

@@ -6,7 +6,7 @@
  * - INBOX_MESSAGE_ROW_SELECTOR / inboxMessageRowSelector option: each chat row (default `.message-flow .message`).
  * Rows are classified as seller if the header shows “Me” or avatar `data-track-value` matches profile username.
  *
- * MODEL: `openaiModel` in options (default `gpt-4o-mini`). Use any chat-completions model your key supports.
+ * MODEL: `openaiModel` in options (default `gpt-4o-mini`). Use a vision-capable model so buyer attachments (`.attachments-list`, secured Cloudinary URLs) are sent as images; gpt-3.5 gets URLs in text only.
  */
 (function () {
   "use strict";
@@ -14,11 +14,16 @@
   const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
   const MAX_TRANSCRIPT_CHARS = 12000;
   const CHAT_HISTORY_MAX_TURNS = 12;
+  /** Max images sent per API call (buyer attachments + thread); avoids huge payloads */
+  const MAX_THREAD_IMAGES = 10;
 
   /** @type {string} — list container; override in options or here if DevTools path changes */
   const INBOX_MESSAGE_LIST_SELECTOR = ".message-flow";
   /** @type {string} — message bubbles/rows; override in options or here */
   const INBOX_MESSAGE_ROW_SELECTOR = ".message-flow .message";
+
+  /** Fiverr custom offer modal — paste from DevTools if `name` changes */
+  const CUSTOM_OFFER_DESCRIPTION_TEXTAREA_SELECTOR = 'textarea[name="custom_offer.description"]';
 
   const BASE_SYSTEM_PROMPT = [
     "You help a Fiverr seller draft inbox replies that read like a seasoned professional buyers want to work with.",
@@ -30,6 +35,7 @@
     "Win through competence, not hype: no begging ('please hire me'), no fake urgency, no exaggerated promises, no invented credentials or stats. Avoid generic flattery and stacking exclamation marks.",
     "Use the seller's display name naturally when it fits (e.g. sign-off); do not repeat it every sentence.",
     "Never invent specific prices, deadlines, deliverables, ratings, reviews, or portfolio claims not grounded in the conversation; if unknown, ask concise professional clarifying questions instead of guessing.",
+    "When the user message includes images from the conversation (screenshots, uploads), look at them and use what is visible—errors, UI, designs, documents—when drafting the reply. Only describe what you can reasonably see.",
   ].join(" ");
 
   /** Task explanation (BN/EN) stays neutral—no sales voice */
@@ -55,10 +61,98 @@
     return { listSel, rowSel };
   }
 
+  function isLikelyInboxAttachmentUrl(url) {
+    if (!url || typeof url !== "string") return false;
+    const u = url.trim();
+    if (!/^https?:\/\//i.test(u)) return false;
+    if (/favicon|emoji|gravatar|pixel|1x1|spacer|data:image/i.test(u)) return false;
+    return (
+      /secured-attachments|messaging_message\/attachment|\/attachment\//i.test(u) ||
+      /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(u) ||
+      (/fiverr-res\.cloudinary\.com|cloudinary\.com/i.test(u) && /\/image\//i.test(u))
+    );
+  }
+
   /**
-   * Build chronological transcript: buyer / seller / unknown, text, optional time.
+   * Collect image URLs from a single inbox message row (buyer/seller attachments — not gig cards/avatars).
+   * @param {Element} rowEl
+   * @returns {string[]}
+   */
+  function extractImageUrlsFromMessageRow(rowEl) {
+    const urls = [];
+    const seen = new Set();
+    const add = (raw) => {
+      if (!raw) return;
+      const u = String(raw).trim();
+      if (!isLikelyInboxAttachmentUrl(u) || seen.has(u)) return;
+      seen.add(u);
+      urls.push(u);
+    };
+
+    rowEl.querySelectorAll(".attachments-list a[href]").forEach((a) => {
+      add(a.getAttribute("href"));
+    });
+    rowEl.querySelectorAll(".attachments-list img[src]").forEach((img) => {
+      add(img.getAttribute("src"));
+    });
+
+    rowEl.querySelectorAll('.message-content img[src], [data-track-tag="box"] img[src]').forEach((img) => {
+      const av = rowEl.querySelector('[data-track-tag="avatar"]');
+      if (av && av.contains(img)) return;
+      const lc = img.closest('[data-track-tag="link_card"], .link_card, [data-testid="custom-offer"]');
+      if (lc) return;
+      if (img.closest(".attachments-list")) return;
+      const src = img.getAttribute("src");
+      if (src && /secured-attachments|messaging_message\/attachment/i.test(src)) add(src);
+    });
+
+    return urls;
+  }
+
+  function modelSupportsVision(modelName) {
+    const m = String(modelName || "").toLowerCase().trim();
+    if (!m) return true;
+    if (/gpt-3\.5|gpt-3\.0|davinci|babbage|curie|ada/.test(m)) return false;
+    if (/gpt-4o|gpt-4-turbo|gpt-4\.1|gpt-5|o3|o4|vision/.test(m)) return true;
+    if (/^gpt-4[^o-]|^gpt-4$/.test(m)) return true;
+    return /gpt-4|gpt-5/.test(m);
+  }
+
+  /**
+   * @param {string} text
+   * @param {string[]} imageUrls
    * @param {() => object} getSettings
-   * @returns {{ lines: string[], text: string }}
+   * @returns {string|object[]}
+   */
+  function buildUserContentWithImages(text, imageUrls, getSettings) {
+    const model = (getSettings().openaiModel && String(getSettings().openaiModel).trim()) || "gpt-4o-mini";
+    const urls = Array.from(new Set((imageUrls || []).filter(Boolean))).slice(0, MAX_THREAD_IMAGES);
+    if (urls.length === 0) return text;
+
+    const vision = modelSupportsVision(model);
+    const note =
+      "\n\nThe following image(s) are attachments from this Fiverr conversation (chronological). Use them when the buyer shared screenshots, errors, designs, or files.";
+
+    if (!vision) {
+      return (
+        text +
+        note +
+        "\n\n[Your model may not support vision. Image URLs from the thread:]\n" +
+        urls.map((u, i) => i + 1 + ". " + u).join("\n")
+      );
+    }
+
+    const parts = [{ type: "text", text: text + note }];
+    urls.forEach((url) => {
+      parts.push({ type: "image_url", image_url: { url: url, detail: "auto" } });
+    });
+    return parts;
+  }
+
+  /**
+   * Build chronological transcript: buyer / seller / unknown, text, optional time; collect attachment image URLs.
+   * @param {() => object} getSettings
+   * @returns {{ lines: string[], text: string, imageUrls: string[] }}
    */
   function buildInboxTranscript(getSettings) {
     const { listSel, rowSel } = resolveSelectors(getSettings);
@@ -70,7 +164,7 @@
       scopeEl ? scopeEl.querySelectorAll(rowRelative) : document.querySelectorAll(rowSel)
     );
     const seen = new Set();
-    const items = [];
+    let items = [];
 
     rows.forEach((el) => {
       const id = el.id || el.getAttribute("data-id") || "";
@@ -123,23 +217,52 @@
         });
       }
       const text = textParts.join("\n").trim();
-      if (!text) return;
+      const images = extractImageUrlsFromMessageRow(el);
+      if (!text && images.length === 0) return;
 
-      items.push({ role, timeStr, text });
+      const displayText = text || "(image attachment(s) only — no text in this message)";
+      items.push({ role, timeStr, text: displayText, images });
     });
 
     let lines = items.map((it) => {
       const label = it.role === "seller" ? "seller" : it.role === "buyer" ? "buyer" : "unknown";
       const ts = it.timeStr ? ` [${it.timeStr}]` : "";
-      return `[${label}]${ts}\n${it.text}`;
+      let line = `[${label}]${ts}\n${it.text}`;
+      if (it.images && it.images.length) {
+        line += `\n[${it.images.length} image attachment(s) — also supplied to the model as images]`;
+      }
+      return line;
     });
 
     let joined = lines.join("\n\n");
-    while (joined.length > MAX_TRANSCRIPT_CHARS && lines.length > 1) {
-      lines = lines.slice(Math.floor(lines.length / 5));
+    while (joined.length > MAX_TRANSCRIPT_CHARS && items.length > 1) {
+      const drop = Math.max(1, Math.floor(items.length / 5));
+      items = items.slice(drop);
+      lines = items.map((it) => {
+        const label = it.role === "seller" ? "seller" : it.role === "buyer" ? "buyer" : "unknown";
+        const ts = it.timeStr ? ` [${it.timeStr}]` : "";
+        let line = `[${label}]${ts}\n${it.text}`;
+        if (it.images && it.images.length) {
+          line += `\n[${it.images.length} image attachment(s) — also supplied to the model as images]`;
+        }
+        return line;
+      });
       joined = lines.join("\n\n");
     }
-    return { lines, text: joined };
+
+    const imageUrls = [];
+    const globalImgSeen = new Set();
+    items.forEach((it) => {
+      (it.images || []).forEach((u) => {
+        if (!globalImgSeen.has(u)) {
+          globalImgSeen.add(u);
+          imageUrls.push(u);
+        }
+      });
+    });
+    const cappedUrls = imageUrls.slice(0, MAX_THREAD_IMAGES);
+
+    return { lines, text: joined, imageUrls: cappedUrls };
   }
 
   function stripFencesAndPreamble(text) {
@@ -191,12 +314,26 @@
     }
 
     if (!res.ok) {
-      const msg = mapOpenAIError(res.status, "");
-      throw new Error(msg);
+      const apiErr =
+        data && data.error && typeof data.error.message === "string" ? data.error.message : "";
+      let msg = mapOpenAIError(res.status, "");
+      if (apiErr && !/sk-|api[_-]?key/i.test(apiErr)) {
+        msg = msg + " " + apiErr.slice(0, 200);
+      }
+      throw new Error(msg.trim());
     }
     const choice = data && data.choices && data.choices[0] && data.choices[0].message;
-    const content = choice && choice.content ? String(choice.content) : "";
-    return stripFencesAndPreamble(content);
+    let rawContent = choice && choice.content;
+    if (typeof rawContent === "string") {
+      return stripFencesAndPreamble(rawContent);
+    }
+    if (Array.isArray(rawContent)) {
+      const textParts = rawContent
+        .filter((p) => p && p.type === "text" && p.text)
+        .map((p) => p.text);
+      return stripFencesAndPreamble(textParts.join("\n"));
+    }
+    return "";
   }
 
   function injectModalStyles() {
@@ -230,6 +367,122 @@
       ".far-ia-ai-toggle--on{border-color:#1dbf73;background:#1dbf73;color:#fff;}" +
       ".far-ia-task-modal .far-ia-out{min-height:160px;max-height:40vh;white-space:pre-wrap;}";
     document.documentElement.appendChild(st);
+  }
+
+  function ensureCustomOfferAiStyles() {
+    if (document.getElementById("far-custom-offer-ai-styles")) return;
+    const st = document.createElement("style");
+    st.id = "far-custom-offer-ai-styles";
+    st.textContent =
+      ".far-custom-offer-ai-wrap{margin-top:10px;width:100%;}" +
+      ".far-custom-offer-ai-btn{width:100%;padding:9px 12px;font:inherit;font-size:13px;font-weight:600;border-radius:8px;border:1px solid #1dbf73;background:#1dbf73;color:#fff;cursor:pointer;box-sizing:border-box;}" +
+      ".far-custom-offer-ai-btn:hover{filter:brightness(0.97);}" +
+      ".far-custom-offer-ai-btn:disabled{opacity:0.6;cursor:not-allowed;}" +
+      ".far-custom-offer-ai-err{margin-top:6px;font-size:12px;color:#b91c1c;line-height:1.35;}";
+    document.documentElement.appendChild(st);
+  }
+
+  let customOfferDescriptionHelperStarted = false;
+
+  /**
+   * Injects a button under the custom-offer description field when the modal opens; fills from thread + API.
+   * @param {() => object} getSettings
+   */
+  function startCustomOfferDescriptionHelper(getSettings) {
+    if (customOfferDescriptionHelperStarted) return;
+    customOfferDescriptionHelperStarted = true;
+    ensureCustomOfferAiStyles();
+
+    let scheduled = false;
+    const schedule = () => {
+      if (scheduled) return;
+      scheduled = true;
+      requestAnimationFrame(() => {
+        scheduled = false;
+        injectCustomOfferDescriptionButton(getSettings);
+      });
+    };
+
+    const observer = new MutationObserver(schedule);
+    observer.observe(document.documentElement, { childList: true, subtree: true });
+    schedule();
+  }
+
+  function injectCustomOfferDescriptionButton(getSettings) {
+    const ta = document.querySelector(CUSTOM_OFFER_DESCRIPTION_TEXTAREA_SELECTOR);
+    if (!ta || ta.tagName !== "TEXTAREA" || !document.body.contains(ta)) return;
+
+    const inner = ta.parentElement;
+    const col = inner && inner.parentElement;
+    if (!col || !col.contains(ta)) return;
+    if (col.querySelector(".far-custom-offer-ai-wrap")) return;
+
+    const wrap = document.createElement("div");
+    wrap.className = "far-custom-offer-ai-wrap";
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "far-custom-offer-ai-btn";
+    btn.textContent = "Generate offer description from conversation (AI)";
+    const err = document.createElement("div");
+    err.className = "far-custom-offer-ai-err";
+    err.style.display = "none";
+    err.setAttribute("role", "alert");
+
+    btn.addEventListener("click", () => {
+      err.style.display = "none";
+      err.textContent = "";
+      btn.disabled = true;
+      const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
+      const form = ta.closest("form");
+      const gigHeading =
+        form && form.querySelector('h6[data-track-tag="heading"]');
+      const titleText = gigHeading ? String(gigHeading.textContent || "").replace(/\s+/g, " ").trim() : "";
+
+      const sellerName = getSellerDisplayName(getSettings);
+      const sys =
+        BASE_SYSTEM_PROMPT +
+        " Task: Write ONLY the text for the Fiverr custom offer description field (what the buyer reads). Clear scope, deliverables, and what is included; mention timeline or revisions only if grounded in the thread. Professional Fiverr-style offer copy, not a chat greeting. Strict maximum 1500 characters (field limit). No markdown fences, no preamble or labels—just the description body. Do not invent prices, deadlines, or package details not supported by the conversation.";
+
+      const userText =
+        "Gig / offer title shown in this form: " +
+        (titleText || "(not found)") +
+        "\n\nSeller display name: " +
+        sellerName +
+        "\n\nInbox conversation with this buyer:\n" +
+        transcript +
+        "\n\nProduce the offer description text only. If the thread is empty or uninformative, write a short professional scope summary and invite the buyer to confirm details—do not invent a specific project.";
+
+      const userContent = buildUserContentWithImages(userText, imageUrls, getSettings);
+
+      openaiChatCompletion(
+        getSettings,
+        [
+          { role: "system", content: sys },
+          { role: "user", content: userContent },
+        ],
+        { temperature: 0.45 }
+      )
+        .then((text) => {
+          let out = (text || "").trim();
+          const maxLen = parseInt(ta.getAttribute("maxlength") || "1500", 10) || 1500;
+          if (out.length > maxLen) out = out.slice(0, maxLen);
+          ta.value = out;
+          ta.dispatchEvent(new Event("input", { bubbles: true }));
+          ta.dispatchEvent(new Event("change", { bubbles: true }));
+          ta.focus();
+        })
+        .catch((e) => {
+          err.textContent = e.message || "Could not generate description.";
+          err.style.display = "block";
+        })
+        .finally(() => {
+          btn.disabled = false;
+        });
+    });
+
+    wrap.appendChild(btn);
+    wrap.appendChild(err);
+    col.appendChild(wrap);
   }
 
   function trapFocus(dialog) {
@@ -315,10 +568,11 @@
       });
 
       const sellerName = getSellerDisplayName(getSettings);
-      const { text: transcript } = buildInboxTranscript(getSettings);
+      const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
       const sys =
-        TASK_SUMMARY_SYSTEM_PROMPT + "Base the summary only on the thread.";
-      const user = "Seller display name: " + sellerName + "\n\nConversation:\n" + transcript;
+        TASK_SUMMARY_SYSTEM_PROMPT + "Base the summary only on the thread and any attached images.";
+      const userText = "Seller display name: " + sellerName + "\n\nConversation:\n" + transcript;
+      const userContent = buildUserContentWithImages(userText, imageUrls, getSettings);
 
       errEl.style.display = "none";
       outBn.textContent = "Loading…";
@@ -328,7 +582,7 @@
         getSettings,
         [
           { role: "system", content: sys },
-          { role: "user", content: user },
+          { role: "user", content: userContent },
         ],
         { temperature: 0.3 }
       )
@@ -369,7 +623,7 @@
       dlg.innerHTML =
         '<div class="far-ia-head"><span class="far-ia-title">AI inbox assistant</span><button type="button" class="far-ia-btn" data-x style="max-width:72px">Close</button></div>' +
         '<div class="far-ia-body">' +
-        '<p class="far-ia-small">Uses the visible conversation as context. Paste the output into Fiverr when ready.</p>' +
+        '<p class="far-ia-small">Uses the visible conversation as context. Buyer image attachments in the thread are included for vision-capable models (e.g. gpt-4o-mini). Paste the output into Fiverr when ready.</p>' +
         '<div class="far-ia-presets">' +
         '<button type="button" class="far-ia-btn" data-a="first">Generate first message — short welcome; invite requirements</button>' +
         '<button type="button" class="far-ia-btn" data-a="reply">Generate professional response — reply to buyer’s last message</button>' +
@@ -431,9 +685,8 @@
         chatLog.scrollTop = chatLog.scrollHeight;
       }
 
-      function presetInstruction(kind) {
+      function presetInstruction(kind, transcript) {
         const sellerName = getSellerDisplayName(getSettings);
-        const { text: transcript } = buildInboxTranscript(getSettings);
         const ctx = "Seller name for natural use: " + sellerName + "\n\nThread transcript:\n" + transcript + "\n";
         switch (kind) {
           case "first":
@@ -470,7 +723,7 @@
           case "postdelivery":
             return (
               ctx +
-              "Task: One message for the buyer around or after order delivery, based only on what appears in the thread (scope, gig, revisions if mentioned). Goals: (1) Thank them and confirm you stand behind the delivery. (2) Invite them to point out any genuine mistake or bug you should fix within the agreed scope. (3) Politely clarify the difference between revisions/fixes covered by the order and brand-new requests or changes outside what was agreed—without sounding defensive; suggest that larger or new scope can be handled via a new custom offer if needed. (4) Keep it short, professional, and Fiverr-appropriate. Do not invent package details, revision counts, or guarantees not supported by the conversation. Output only the message."
+              "Task: One message for the buyer around or after order delivery, based only on what appears in the thread (scope, gig, revisions if mentioned). Goals: (1) Thank them and confirm you stand behind the delivery as agreed. (2) Invite them to flag any genuine error, bug, or mismatch with the agreed scope that you will correct—professional and constructive. (3) Clearly and politely explain that once the work is delivered per the order, any new ideas, redesigns, extra features, or changes they want after delivery are not treated as revisions under that order: revisions (if the gig/order included them) apply to refining the agreed deliverable within scope, not open-ended post-delivery change requests. Suggest that new or additional work after delivery can be handled through a new custom offer or order if they need it—without sounding hostile or refusing legitimate fixes for mistakes in what was delivered. (4) Keep it short, professional, and Fiverr-appropriate. Do not invent package details, revision counts, or guarantees not supported by the conversation. Output only the message."
             );
           default:
             return ctx;
@@ -489,10 +742,12 @@
           " Seller display name (use when natural): " +
           sellerName +
           ". Aim for a reply that leaves the buyer confident this seller is reliable and the right fit—without pressure or empty claims.";
-        const user = presetInstruction(kind);
+        const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
+        const userText = presetInstruction(kind, transcript);
+        const userContent = buildUserContentWithImages(userText, imageUrls, getSettings);
         openaiChatCompletion(getSettings, [
           { role: "system", content: sys },
-          { role: "user", content: user },
+          { role: "user", content: userContent },
         ])
           .then((t) => {
             out.value = t;
@@ -534,7 +789,7 @@
         setLoading(true);
 
         const sellerName = getSellerDisplayName(getSettings);
-        const { text: transcript } = buildInboxTranscript(getSettings);
+        const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
         const sys =
           BASE_SYSTEM_PROMPT +
           " Seller: " +
@@ -542,11 +797,11 @@
           ". Default: paste-ready single message only, same professional standard—trust-building and clear, not salesy. If the user asks for analysis, you may use short bullets without filler phrases.";
 
         const messages = [{ role: "system", content: sys }];
+        let firstUserContentForHistory = null;
         if (chatPanelHistory.length === 0) {
-          messages.push({
-            role: "user",
-            content: "Fiverr thread (context):\n" + transcript + "\n\nUser request:\n" + q,
-          });
+          const firstText = "Fiverr thread (context):\n" + transcript + "\n\nUser request:\n" + q;
+          firstUserContentForHistory = buildUserContentWithImages(firstText, imageUrls, getSettings);
+          messages.push({ role: "user", content: firstUserContentForHistory });
         } else {
           const cap = chatPanelHistory.slice(-CHAT_HISTORY_MAX_TURNS);
           messages.push(...cap);
@@ -559,10 +814,7 @@
             logChat("assistant", t);
             if (chatPanelHistory.length === 0) {
               chatPanelHistory.push(
-                {
-                  role: "user",
-                  content: "Fiverr thread (context):\n" + transcript + "\n\nUser request:\n" + q,
-                },
+                { role: "user", content: firstUserContentForHistory },
                 { role: "assistant", content: t }
               );
             } else {
@@ -588,10 +840,12 @@
   window.FarInboxAi = {
     attachToolbarButton,
     buildInboxTranscript,
+    startCustomOfferDescriptionHelper,
     /** exposed for tests / debugging only */
     _constants: {
       INBOX_MESSAGE_LIST_SELECTOR,
       INBOX_MESSAGE_ROW_SELECTOR,
+      CUSTOM_OFFER_DESCRIPTION_TEXTAREA_SELECTOR,
     },
   };
 })();
