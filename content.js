@@ -1705,6 +1705,9 @@ const phoneCall = () => {
     enable_old_client_sound: true,
     enable_new_client_notification: true,
     enable_old_client_notification: true,
+    inboxTranslateEnabled: "true",
+    inboxTranslateClientLang: "",
+    inboxTranslateDebounceMs: "500",
   };
 
   const settings = { ...defaultSettings };
@@ -2361,6 +2364,628 @@ const phoneCall = () => {
     updateStatusDisplay();
   };
 
+  let inboxTranslateComposerObserver = null;
+  let inboxTranslateEnhanceScheduled = false;
+  let inboxTranslateThreadPath = "";
+  let inboxTranslateCachedLang = null;
+  let farInboxHistoryListenStarted = false;
+
+  const INBOX_CLIENT_LANG_MAP_KEY = "farInboxClientTranslateLangMap";
+
+  const INBOX_TRANSLATE_LANG_OPTIONS = [
+    { value: "", label: "Auto" },
+    { value: "en", label: "English" },
+    { value: "es", label: "Spanish" },
+    { value: "de", label: "German" },
+    { value: "fr", label: "French" },
+    { value: "it", label: "Italian" },
+    { value: "pt", label: "Portuguese" },
+    { value: "nl", label: "Dutch" },
+    { value: "pl", label: "Polish" },
+    { value: "ru", label: "Russian" },
+    { value: "uk", label: "Ukrainian" },
+    { value: "tr", label: "Turkish" },
+    { value: "ar", label: "Arabic" },
+    { value: "hi", label: "Hindi" },
+    { value: "ja", label: "Japanese" },
+    { value: "ko", label: "Korean" },
+    { value: "zh-CN", label: "中文" },
+    { value: "vi", label: "Vietnamese" },
+    { value: "id", label: "Indonesian" },
+    { value: "th", label: "Thai" },
+    { value: "cs", label: "Czech" },
+    { value: "ro", label: "Romanian" },
+    { value: "sv", label: "Swedish" },
+    { value: "no", label: "Norwegian" },
+    { value: "da", label: "Danish" },
+    { value: "fi", label: "Finnish" },
+    { value: "el", label: "Greek" },
+    { value: "he", label: "Hebrew" },
+    { value: "hu", label: "Hungarian" },
+    { value: "ms", label: "Malay" },
+    { value: "tl", label: "Filipino" },
+    { value: "custom", label: "Other…" },
+  ];
+
+  const getInboxClientKeyFromPath = () => {
+    try {
+      const p = window.location.pathname || "";
+      const m = p.match(/^\/inbox\/([^/]+)/i);
+      if (!m) {
+        return null;
+      }
+      const seg = decodeURIComponent(m[1]).trim().toLowerCase();
+      if (!seg || ["offers", "templates"].includes(seg)) {
+        return null;
+      }
+      return seg;
+    } catch (_) {
+      return null;
+    }
+  };
+
+  const loadClientTranslateLangMap = async () => {
+    let map = {};
+    if (extensionStorage) {
+      try {
+        const r = await extensionStorage.get(INBOX_CLIENT_LANG_MAP_KEY);
+        const rawMap = r && r[INBOX_CLIENT_LANG_MAP_KEY];
+        if (rawMap && typeof rawMap === "object" && !Array.isArray(rawMap)) {
+          map = { ...rawMap };
+        }
+      } catch (_) {}
+    }
+    if (Object.keys(map).length === 0) {
+      try {
+        const raw = localStorage.getItem(INBOX_CLIENT_LANG_MAP_KEY);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+            map = { ...parsed };
+          }
+        }
+      } catch (_) {}
+    }
+    return map;
+  };
+
+  const saveClientTranslateLangMap = async (map) => {
+    try {
+      localStorage.setItem(INBOX_CLIENT_LANG_MAP_KEY, JSON.stringify(map));
+    } catch (_) {}
+    if (extensionStorage) {
+      try {
+        await extensionStorage.set({ [INBOX_CLIENT_LANG_MAP_KEY]: map });
+      } catch (_) {}
+    }
+  };
+
+  const applyLangSelectionToUI = (langSelect, customInput, customWrap, savedCode) => {
+    const s = String(savedCode || "").trim();
+    if (!s || s.toLowerCase() === "auto") {
+      langSelect.value = "";
+      customInput.value = "";
+      if (customWrap) {
+        customWrap.style.display = "none";
+      }
+      return;
+    }
+    const lower = s.toLowerCase();
+    let found = "";
+    for (let i = 0; i < langSelect.options.length; i++) {
+      const o = langSelect.options[i];
+      if (!o.value || o.value === "custom") {
+        continue;
+      }
+      if (o.value.toLowerCase() === lower) {
+        found = o.value;
+        break;
+      }
+    }
+    if (found) {
+      langSelect.value = found;
+      customInput.value = "";
+      if (customWrap) {
+        customWrap.style.display = "none";
+      }
+    } else {
+      langSelect.value = "custom";
+      customInput.value = s;
+      if (customWrap) {
+        customWrap.style.display = "block";
+      }
+    }
+  };
+
+  const getPersistedLangCodeFromUI = (langSelect, customInput) => {
+    const v = langSelect.value;
+    if (v === "custom") {
+      return (customInput.value || "").trim();
+    }
+    return (v || "").trim();
+  };
+
+  const persistInboxClientLang = async (clientKey, langSelect, customInput) => {
+    if (!clientKey) {
+      return;
+    }
+    const code = getPersistedLangCodeFromUI(langSelect, customInput);
+    const map = await loadClientTranslateLangMap();
+    const next = { ...map };
+    if (!code) {
+      delete next[clientKey];
+    } else {
+      next[clientKey] = code;
+    }
+    await saveClientTranslateLangMap(next);
+  };
+
+  const ensureInboxTranslateStyles = () => {
+    if (document.getElementById("far-inbox-translate-styles")) {
+      return;
+    }
+    const style = document.createElement("style");
+    style.id = "far-inbox-translate-styles";
+    style.textContent =
+      ".far-inbox-translate-root{display:flex;align-items:flex-start;gap:8px;width:100%;min-width:0;box-sizing:border-box;}" +
+      ".far-inbox-translate-left{display:flex;flex-direction:column;align-items:center;flex-shrink:0;padding-top:4px;}" +
+      ".far-inbox-translate-toggle{display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:8px;border:1px solid #c4c4c4;background:#fff;color:#222325;cursor:pointer;padding:0;font-family:inherit;}" +
+      ".far-inbox-translate-toggle:hover{background:#f5f5f5;}" +
+      ".far-inbox-translate-toggle--active{background:#1dbf73;color:#fff;border-color:#1dbf73;}" +
+      ".far-inbox-translate-icon{display:block;flex-shrink:0;pointer-events:none;}" +
+      ".far-inbox-translate-to-from-row{display:flex;flex-direction:row;align-items:center;gap:10px;width:100%;min-width:0;}" +
+      ".far-inbox-translate-to-col{flex:0 0 112px;min-width:0;display:flex;flex-direction:column;gap:4px;}" +
+      ".far-inbox-translate-from-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:4px;}" +
+      ".far-inbox-translate-lang-label{font-size:10px;font-weight:600;color:#64748b;line-height:1.2;}" +
+      ".far-inbox-translate-lang{font:inherit;font-size:11px;padding:5px 6px;border-radius:6px;border:1px solid #c4c4c4;background:#fff;color:#222325;width:100%;box-sizing:border-box;cursor:pointer;}" +
+      ".far-inbox-translate-lang:focus{outline:2px solid rgba(29,191,115,0.35);outline-offset:1px;}" +
+      ".far-inbox-translate-custom{font:inherit;font-size:11px;padding:4px 6px;border-radius:6px;border:1px solid #c4c4c4;width:100%;box-sizing:border-box;}" +
+      ".far-inbox-translate-english-wrap{display:none;flex-direction:column;gap:8px;width:100%;}" +
+      ".far-inbox-translate-english{width:100%;box-sizing:border-box;min-height:44px;padding:8px 10px;border:1px solid #c4c4c4;border-radius:6px;font:inherit;line-height:1.4;resize:vertical;background:#fff;color:#222325;}" +
+      ".far-inbox-translate-from-label{font-size:11px;font-weight:600;color:#64748b;}" +
+      ".far-inbox-translate-status{font-size:12px;color:#64748b;min-height:16px;line-height:1.3;}";
+    document.documentElement.appendChild(style);
+  };
+
+  const ensureFarInboxLocationListeners = () => {
+    if (farInboxHistoryListenStarted) {
+      return;
+    }
+    farInboxHistoryListenStarted = true;
+    const notifyRoots = () => {
+      const path = window.location.pathname || "";
+      document.querySelectorAll("[data-far-inbox-translate-root]").forEach((root) => {
+        if (root.dataset.farClientPath !== path) {
+          root.dataset.farClientPath = path;
+          root.dispatchEvent(new CustomEvent("far-inbox-client-changed", { bubbles: false }));
+        }
+      });
+    };
+    window.addEventListener("popstate", notifyRoots);
+    try {
+      if (!window.__farFarInboxHistoryPatched) {
+        window.__farFarInboxHistoryPatched = true;
+        ["pushState", "replaceState"].forEach((method) => {
+          const orig = history[method];
+          history[method] = function (...args) {
+            const ret = orig.apply(this, args);
+            queueMicrotask(notifyRoots);
+            return ret;
+          };
+        });
+      }
+    } catch (_) {}
+  };
+
+  const normalizeLangForMyMemory = (code) => {
+    if (!code || typeof code !== "string") {
+      return "en";
+    }
+    const c = code.trim().toLowerCase().replace("_", "-");
+    if (c === "zh" || c.startsWith("zh-")) {
+      return "zh-CN";
+    }
+    return c.length > 2 ? c.slice(0, 2) : c;
+  };
+
+  const setReactTextareaValue = (el, value) => {
+    if (!el) {
+      return;
+    }
+    const proto = window.HTMLTextAreaElement && window.HTMLTextAreaElement.prototype;
+    const desc = proto ? Object.getOwnPropertyDescriptor(proto, "value") : null;
+    if (desc && desc.set) {
+      desc.set.call(el, value);
+    } else {
+      el.value = value;
+    }
+    try {
+      el.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true }));
+    } catch (_) {
+      el.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+  };
+
+  const translateWithMyMemory = async (text, from, to) => {
+    const maxChunk = 420;
+    const parts = [];
+    let i = 0;
+    const fromN = normalizeLangForMyMemory(from);
+    const toN = normalizeLangForMyMemory(to);
+    while (i < text.length) {
+      let end = Math.min(i + maxChunk, text.length);
+      if (end < text.length) {
+        const sp = text.lastIndexOf(" ", end);
+        if (sp > i + 40) {
+          end = sp;
+        }
+      }
+      const chunk = text.slice(i, end);
+      const url =
+        "https://api.mymemory.translated.net/get?q=" +
+        encodeURIComponent(chunk) +
+        "&langpair=" +
+        encodeURIComponent(fromN + "|" + toN);
+      const res = await fetch(url);
+      const json = await res.json();
+      const status = json && json.responseStatus;
+      const translated = json && json.responseData && json.responseData.translatedText;
+      if (status !== 200 || !translated) {
+        const err = (json && json.responseData && json.responseData.error) || "Translation error";
+        throw new Error(String(err));
+      }
+      parts.push(translated);
+      i = end;
+      while (i < text.length && (text[i] === " " || text[i] === "\n")) {
+        i += 1;
+      }
+    }
+    return parts.join("");
+  };
+
+  const detectThreadLanguageLibre = async () => {
+    const flow =
+      document.querySelector(".message-flow") ||
+      document.querySelector('[class*="message-flow"]');
+    if (!flow) {
+      return null;
+    }
+    const seen = new Set();
+    const chunks = [];
+    flow.querySelectorAll("p, span").forEach((n) => {
+      const t = (n.textContent || "").trim();
+      if (t.length < 12) {
+        return;
+      }
+      const key = t.slice(0, 48);
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      chunks.push(t);
+    });
+    const sample = chunks.slice(-10).join("\n").slice(0, 600);
+    if (sample.length < 24) {
+      return null;
+    }
+    try {
+      const r = await fetch("https://libretranslate.de/detect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ q: sample.slice(0, 280) }),
+      });
+      if (!r.ok) {
+        return null;
+      }
+      const data = await r.json();
+      if (Array.isArray(data) && data[0] && data[0].language) {
+        return normalizeLangForMyMemory(data[0].language);
+      }
+    } catch (_) {
+      return null;
+    }
+    return null;
+  };
+
+  const enhanceSendMessageTextarea = (sendTa) => {
+    if (!sendTa || sendTa.id !== "send-message-text-area") {
+      return;
+    }
+    if (sendTa.closest("[data-far-inbox-translate-root]")) {
+      return;
+    }
+    const innerStack = sendTa.parentElement;
+    const hostStack = innerStack && innerStack.parentElement;
+    const parentOfHost = hostStack && hostStack.parentElement;
+    if (!innerStack || !hostStack || !parentOfHost) {
+      return;
+    }
+
+    const path = window.location.pathname || "";
+    if (inboxTranslateThreadPath !== path) {
+      inboxTranslateThreadPath = path;
+      inboxTranslateCachedLang = null;
+    }
+
+    const root = document.createElement("div");
+    root.dataset.farInboxTranslateRoot = "1";
+    root.className = "far-inbox-translate-root";
+    root.dataset.farClientPath = path;
+
+    const leftCol = document.createElement("div");
+    leftCol.className = "far-inbox-translate-left";
+
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "far-inbox-translate-toggle";
+    toggle.setAttribute("aria-label", "Toggle translation composer");
+    toggle.title = "Compose in English; translated text fills the message box below";
+    toggle.innerHTML =
+      '<svg class="far-inbox-translate-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="m5 8 6 6"/><path d="M4 14 10 8l2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>' +
+      "</svg>";
+
+    const toLabel = document.createElement("div");
+    toLabel.className = "far-inbox-translate-lang-label";
+    toLabel.textContent = "Translate to";
+
+    const langSelect = document.createElement("select");
+    langSelect.className = "far-inbox-translate-lang";
+    langSelect.title = "Target language (saved for this client)";
+    langSelect.setAttribute("aria-label", "Translate message to language");
+    INBOX_TRANSLATE_LANG_OPTIONS.forEach(({ value, label }) => {
+      const o = document.createElement("option");
+      o.value = value;
+      o.textContent = label;
+      langSelect.appendChild(o);
+    });
+
+    const customWrap = document.createElement("div");
+    customWrap.style.cssText = "display:none;width:100%;";
+    const customInput = document.createElement("input");
+    customInput.type = "text";
+    customInput.className = "far-inbox-translate-custom";
+    customInput.placeholder = "ISO code";
+    customInput.setAttribute("aria-label", "Custom language code");
+    customWrap.appendChild(customInput);
+
+    leftCol.appendChild(toggle);
+
+    const col = document.createElement("div");
+    col.style.cssText = "flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;";
+
+    const englishWrap = document.createElement("div");
+    englishWrap.className = "far-inbox-translate-english-wrap";
+
+    const toFromRow = document.createElement("div");
+    toFromRow.className = "far-inbox-translate-to-from-row";
+
+    const toCol = document.createElement("div");
+    toCol.className = "far-inbox-translate-to-col";
+    toCol.appendChild(toLabel);
+    toCol.appendChild(langSelect);
+    toCol.appendChild(customWrap);
+
+    const fromCol = document.createElement("div");
+    fromCol.className = "far-inbox-translate-from-col";
+
+    const fromLabel = document.createElement("div");
+    fromLabel.className = "far-inbox-translate-from-label";
+    fromLabel.textContent = "English (translate from)";
+
+    const englishTa = document.createElement("textarea");
+    englishTa.className = "far-inbox-translate-english";
+    englishTa.setAttribute("aria-label", "Write message in English");
+    englishTa.placeholder = "Write in English — the Fiverr field below updates automatically…";
+    englishTa.rows = 2;
+
+    fromCol.appendChild(fromLabel);
+    fromCol.appendChild(englishTa);
+
+    toFromRow.appendChild(toCol);
+    toFromRow.appendChild(fromCol);
+
+    const statusEl = document.createElement("div");
+    statusEl.className = "far-inbox-translate-status";
+
+    englishWrap.appendChild(toFromRow);
+    englishWrap.appendChild(statusEl);
+
+    col.appendChild(englishWrap);
+    parentOfHost.insertBefore(root, hostStack);
+    root.appendChild(leftCol);
+    root.appendChild(col);
+    col.appendChild(hostStack);
+
+    const syncLangFromStorage = () => {
+      const ck = getInboxClientKeyFromPath();
+      return loadClientTranslateLangMap().then((map) => {
+        const saved = ck && map[ck] ? map[ck] : "";
+        if (saved) {
+          applyLangSelectionToUI(langSelect, customInput, customWrap, saved);
+        } else {
+          applyLangSelectionToUI(langSelect, customInput, customWrap, settings.inboxTranslateClientLang || "");
+        }
+        inboxTranslateCachedLang = null;
+      });
+    };
+
+    let panelOpen = false;
+    try {
+      panelOpen = sessionStorage.getItem("farInboxTranslatePanelOpen") === "1";
+    } catch (_) {}
+
+    const applyPanelOpen = (open) => {
+      panelOpen = open;
+      englishWrap.style.display = open ? "flex" : "none";
+      toggle.setAttribute("aria-pressed", open ? "true" : "false");
+      toggle.classList.toggle("far-inbox-translate-toggle--active", open);
+      try {
+        sessionStorage.setItem("farInboxTranslatePanelOpen", open ? "1" : "0");
+      } catch (_) {}
+    };
+    applyPanelOpen(panelOpen);
+
+    toggle.addEventListener("click", () => applyPanelOpen(!panelOpen));
+
+    let debounceTimer = null;
+    let translateToken = 0;
+    let customPersistTimer = null;
+
+    const resolveTargetLang = async () => {
+      const selVal = langSelect.value;
+      if (selVal === "custom") {
+        const c = (customInput.value || "").trim();
+        if (c) {
+          return normalizeLangForMyMemory(c);
+        }
+      } else if (selVal) {
+        return normalizeLangForMyMemory(selVal);
+      }
+      const raw = String(settings.inboxTranslateClientLang || "")
+        .trim()
+        .toLowerCase();
+      if (raw && raw !== "auto") {
+        const code = raw.split(/[^a-z-]/i)[0] || raw;
+        return normalizeLangForMyMemory(code);
+      }
+      if (inboxTranslateCachedLang) {
+        return inboxTranslateCachedLang;
+      }
+      const detected = await detectThreadLanguageLibre();
+      inboxTranslateCachedLang = detected || "es";
+      return inboxTranslateCachedLang;
+    };
+
+    const runTranslate = async () => {
+      const token = ++translateToken;
+      const raw = englishTa.value;
+      if (!raw.trim()) {
+        setReactTextareaValue(sendTa, "");
+        statusEl.textContent = "";
+        return;
+      }
+      statusEl.textContent = "Translating…";
+      try {
+        const targetLang = await resolveTargetLang();
+        if (token !== translateToken) {
+          return;
+        }
+        if (!targetLang || targetLang === "en") {
+          setReactTextareaValue(sendTa, raw);
+          statusEl.textContent =
+            targetLang === "en"
+              ? "Target is English — no translation applied."
+              : "Pick a target language above or leave Auto.";
+          return;
+        }
+        const out = await translateWithMyMemory(raw, "en", targetLang);
+        if (token !== translateToken) {
+          return;
+        }
+        setReactTextareaValue(sendTa, out);
+        statusEl.textContent = "→ " + targetLang + " (MyMemory).";
+      } catch (e) {
+        if (token !== translateToken) {
+          return;
+        }
+        statusEl.textContent = "Translation failed — try again.";
+        console.warn("Fiverr Assistant: inbox translate failed", e);
+      }
+    };
+
+    langSelect.addEventListener("change", () => {
+      customWrap.style.display = langSelect.value === "custom" ? "block" : "none";
+      if (langSelect.value !== "custom") {
+        customInput.value = "";
+      }
+      const ck = getInboxClientKeyFromPath();
+      if (ck) {
+        persistInboxClientLang(ck, langSelect, customInput);
+      }
+      inboxTranslateCachedLang = null;
+      runTranslate();
+    });
+
+    const scheduleCustomPersist = () => {
+      clearTimeout(customPersistTimer);
+      customPersistTimer = setTimeout(() => {
+        const ck = getInboxClientKeyFromPath();
+        if (ck && langSelect.value === "custom") {
+          persistInboxClientLang(ck, langSelect, customInput);
+        }
+        inboxTranslateCachedLang = null;
+        runTranslate();
+      }, 350);
+    };
+    customInput.addEventListener("input", scheduleCustomPersist);
+    customInput.addEventListener("blur", () => {
+      const ck = getInboxClientKeyFromPath();
+      if (ck && langSelect.value === "custom") {
+        persistInboxClientLang(ck, langSelect, customInput);
+      }
+    });
+
+    root.addEventListener("far-inbox-client-changed", () => {
+      syncLangFromStorage().then(() => runTranslate());
+    });
+
+    syncLangFromStorage().then(() => {
+      if (englishTa.value.trim()) {
+        runTranslate();
+      }
+    });
+
+    const debounceMs = Math.max(200, parseInt(String(settings.inboxTranslateDebounceMs || "500"), 10) || 500);
+    englishTa.addEventListener("input", () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(runTranslate, debounceMs);
+    });
+  };
+
+  const tryEnhanceInboxTranslate = () => {
+    if (!coerceBooleanSetting(settings.inboxTranslateEnabled, true)) {
+      return;
+    }
+    const ta = document.getElementById("send-message-text-area");
+    if (!ta || !document.body.contains(ta)) {
+      return;
+    }
+    const existingRoot = ta.closest("[data-far-inbox-translate-root]");
+    if (existingRoot) {
+      const path = window.location.pathname || "";
+      if (existingRoot.dataset.farClientPath !== path) {
+        existingRoot.dataset.farClientPath = path;
+        existingRoot.dispatchEvent(new CustomEvent("far-inbox-client-changed", { bubbles: false }));
+      }
+      return;
+    }
+    enhanceSendMessageTextarea(ta);
+  };
+
+  const startInboxTranslateComposer = () => {
+    if (!shouldContinueExecution()) {
+      return;
+    }
+    ensureFarInboxLocationListeners();
+    if (inboxTranslateComposerObserver) {
+      return;
+    }
+    ensureInboxTranslateStyles();
+    tryEnhanceInboxTranslate();
+    inboxTranslateComposerObserver = new MutationObserver(() => {
+      if (inboxTranslateEnhanceScheduled) {
+        return;
+      }
+      inboxTranslateEnhanceScheduled = true;
+      requestAnimationFrame(() => {
+        inboxTranslateEnhanceScheduled = false;
+        tryEnhanceInboxTranslate();
+      });
+    });
+    inboxTranslateComposerObserver.observe(document.documentElement, { childList: true, subtree: true });
+  };
+
   let getVal = (id) => {
     return localStorage.getItem(id) || null;
   };
@@ -2907,6 +3532,13 @@ const phoneCall = () => {
       }
       
       await hydrateSettings();
+
+      if (
+        (siteDomain === "www.fiverr.com" || siteDomain === "fiverr.com") &&
+        shouldContinueExecution()
+      ) {
+        startInboxTranslateComposer();
+      }
 
       // Check for pending auto-reactivation after page reload
       if (extensionStorage && !autoReload) {

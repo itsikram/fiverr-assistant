@@ -197,7 +197,8 @@ label {
 }
 
 input,
-textarea {
+textarea,
+select {
   padding: 10px 12px;
   border-radius: 8px;
   border: 1px solid #cbd5e1;
@@ -205,8 +206,17 @@ textarea {
   transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 
+.inbox-translate-lang-select {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  background-color: #fff;
+  cursor: pointer;
+}
+
 input:focus,
-textarea:focus {
+textarea:focus,
+select:focus {
   border-color: #1dbf73;
   box-shadow: 0 0 0 2px rgba(29, 191, 115, 0.2);
   outline: none;

@@ -22,6 +22,9 @@
     selectorUnreadIcon: ".messages-wrapper .unread-icon",
     selectorNewClientFlag: ".first > div:nth-child(2) > div:nth-child(1) > span:nth-child(2)",
     selectorMessageContent: ".message-flow .content",
+    inboxTranslateEnabled: true,
+    inboxTranslateClientLang: "",
+    inboxTranslateDebounceMs: "500",
   };
   const PRIMARY_TAB_ID_STORAGE_KEY = "farPrimaryTabId";
   const CONNECTION_TIME_KEY = "farConnectionTime";
@@ -111,6 +114,85 @@
       values.relEnd = "1";
     }
     return values;
+  };
+
+  const getInboxTranslateClientLangFromUI = () => {
+    const preset = document.getElementById("inboxTranslateLangPreset");
+    const custom = document.getElementById("inboxTranslateLangCustom");
+    if (!preset) {
+      return "";
+    }
+    if (preset.value === "custom") {
+      return custom && typeof custom.value === "string" ? custom.value.trim() : "";
+    }
+    return typeof preset.value === "string" ? preset.value.trim() : "";
+  };
+
+  const applyInboxTranslateClientLangToUI = (storedRaw) => {
+    const preset = document.getElementById("inboxTranslateLangPreset");
+    const custom = document.getElementById("inboxTranslateLangCustom");
+    const wrap = document.getElementById("inboxTranslateLangCustomWrap");
+    if (!preset) {
+      return;
+    }
+    const s = String(storedRaw ?? "").trim();
+    if (!s || s.toLowerCase() === "auto") {
+      preset.value = "";
+      if (custom) {
+        custom.value = "";
+      }
+      if (wrap) {
+        wrap.style.display = "none";
+      }
+      return;
+    }
+    const lower = s.toLowerCase();
+    let matchedValue = "";
+    for (let i = 0; i < preset.options.length; i++) {
+      const opt = preset.options[i];
+      if (!opt.value || opt.value === "custom") {
+        continue;
+      }
+      if (opt.value.toLowerCase() === lower) {
+        matchedValue = opt.value;
+        break;
+      }
+    }
+    if (matchedValue) {
+      preset.value = matchedValue;
+      if (custom) {
+        custom.value = "";
+      }
+      if (wrap) {
+        wrap.style.display = "none";
+      }
+    } else {
+      preset.value = "custom";
+      if (custom) {
+        custom.value = s;
+      }
+      if (wrap) {
+        wrap.style.display = "block";
+      }
+    }
+  };
+
+  let inboxTranslateLangWired = false;
+  const wireInboxTranslateLangUI = () => {
+    if (inboxTranslateLangWired) {
+      return;
+    }
+    const preset = document.getElementById("inboxTranslateLangPreset");
+    const wrap = document.getElementById("inboxTranslateLangCustomWrap");
+    if (!preset || !wrap) {
+      return;
+    }
+    inboxTranslateLangWired = true;
+    const sync = () => {
+      wrap.style.display = preset.value === "custom" ? "block" : "none";
+    };
+    preset.addEventListener("change", sync);
+    sync();
   };
 
   const sendSettingsToTabs = async (payload) => {
@@ -220,6 +302,8 @@
       });
       const merged = { ...defaultSettings, ...stored };
       populateForm(merged);
+      applyInboxTranslateClientLangToUI(merged.inboxTranslateClientLang);
+      wireInboxTranslateLangUI();
 
       let storedPrimaryId = stored[PRIMARY_TAB_ID_STORAGE_KEY];
       if (typeof storedPrimaryId === "string" && storedPrimaryId.trim() !== "") {
@@ -243,6 +327,7 @@
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const values = getFormValues();
+    values.inboxTranslateClientLang = getInboxTranslateClientLangFromUI();
 
     try {
       await storage.set(values);
