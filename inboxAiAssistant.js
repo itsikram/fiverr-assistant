@@ -119,6 +119,58 @@
   }
 
   /**
+   * OpenAI chat `image_url` only accepts raster images the API can fetch as png, jpeg, gif, or webp.
+   * PDF, SVG, HEIC, Cloudinary raw/video, etc. return 400 "unsupported image".
+   */
+  function isOpenAIVisionSupportedImageUrl(url) {
+    if (!url || typeof url !== "string") return false;
+    const u = url.trim();
+    if (!u) return false;
+    const lower = u.toLowerCase();
+    if (lower.startsWith("data:")) {
+      return /^data:image\/(png|jpe?g|gif|webp)(;|,|\s)/i.test(u);
+    }
+    if (!/^https?:\/\//i.test(u)) return false;
+
+    if (/\.(pdf|svgz?|bmp|tif|tiff|heic|heif|ico|avif|eps|psd|ai)(\?|#|$)/i.test(lower)) return false;
+    if (/\.(mp4|webm|mov|mkv|ogg|m4v|zip|rar|7z|doc|docx|xls|xlsx)(\?|#|$)/i.test(lower)) return false;
+    if (/cloudinary\.com\/[^/]*\/(raw|video)\//i.test(lower)) return false;
+    if (/[/_]f_(pdf|svg|bmp|tiff|heif|heic|avif)([/_]|\.|$)/i.test(lower)) return false;
+
+    if (/\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(lower)) return true;
+
+    if (/cloudinary\.com/i.test(lower) && /\/image\//i.test(lower)) {
+      if (/f_(jpe?g|png|gif|webp|auto)(?:[,/_]|$)/i.test(lower)) return true;
+      if (/\/image\/upload\/[^?]*\.(png|jpe?g|gif|webp)(?:\?|$)/i.test(lower)) return true;
+      return false;
+    }
+
+    if (/secured-attachments|messaging_message\/attachment|\/attachment\//i.test(lower)) {
+      return /\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(lower);
+    }
+
+    return false;
+  }
+
+  /**
+   * @param {string[]} urls
+   * @returns {{ visionUrls: string[], skippedUrls: string[] }}
+   */
+  function partitionImageUrlsForVision(urls) {
+    const visionUrls = [];
+    const skippedUrls = [];
+    const seen = new Set();
+    for (let i = 0; i < urls.length; i++) {
+      const raw = urls[i];
+      if (!raw || seen.has(raw)) continue;
+      seen.add(raw);
+      if (isOpenAIVisionSupportedImageUrl(raw)) visionUrls.push(raw);
+      else skippedUrls.push(raw);
+    }
+    return { visionUrls, skippedUrls };
+  }
+
+  /**
    * @param {string} text
    * @param {string[]} imageUrls
    * @param {() => object} getSettings
@@ -142,8 +194,20 @@
       );
     }
 
-    const parts = [{ type: "text", text: text + note }];
-    urls.forEach((url) => {
+    const { visionUrls, skippedUrls } = partitionImageUrlsForVision(urls);
+    let baseText = text;
+    if (skippedUrls.length > 0) {
+      baseText +=
+        "\n\n[These attachment URLs were not sent as vision images — the API only accepts PNG, JPEG, GIF, or WebP (e.g. PDF/SVG/other files are listed here for context only):]\n" +
+        skippedUrls.map((u, i) => i + 1 + ". " + u).join("\n");
+    }
+
+    if (visionUrls.length === 0) {
+      return baseText;
+    }
+
+    const parts = [{ type: "text", text: baseText + note }];
+    visionUrls.forEach((url) => {
       parts.push({ type: "image_url", image_url: { url: url, detail: "auto" } });
     });
     return parts;
@@ -438,6 +502,9 @@
     if (status === 401) return "Invalid API key (401). Check your key in extension settings.";
     if (status === 429) return "Rate limited (429). Try again shortly.";
     if (status === 0 || status >= 500) return "OpenAI or network error. Try again.";
+    if (status === 400 && bodySnippet && /unsupported image/i.test(bodySnippet)) {
+      return "Request failed (400). An attachment URL was not a supported image type (use PNG, JPEG, GIF, or WebP).";
+    }
     return "Request failed (" + status + ").";
   }
 
@@ -478,9 +545,11 @@
     if (!res.ok) {
       const apiErr =
         data && data.error && typeof data.error.message === "string" ? data.error.message : "";
-      let msg = mapOpenAIError(res.status, "");
+      let msg = mapOpenAIError(res.status, apiErr);
       if (apiErr && !/sk-|api[_-]?key/i.test(apiErr)) {
-        msg = msg + " " + apiErr.slice(0, 200);
+        if (!(res.status === 400 && /unsupported image/i.test(apiErr))) {
+          msg = msg + " " + apiErr.slice(0, 200);
+        }
       }
       throw new Error(msg.trim());
     }
