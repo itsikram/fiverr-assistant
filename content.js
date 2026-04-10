@@ -1723,8 +1723,9 @@ const phoneCall = () => {
     inboxTranslateEnabled: "true",
     inboxTranslateClientLang: "",
     inboxTranslateDebounceMs: "500",
-    openaiApiKey: "",
-    openaiModel: "gpt-4o-mini",
+    geminiApiKey: "",
+    geminiModel: "gemini-2.5-flash",
+    disableImageProcessing: false,
     inboxMessageListSelector: "",
     inboxMessageRowSelector: "",
     autoReplyNewClientAfter30Min: false,
@@ -2779,8 +2780,9 @@ const phoneCall = () => {
       window.FarInboxAi.attachToolbarButton(toolbarRow, sendTa, root, () => ({
         profile: settings.profile,
         profileUsername: settings.profileUsername,
-        openaiApiKey: settings.openaiApiKey,
-        openaiModel: settings.openaiModel,
+        geminiApiKey: settings.geminiApiKey,
+        geminiModel: settings.geminiModel,
+        disableImageProcessing: settings.disableImageProcessing,
         inboxMessageListSelector: settings.inboxMessageListSelector,
         inboxMessageRowSelector: settings.inboxMessageRowSelector,
       }));
@@ -3012,8 +3014,9 @@ const phoneCall = () => {
       window.FarInboxAi.startCustomOfferDescriptionHelper(() => ({
         profile: settings.profile,
         profileUsername: settings.profileUsername,
-        openaiApiKey: settings.openaiApiKey,
-        openaiModel: settings.openaiModel,
+        geminiApiKey: settings.geminiApiKey,
+        geminiModel: settings.geminiModel,
+        disableImageProcessing: settings.disableImageProcessing,
         inboxMessageListSelector: settings.inboxMessageListSelector,
         inboxMessageRowSelector: settings.inboxMessageRowSelector,
       }));
@@ -3239,7 +3242,7 @@ const phoneCall = () => {
     try {
       text = await window.FarInboxAi.generatePresetReply("first", getAi);
     } catch (e) {
-      console.warn("Fiverr Assistant: New-client auto-reply OpenAI failed", e);
+      console.warn("Fiverr Assistant: New-client auto-reply Gemini failed", e);
       return false;
     }
     text = (text && String(text).trim()) || "";

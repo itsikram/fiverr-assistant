@@ -25,8 +25,9 @@
     inboxTranslateEnabled: true,
     inboxTranslateClientLang: "",
     inboxTranslateDebounceMs: "500",
-    openaiApiKey: "",
-    openaiModel: "gpt-4o-mini",
+    geminiApiKey: "",
+    geminiModel: "gemini-2.5-flash",
+    disableImageProcessing: false,
     inboxMessageListSelector: "",
     inboxMessageRowSelector: "",
     autoReplyNewClientAfter30Min: false,
@@ -462,9 +463,13 @@
     }
     const record = await readCachedAudioRecord(key);
     if (record && record.sourceUrl === normalizedUrl && record.blob instanceof Blob) {
-      console.info("Fiverr Assistant: Audio cache hit in options page", {
-        settingKey: key,
-        sourceUrl: normalizedUrl,
+      console.info("Fiverr Assistant: Audio already saved in IndexedDB, skipping fetch (options page)", {
+        profile: settings.profile,
+        profileUsername: settings.profileUsername,
+        geminiApiKey: settings.geminiApiKey,
+        geminiModel: settings.geminiModel,
+        disableImageProcessing: settings.disableImageProcessing,
+        timestamp: Date.now(),
       });
       return record.blob;
     }
@@ -510,15 +515,23 @@
     const existing = await readCachedAudioRecord(key);
     if (existing && existing.sourceUrl === normalizedUrl && existing.blob instanceof Blob) {
       console.info("Fiverr Assistant: Audio already saved in IndexedDB, skipping fetch (options page)", {
-        settingKey: key,
-        sourceUrl: normalizedUrl,
-        blobSize: existing.blob.size,
-        timestamp: existing.timestamp,
+        profile: settings.profile,
+        profileUsername: settings.profileUsername,
+        geminiApiKey: settings.geminiApiKey,
+        geminiModel: settings.geminiModel,
+        disableImageProcessing: settings.disableImageProcessing,
+        timestamp: Date.now(),
       });
       return existing.blob;
     }
     try {
       console.log("Fiverr Assistant: Fetching audio file to save to IndexedDB (options page)", {
+        profile: settings.profile,
+        profileUsername: settings.profileUsername,
+        geminiApiKey: settings.geminiApiKey,
+        geminiModel: settings.geminiModel,
+        disableImageProcessing: settings.disableImageProcessing,
+        timestamp: Date.now(),
         settingKey: key,
         sourceUrl: normalizedUrl,
       });

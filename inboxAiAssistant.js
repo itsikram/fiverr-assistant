@@ -1,17 +1,17 @@
 /**
- * Fiverr Assistant — OpenAI inbox reply helper (content script module).
+ * Fiverr Assistant — Gemini inbox reply helper (content script module).
  *
  * SELECTORS — paste paths from DevTools if Fiverr changes the inbox DOM:
  * - INBOX_MESSAGE_LIST_SELECTOR / inboxMessageListSelector option: scroll/list root (default `.message-flow`).
  * - INBOX_MESSAGE_ROW_SELECTOR / inboxMessageRowSelector option: each chat row (default `.message-flow .message`).
  * Rows are classified as seller if the header shows “Me” or avatar `data-track-value` matches profile username.
  *
- * MODEL: `openaiModel` in options (default `gpt-4o-mini`). Use a vision-capable model so buyer attachments (`.attachments-list`, secured Cloudinary URLs) are sent as images; gpt-3.5 gets URLs in text only.
+ * MODEL: `geminiModel` in options (default `gemini-2.5-flash`). Use a vision-capable model so buyer attachments (`.attachments-list`, secured Cloudinary URLs) are sent as images; text-only models get URLs in text only.
  */
 (function () {
   "use strict";
 
-  const OPENAI_CHAT_URL = "https://api.openai.com/v1/chat/completions";
+  const GEMINI_CHAT_URL = "https://generativelanguage.googleapis.com/v1beta/models/";
   const MAX_TRANSCRIPT_CHARS = 12000;
   const CHAT_HISTORY_MAX_TURNS = 12;
   /** Max images sent per API call (buyer attachments + thread); avoids huge payloads */
@@ -109,20 +109,25 @@
     return urls;
   }
 
+  /**
+   * Gemini models that support vision capabilities
+   */
   function modelSupportsVision(modelName) {
     const m = String(modelName || "").toLowerCase().trim();
     if (!m) return true;
-    if (/gpt-3\.5|gpt-3\.0|davinci|babbage|curie|ada/.test(m)) return false;
-    if (/gpt-4o|gpt-4-turbo|gpt-4\.1|gpt-5|o3|o4|vision/.test(m)) return true;
-    if (/^gpt-4[^o-]|^gpt-4$/.test(m)) return true;
-    return /gpt-4|gpt-5/.test(m);
+    // Gemini 2.5 Flash and Pro models support vision
+    if (/gemini-2\.5-(flash|pro)/.test(m)) return true;
+    // Gemini 2.0 Flash models support vision
+    if (/gemini-2\.0-flash/.test(m)) return true;
+    // Gemini 1.5 Pro and Flash models support vision
+    if (/gemini-1\.5-(pro|flash)/.test(m)) return true;
+    return false;
   }
 
   /**
-   * OpenAI chat `image_url` only accepts raster images the API can fetch as png, jpeg, gif, or webp.
-   * PDF, SVG, HEIC, Cloudinary raw/video, etc. return 400 "unsupported image".
+   * Gemini API supports the same image formats as OpenAI: PNG, JPEG, GIF, or WebP.
    */
-  function isOpenAIVisionSupportedImageUrl(url) {
+  function isGeminiVisionSupportedImageUrl(url) {
     if (!url || typeof url !== "string") return false;
     const u = url.trim();
     if (!u) return false;
@@ -164,34 +169,68 @@
       const raw = urls[i];
       if (!raw || seen.has(raw)) continue;
       seen.add(raw);
-      if (isOpenAIVisionSupportedImageUrl(raw)) visionUrls.push(raw);
+      if (isGeminiVisionSupportedImageUrl(raw)) visionUrls.push(raw);
       else skippedUrls.push(raw);
     }
     return { visionUrls, skippedUrls };
   }
 
   /**
+   * Convert image URL to base64 data URI
+   * @param {string} url
+   * @returns {Promise<string|null>}
+   */
+  async function imageUrlToBase64(url) {
+    try {
+      const response = await fetch(url, { mode: 'cors' });
+      if (!response.ok) return null;
+      
+      const blob = await response.blob();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      console.warn('Failed to convert image URL to base64:', url, error);
+      return null;
+    }
+  }
+
+  /**
    * @param {string} text
    * @param {string[]} imageUrls
    * @param {() => object} getSettings
-   * @returns {string|object[]}
+   * @returns {Promise<string|object[]>}
    */
-  function buildUserContentWithImages(text, imageUrls, getSettings) {
-    const model = (getSettings().openaiModel && String(getSettings().openaiModel).trim()) || "gpt-4o-mini";
+  async function buildUserContentWithImages(text, imageUrls, getSettings) {
+    const settings = getSettings();
+    const model = (settings.geminiModel && String(settings.geminiModel).trim()) || "gemini-2.5-flash";
     const urls = Array.from(new Set((imageUrls || []).filter(Boolean))).slice(0, MAX_THREAD_IMAGES);
-    if (urls.length === 0) return text;
+    
+    // Check if image processing is disabled
+    if (settings.disableImageProcessing) {
+      if (urls.length > 0) {
+        return {
+          text: text + "\n\n[Image processing is currently disabled. Image URLs from the thread:]\n" + urls.map((u, i) => i + 1 + ". " + u).join("\n")
+        };
+      }
+      return { text };
+    }
+    
+    if (urls.length === 0) {
+      return { text };
+    }
 
     const vision = modelSupportsVision(model);
     const note =
       "\n\nThe following image(s) are attachments from this Fiverr conversation (chronological). Use them when the buyer shared screenshots, errors, designs, or files.";
 
     if (!vision) {
-      return (
-        text +
-        note +
-        "\n\n[Your model may not support vision. Image URLs from the thread:]\n" +
-        urls.map((u, i) => i + 1 + ". " + u).join("\n")
-      );
+      return {
+        text: text + note + "\n\n[Your model may not support vision. Image URLs from the thread:]\n" + urls.map((u, i) => i + 1 + ". " + u).join("\n")
+      };
     }
 
     const { visionUrls, skippedUrls } = partitionImageUrlsForVision(urls);
@@ -203,14 +242,38 @@
     }
 
     if (visionUrls.length === 0) {
-      return baseText;
+      return { text: baseText };
     }
 
-    const parts = [{ type: "text", text: baseText + note }];
-    visionUrls.forEach((url) => {
-      parts.push({ type: "image_url", image_url: { url: url, detail: "auto" } });
-    });
-    return parts;
+    const parts = [{ text: baseText + note }];
+    
+    // Convert image URLs to base64 for Gemini
+    for (const url of visionUrls) {
+      try {
+        const base64Data = await imageUrlToBase64(url);
+        if (base64Data) {
+          // Extract mime type and base64 data
+          const [mimeType, base64] = base64Data.split(',');
+          const mimeMatch = mimeType.match(/data:([^;]+)/);
+          const mimeTypeStr = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+          
+          parts.push({
+            inline_data: {
+              mime_type: mimeTypeStr,
+              data: base64
+            }
+          });
+        } else {
+          // Fallback to text if conversion fails
+          parts.push({ text: `[Image: ${url}]` });
+        }
+      } catch (error) {
+        console.warn('Failed to process image:', url, error);
+        parts.push({ text: `[Image: ${url}]` });
+      }
+    }
+    
+    return { parts };
   }
 
   /**
@@ -480,8 +543,8 @@
       ". Aim for a reply that leaves the buyer confident this seller is reliable and the right fit—without pressure or empty claims.";
     const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
     const userText = buildPresetUserText(kind, transcript, getSettings, { costPrice: "" });
-    const userContent = buildUserContentWithImages(userText, imageUrls, getSettings);
-    return openaiChatCompletion(
+    const userContent = await buildUserContentWithImages(userText, imageUrls, getSettings);
+    return geminiGenerateContent(
       getSettings,
       [
         { role: "system", content: sys },
@@ -498,73 +561,192 @@
     return t.trim();
   }
 
-  function mapOpenAIError(status, bodySnippet) {
-    if (status === 401) return "Invalid API key (401). Check your key in extension settings.";
-    if (status === 429) return "Rate limited (429). Try again shortly.";
-    if (status === 0 || status >= 500) return "OpenAI or network error. Try again.";
-    if (status === 400 && bodySnippet && /unsupported image/i.test(bodySnippet)) {
-      return "Request failed (400). An attachment URL was not a supported image type (use PNG, JPEG, GIF, or WebP).";
+  function mapGeminiError(status, bodySnippet) {
+    if (status === 400) {
+      if (bodySnippet && /api.key.invalid/i.test(bodySnippet)) {
+        return "Invalid API key (400). Check your Gemini API key in extension settings.";
+      }
+      if (bodySnippet && /unsupported.image/i.test(bodySnippet)) {
+        return "Request failed (400). An attachment URL was not a supported image type (use PNG, JPEG, GIF, or WebP).";
+      }
+      return "Bad request (400). Check request format.";
+    }
+    if (status === 401) return "Invalid API key (401). Check your Gemini API key in extension settings.";
+    if (status === 403) return "Access forbidden (403). API key may not have permission for this model.";
+    if (status === 429) return "Rate limited (429). Gemini API is experiencing high demand. Please try again in a few moments.";
+    if (status === 503) return "Service unavailable (503). Gemini API is currently experiencing high demand. Please try again later.";
+    if (status === 0 || status >= 500) {
+      if (bodySnippet && /high demand|currently experiencing/i.test(bodySnippet)) {
+        return "Gemini API is experiencing high demand. This is temporary - please try again in a few moments.";
+      }
+      return "Gemini API or network error. Try again.";
     }
     return "Request failed (" + status + ").";
   }
 
   /**
+   * Convert OpenAI-style messages to Gemini format
+   * @param {Array} messages - OpenAI format [{role, content}]
+   * @returns {Array} Gemini format [{role, parts}]
+   */
+  function convertMessagesToGeminiFormat(messages) {
+    return messages.map(msg => {
+      if (typeof msg.content === 'string') {
+        return {
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: msg.content }]
+        };
+      } else if (Array.isArray(msg.content)) {
+        // Handle multimodal content
+        const parts = msg.content.map(part => {
+          if (part.type === 'text') {
+            return { text: part.text };
+          } else if (part.type === 'image_url') {
+            // For now, we'll handle images as URLs in text
+            // In a full implementation, we'd need to fetch and convert to base64
+            return { text: `[Image: ${part.image_url.url}]` };
+          }
+          return { text: '' };
+        });
+        return {
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: parts.filter(p => p.text)
+        };
+      } else if (msg.content && msg.content.parts) {
+        // Already in Gemini format
+        return {
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: msg.content.parts
+        };
+      } else if (msg.content && msg.content.text) {
+        // Gemini format with single text part
+        return {
+          role: msg.role === 'assistant' ? 'model' : 'user',
+          parts: [{ text: msg.content.text }]
+        };
+      }
+      // Fallback
+      return {
+        role: msg.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text: String(msg.content || '') }]
+      };
+    });
+  }
+
+  /**
+   * Sleep function for retry delays
+   */
+  function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
    * Never log secrets. Safe error for UI only.
    */
-  async function openaiChatCompletion(getSettings, messages, options) {
+  async function geminiGenerateContent(getSettings, messages, options) {
     const s = getSettings();
-    const apiKey = (s && s.openaiApiKey && String(s.openaiApiKey).trim()) || "";
+    const apiKey = (s && s.geminiApiKey && String(s.geminiApiKey).trim()) || "";
     if (!apiKey) {
-      throw new Error("Add your OpenAI API key in Fiverr Assistant settings.");
+      throw new Error("Add your Gemini API key in Fiverr Assistant settings.");
     }
-    const model = (s && s.openaiModel && String(s.openaiModel).trim()) || "gpt-4o-mini";
-
+    const model = (s && s.geminiModel && String(s.geminiModel).trim()) || "gemini-2.5-flash";
+    
+    const geminiMessages = convertMessagesToGeminiFormat(messages);
+    
     const body = {
-      model,
-      temperature: options && typeof options.temperature === "number" ? options.temperature : 0.5,
-      messages,
+      contents: geminiMessages,
+      generationConfig: {
+        temperature: options && typeof options.temperature === "number" ? options.temperature : 0.7,
+        maxOutputTokens: 8192,
+      },
     };
 
-    const res = await fetch(OPENAI_CHAT_URL, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + apiKey,
-      },
-      body: JSON.stringify(body),
-    });
+    const url = `${GEMINI_CHAT_URL}${model}:generateContent`;
+    
+    // Retry mechanism for rate limiting and high demand errors
+    const maxRetries = 3;
+    const baseDelay = 1000; // 1 second
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const res = await fetch(`${url}?key=${apiKey}`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(body),
+        });
 
-    const rawText = await res.text();
-    let data;
-    try {
-      data = JSON.parse(rawText);
-    } catch (_) {
-      data = null;
-    }
-
-    if (!res.ok) {
-      const apiErr =
-        data && data.error && typeof data.error.message === "string" ? data.error.message : "";
-      let msg = mapOpenAIError(res.status, apiErr);
-      if (apiErr && !/sk-|api[_-]?key/i.test(apiErr)) {
-        if (!(res.status === 400 && /unsupported image/i.test(apiErr))) {
-          msg = msg + " " + apiErr.slice(0, 200);
+        const rawText = await res.text();
+        let data;
+        try {
+          data = JSON.parse(rawText);
+        } catch (_) {
+          data = null;
         }
+
+        if (!res.ok) {
+          const apiErr = data && data.error && typeof data.error.message === "string" ? data.error.message : "";
+          
+          // Check if this is a retryable error
+          const isRetryable = (
+            res.status === 429 || // Rate limited
+            res.status === 503 || // Service unavailable
+            (res.status >= 500 && /high demand|currently experiencing/i.test(apiErr)) || // High demand message
+            (res.status === 0 && attempt < maxRetries - 1) // Network error (but not on last attempt)
+          );
+          
+          if (isRetryable && attempt < maxRetries - 1) {
+            const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000; // Exponential backoff with jitter
+            console.log(`Gemini API retry ${attempt + 1}/${maxRetries} after ${delay}ms due to: ${res.status} ${apiErr}`);
+            await sleep(delay);
+            continue;
+          }
+          
+          // Not retryable or last attempt - throw error
+          let msg = mapGeminiError(res.status, apiErr);
+          if (apiErr && !/api[_-]?key/i.test(apiErr)) {
+            if (!(res.status === 400 && /unsupported.image/i.test(apiErr))) {
+              msg = msg + " " + apiErr.slice(0, 200);
+            }
+          }
+          throw new Error(msg.trim());
+        }
+        
+        // Success - parse response
+        const candidate = data && data.candidates && data.candidates[0];
+        const content = candidate && candidate.content;
+        const parts = content && content.parts;
+        
+        if (parts && parts.length > 0) {
+          const textParts = parts
+            .filter((p) => p && p.text)
+            .map((p) => p.text);
+          return stripFencesAndPreamble(textParts.join("\n"));
+        }
+        
+        return "";
+        
+      } catch (error) {
+        // If this is the last attempt, re-throw the error
+        if (attempt === maxRetries - 1) {
+          throw error;
+        }
+        
+        // For network errors, retry with exponential backoff
+        if (error.message.includes("network") || error.message.includes("fetch")) {
+          const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+          console.log(`Gemini API retry ${attempt + 1}/${maxRetries} after ${delay}ms due to network error`);
+          await sleep(delay);
+          continue;
+        }
+        
+        // For other errors, don't retry
+        throw error;
       }
-      throw new Error(msg.trim());
     }
-    const choice = data && data.choices && data.choices[0] && data.choices[0].message;
-    let rawContent = choice && choice.content;
-    if (typeof rawContent === "string") {
-      return stripFencesAndPreamble(rawContent);
-    }
-    if (Array.isArray(rawContent)) {
-      const textParts = rawContent
-        .filter((p) => p && p.type === "text" && p.text)
-        .map((p) => p.text);
-      return stripFencesAndPreamble(textParts.join("\n"));
-    }
-    return "";
+    
+    throw new Error("Gemini API request failed after all retries.");
   }
 
   function injectModalStyles() {
@@ -661,7 +843,7 @@
     err.style.display = "none";
     err.setAttribute("role", "alert");
 
-    btn.addEventListener("click", () => {
+    btn.addEventListener("click", async () => {
       err.style.display = "none";
       err.textContent = "";
       btn.disabled = true;
@@ -685,9 +867,9 @@
         transcript +
         "\n\nProduce the offer description text only. If the thread is empty or uninformative, write a short professional scope summary and invite the buyer to confirm details—do not invent a specific project.";
 
-      const userContent = buildUserContentWithImages(userText, imageUrls, getSettings);
+      const userContent = await buildUserContentWithImages(userText, imageUrls, getSettings);
 
-      openaiChatCompletion(
+      geminiGenerateContent(
         getSettings,
         [
           { role: "system", content: sys },
@@ -774,7 +956,7 @@
       closeModal();
     }
 
-    function openTaskExplanationModal(sellerPrivateNote) {
+    async function openTaskExplanationModal(sellerPrivateNote) {
       const wrap = document.createElement("div");
       wrap.className = "far-ia-backdrop far-ia-task-modal";
       wrap.setAttribute("role", "dialog");
@@ -809,13 +991,13 @@
       if (noteExtra) {
         userText += "\n\nSeller focus for this summary (optional nuance only; stay faithful to the thread):\n" + noteExtra;
       }
-      const userContent = buildUserContentWithImages(userText, imageUrls, getSettings);
+      const userContent = await buildUserContentWithImages(userText, imageUrls, getSettings);
 
       errEl.style.display = "none";
       outBn.textContent = "Loading…";
       outEn.textContent = "";
 
-      openaiChatCompletion(
+      geminiGenerateContent(
         getSettings,
         [
           { role: "system", content: sys },
@@ -860,7 +1042,8 @@
       dlg.innerHTML =
         '<div class="far-ia-head"><span class="far-ia-title">AI inbox assistant</span><button type="button" class="far-ia-btn" data-x style="max-width:72px">Close</button></div>' +
         '<div class="far-ia-body">' +
-        '<p class="far-ia-small">Uses the visible conversation as context. Buyer image attachments in the thread are included for vision-capable models (e.g. gpt-4o-mini). Paste the output into Fiverr when ready.</p>' +
+        '<p class="far-ia-small">Uses the visible conversation as context. Buyer image attachments in the thread are included for vision-capable models (e.g. gemini-2.5-flash). Paste the output into Fiverr when ready.</p>' +
+        '<div class="far-ia-loading-text" style="color:#64748b; font-size:12px; margin-bottom:8px; display:none;"></div>' +
         '<label class="far-ia-small" for="far-ia-seller-note" style="font-weight:600;color:#475569">Your note to the AI (optional)</label>' +
         '<textarea id="far-ia-seller-note" class="far-ia-seller-note" data-seller-note rows="3" placeholder="Tone, constraints, price to mention or avoid, deadline, context not in the thread… Not sent to the buyer." aria-label="Private note for AI"></textarea>' +
         '<div class="far-ia-presets">' +
@@ -922,10 +1105,18 @@
         });
       }
 
-      function setLoading(isLoading) {
+      function setLoading(isLoading, retryInfo = null) {
         dlg.querySelectorAll(".far-ia-btn[data-a], [data-chat-send]").forEach((b) => {
           b.disabled = isLoading;
         });
+        
+        // Update loading text to show retry information
+        if (retryInfo) {
+          const loadingText = dlg.querySelector('.far-ia-loading-text');
+          if (loadingText) {
+            loadingText.textContent = `Gemini API is busy... Retrying ${retryInfo.current}/${retryInfo.max} (${retryInfo.delay}s)`;
+          }
+        }
       }
 
       function logChat(role, text) {
@@ -941,12 +1132,16 @@
         return buildPresetUserText(kind, transcript, getSettings, { costPrice: myCost });
       }
 
-      function runPreset(kind) {
+      async function runPreset(kind) {
         chatPanelHistory = [];
         chatLog.innerHTML = "";
         err.style.display = "none";
         out.value = "";
         setLoading(true);
+        
+        // Show loading text
+        const loadingText = dlg.querySelector('.far-ia-loading-text');
+        if (loadingText) loadingText.style.display = 'block';
         const sellerName = getSellerDisplayName(getSettings);
         const sys =
           BASE_SYSTEM_PROMPT +
@@ -955,8 +1150,8 @@
           ". Aim for a reply that leaves the buyer confident this seller is reliable and the right fit—without pressure or empty claims.";
         const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
         const userText = appendSellerNoteForApi(presetInstruction(kind, transcript));
-        const userContent = buildUserContentWithImages(userText, imageUrls, getSettings);
-        openaiChatCompletion(getSettings, [
+        const userContent = await buildUserContentWithImages(userText, imageUrls, getSettings);
+        geminiGenerateContent(getSettings, [
           { role: "system", content: sys },
           { role: "user", content: userContent },
         ])
@@ -967,7 +1162,11 @@
             err.textContent = e.message || "Error";
             err.style.display = "block";
           })
-          .finally(() => setLoading(false));
+          .finally(() => {
+            setLoading(false);
+            const loadingText = dlg.querySelector('.far-ia-loading-text');
+            if (loadingText) loadingText.style.display = 'none';
+          });
       }
 
       dlg.querySelector("[data-x]").addEventListener("click", closeModal);
@@ -992,7 +1191,7 @@
         document.execCommand("copy");
       });
 
-      dlg.querySelector("[data-chat-send]").addEventListener("click", () => {
+      dlg.querySelector("[data-chat-send]").addEventListener("click", async () => {
         let q = (chatIn.value || "").trim();
         if (!q) return;
         const noteBlock = noteTa ? String(noteTa.value || "").trim() : "";
@@ -1000,6 +1199,10 @@
         logChat("user", q);
         chatIn.value = "";
         setLoading(true);
+        
+        // Show loading text
+        const loadingText = dlg.querySelector('.far-ia-loading-text');
+        if (loadingText) loadingText.style.display = 'block';
 
         const sellerName = getSellerDisplayName(getSettings);
         const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
@@ -1017,7 +1220,7 @@
             firstText +=
               "\n\n---\nSeller private note (internal—do not paste verbatim to the buyer):\n" + noteBlock;
           }
-          firstUserContentForHistory = buildUserContentWithImages(firstText, imageUrls, getSettings);
+          firstUserContentForHistory = await buildUserContentWithImages(firstText, imageUrls, getSettings);
           messages.push({ role: "user", content: firstUserContentForHistory });
         } else {
           const cap = chatPanelHistory.slice(-CHAT_HISTORY_MAX_TURNS);
@@ -1029,7 +1232,7 @@
           messages.push({ role: "user", content: followText });
         }
 
-        openaiChatCompletion(getSettings, messages)
+        geminiGenerateContent(getSettings, messages)
           .then((t) => {
             out.value = t;
             logChat("assistant", t);
@@ -1055,7 +1258,11 @@
             err.textContent = e.message || "Error";
             err.style.display = "block";
           })
-          .finally(() => setLoading(false));
+          .finally(() => {
+            setLoading(false);
+            const loadingText = dlg.querySelector('.far-ia-loading-text');
+            if (loadingText) loadingText.style.display = 'none';
+          });
       });
 
       trapFocus(dlg);
