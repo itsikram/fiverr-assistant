@@ -26,22 +26,49 @@
   const CUSTOM_OFFER_DESCRIPTION_TEXTAREA_SELECTOR = 'textarea[name="custom_offer.description"]';
 
   const BASE_SYSTEM_PROMPT = [
-    "You help a Fiverr seller draft inbox replies that read like a seasoned professional buyers want to work with.",
-    "Output ONLY the final message text the seller can paste into Fiverr.",
-    "No preamble like 'Sure, here is' or 'Here is a message'. No markdown code fences.",
-    "No meta-commentary unless the user explicitly asks for analysis.",
-    "Tone: polished, courteous, and quietly confident—clear structure, correct grammar, full sentences. Sound human, not robotic or stiff.",
-    "Build trust and make choosing this seller feel easy: mirror the buyer's goals in your own words, show you understood their messages, and end with one clear next step (e.g. what you need from them or that you're ready to proceed once details are confirmed).",
-    "Win through competence, not hype: no begging ('please hire me'), no fake urgency, no exaggerated promises, no invented credentials or stats. Avoid generic flattery and stacking exclamation marks.",
-    "Use the seller's display name naturally when it fits (e.g. sign-off); do not repeat it every sentence.",
-    "Never invent specific prices, deadlines, deliverables, ratings, reviews, or portfolio claims not grounded in the conversation; if unknown, ask concise professional clarifying questions instead of guessing.",
-    "When the user message includes images from the conversation (screenshots, uploads), look at them and use what is visible—errors, UI, designs, documents—when drafting the reply. Only describe what you can reasonably see.",
-  ].join(" ");
+    "You are an expert Fiverr seller crafting professional inbox replies that achieve 100% positive success scores.",
+    "Write exactly like a top-performing human seller - warm, professional, and authentic. Never sound like AI or templates.",
+    "Output ONLY the final message text ready to paste into Fiverr. No preamble, no explanations, no markdown.",
+    "Fiverr Success Score Optimization:",
+    "- Response time: Show prompt, attentive service without seeming desperate",
+    "- Professionalism: Perfect grammar, natural tone, confident but approachable",
+    "- Client satisfaction: Focus on their needs, show understanding, provide clear value",
+    "- Communication clarity: One clear next step, no ambiguity",
+    "- Trust building: Demonstrate expertise without bragging, be reliable and transparent",
+    "Human Writing Style:",
+    "- Use natural contractions (I'm, you'll, we've) where appropriate",
+    "- Vary sentence length and structure for natural flow",
+    "- Include specific details from their message to show you read carefully",
+    "- Ask thoughtful questions when clarification needed",
+    "- End with warm, professional closing that invites response",
+    "- Use 1-2 exclamation marks maximum, only where genuinely enthusiastic",
+    "What to Avoid:",
+    "- AI patterns: 'I understand', 'I'd be happy to', template phrases",
+    "- Over-formal language: 'furthermore', 'henceforth', stiff corporate speak",
+    "- Sales pressure: 'act now', 'limited time', urgency tactics",
+    "- Generic compliments: 'great project', 'amazing idea'",
+    "- Invented specifics: fake prices, deadlines, credentials",
+    "When analyzing images, mention specific details you see naturally in conversation flow.",
+  ].join("\n");
 
   /** Task explanation (BN/EN) stays neutral—no sales voice */
   const TASK_SUMMARY_SYSTEM_PROMPT =
-    "Summarize the buyer's request from the Fiverr thread accurately and neutrally. No selling, pitching, or persuasion. " +
+    "You are analyzing a Fiverr conversation to understand the buyer's requirements. " +
+    "Summarize the buyer's request accurately and neutrally, focusing on their actual needs and expectations. " +
+    "No selling, pitching, or persuasion - just clear understanding. " +
     "Output ONLY two labeled sections in this exact format (no text before BN):\n\nBN:\n<text in Bangla>\n\nEN:\n<text in English>\n\n";
+
+  /** Communication analysis for Fiverr success score optimization */
+  const COMMUNICATION_ANALYSIS_SYSTEM_PROMPT =
+    "You are an expert Fiverr communication analyst specializing in success score optimization. " +
+    "Analyze the conversation between seller and buyer to identify communication strengths, weaknesses, and specific improvement opportunities. " +
+    "Focus on factors that directly impact Fiverr's success score: response time, professionalism, client satisfaction, communication clarity, and trust building. " +
+    "Provide actionable, specific feedback that will help the seller achieve 100% positive success scores. " +
+    "Output your analysis in these exact sections:\n\n" +
+    "CURRENT COMMUNICATION STRENGTHS:\n<list what the seller is doing well>\n\n" +
+    "COMMUNICATION MISTAKES TO FIX:\n<specific errors that could hurt success score>\n\n" +
+    "IMPROVEMENT OPPORTUNITIES:\n<specific actionable suggestions to increase success score>\n\n" +
+    "SUCCESS SCORE IMPACT PREDICTION:\n<how these changes would affect their success score>";
 
   function getSellerDisplayName(getSettings) {
     const s = getSettings();
@@ -469,64 +496,67 @@
     return getLastInboxMessageRole(getSettings) === "buyer";
   }
 
-  /**
-   * @param {string} kind
-   * @param {string} transcript
-   * @param {() => object} getSettings
-   * @param {{ costPrice?: string }} presetOptions
-   */
-  function buildPresetUserText(kind, transcript, getSettings, presetOptions) {
-    const opt = presetOptions || {};
-    const costPrice = (opt.costPrice && String(opt.costPrice).trim()) || "";
+  function buildPresetUserText(kind, transcript, getSettings, opts) {
+    const costPrice = (opts && opts.costPrice && String(opts.costPrice).trim()) || "";
     const sellerName = getSellerDisplayName(getSettings);
-    const ctx = "Seller name for natural use: " + sellerName + "\n\nThread transcript:\n" + transcript + "\n";
     switch (kind) {
       case "first":
         return (
-          ctx +
-          "Task: Write a short first reply for a new or early thread. Thank them and show you take their project seriously. " +
-          "If the buyer has already described their task, goals, or requirements in the thread, reflect that understanding and respond to what they said—do not ask them to “send requirements” or repeat a generic laundry list of things you need. " +
-          "Only ask for further details or clarifications for gaps that are actually missing from their messages. If the thread has no real task content yet, then it is fine to invite what you need to proceed. Sound capable and easy to work with—no hype. Output only the message."
+          "Buyer's first message in this thread:\n" +
+          transcript +
+          "\n\nWrite a warm, authentic first response that sounds like a real person. Use natural language, maybe a light greeting if appropriate. Show you genuinely understand their project and are interested in helping. Ask 1-2 specific questions that show you're thinking about their actual needs. End naturally - no formal 'looking forward to working with you' unless it feels genuine. Make it feel like you're genuinely excited about their project."
         );
       case "reply":
         return (
-          ctx +
-          "Task: Reply professionally to the buyer’s latest message using full thread context. Address their points clearly, show understanding, and where appropriate signal readiness to move forward once scope is aligned—dependable and solution-oriented, never pushy. Output only the message."
+          "Recent conversation with this buyer:\n" +
+          transcript +
+          "\n\nWrite a natural, conversational reply to their last message. Reference specific details they mentioned to show you're paying attention. Be helpful and professional but not formal - like talking to a colleague. Use contractions naturally (I'm, you'll, etc.). If they have questions, answer them directly. If they're sharing progress or feedback, respond appropriately. Keep it flowing like a real conversation."
         );
       case "clarify":
         return (
-          ctx +
-          "Task: Write one short professional message whose purpose is to get clearer on the buyer’s task before quoting or starting work. Base it only on what appears in the thread: briefly mirror what you understood so far, then ask a small number of specific, concrete questions that would remove real ambiguity (e.g. deliverables, format, deadline, references, constraints)—not a generic ‘please send requirements’ dump. " +
-          "If the thread is vague, say so politely and invite the missing pieces. If they already gave enough detail, ask only the few remaining gaps. Collaborative tone, no blame, no invented assumptions. Output only the message."
+          "Conversation so far:\n" +
+          transcript +
+          "\n\nWrite a message asking for clarification in a natural way. Frame it positively - 'To make sure I deliver exactly what you need...' or 'Just want to understand a couple of things better...'. Ask 2-3 specific questions that show you're thinking through their project. Don't make it sound like an interrogation - more like you're genuinely trying to get it right for them."
         );
-      case "cost": {
-        const withPrice = costPrice
-          ? " The seller’s stated price to communicate is: " +
-            costPrice +
-            ". Quote that figure confidently and professionally; keep it consistent with the thread context; do not add other dollar amounts unless they already appear in the transcript."
-          : " Use only amounts or ranges discussed in the thread; if budget/pricing is unknown, ask professional clarifying questions—do not invent numbers.";
+      case "cost":
         return (
-          ctx +
-          "Task: One message about pricing." +
-          withPrice +
-          " Sound confident and fair; briefly tie price to value only when supported by the thread. Output only the message."
-        );
-      }
-      case "quote":
-        return (
-          ctx +
-          "Task: A structured quote-style message: scope, deliverables, timeline, revision policy if inferable; otherwise neutral professional wording. No invented specifics. Present it so the buyer can compare options and feel confident proceeding—clear headings or lines are fine inside the message text. Output only the message."
-        );
-      case "cool":
-        return ctx + "Task: A cool-down / de-escalation message: empathy, commitment to fix, professional. Output only the message.";
-      case "postdelivery":
-        return (
-          ctx +
-          "Task: One message for the buyer around or after order delivery, based only on what appears in the thread (scope, gig, revisions if mentioned). Goals: (1) Thank them and confirm you stand behind the delivery as agreed. (2) Invite them to flag any genuine error, bug, or mismatch with the agreed scope that you will correct—professional and constructive. (3) Clearly and politely explain that once the work is delivered per the order, any new ideas, redesigns, extra features, or changes they want after delivery are not treated as revisions under that order: revisions (if the gig/order included them) apply to refining the agreed deliverable within scope, not open-ended post-delivery change requests. Suggest that new or additional work after delivery can be handled through a new custom offer or order if they need it—without sounding hostile or refusing legitimate fixes for mistakes in what was delivered. (4) Keep it short, professional, and Fiverr-appropriate. Do not invent package details, revision counts, or guarantees not supported by the conversation. Output only the message."
+          "Conversation:\n" +
+          transcript +
+          (costPrice ? "\n\nSeller's target price to mention: " + costPrice + "" : "") +
+          "\n\nWrite a natural message about pricing. Don't sound like a salesperson - more like a professional discussing costs. If you have a specific price, state it confidently and explain what it includes. If discussing options, present them clearly. Frame pricing around value and results, not just numbers. Be transparent about what's included. Make it feel like a business discussion, not a sales pitch."
         );
       default:
-        return ctx;
+        return transcript;
     }
+  }
+
+  /**
+   * Generate communication analysis for Fiverr success score optimization
+   * @param {() => object} getSettings
+   * @returns {Promise<string>}
+   */
+  async function generateCommunicationAnalysis(getSettings) {
+    const sellerName = getSellerDisplayName(getSettings);
+    const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
+    
+    if (!transcript || transcript.trim().length === 0) {
+      return "No conversation found to analyze. Please start a conversation with a buyer first.";
+    }
+    
+    const userContent = await buildUserContentWithImages(
+      "Fiverr conversation to analyze for communication optimization and success score improvement:\n\n" + transcript,
+      imageUrls,
+      getSettings
+    );
+    
+    return geminiGenerateContent(
+      getSettings,
+      [
+        { role: "system", content: COMMUNICATION_ANALYSIS_SYSTEM_PROMPT },
+        { role: "user", content: userContent },
+      ],
+      { temperature: 0.3 }
+    );
   }
 
   /**
@@ -564,22 +594,40 @@
   function mapGeminiError(status, bodySnippet) {
     if (status === 400) {
       if (bodySnippet && /api.key.invalid/i.test(bodySnippet)) {
-        return "Invalid API key (400). Check your Gemini API key in extension settings.";
+        return "Invalid API key (400). The API key doesn't exist or was revoked. Get a new key from https://aistudio.google.com/app/apikey";
+      }
+      if (bodySnippet && /permission.denied/i.test(bodySnippet)) {
+        return "Permission denied (400). This API key doesn't have access to the Gemini API. Enable it at https://aistudio.google.com/app/apikey";
+      }
+      if (bodySnippet && /model.not.found/i.test(bodySnippet)) {
+        return "Model not found (400). Try a different model like 'gemini-1.5-flash' or 'gemini-2.5-flash'.";
       }
       if (bodySnippet && /unsupported.image/i.test(bodySnippet)) {
         return "Request failed (400). An attachment URL was not a supported image type (use PNG, JPEG, GIF, or WebP).";
       }
-      return "Bad request (400). Check request format.";
+      return "Bad request (400). Check API key and model settings.";
     }
-    if (status === 401) return "Invalid API key (401). Check your Gemini API key in extension settings.";
-    if (status === 403) return "Access forbidden (403). API key may not have permission for this model.";
-    if (status === 429) return "Rate limited (429). Gemini API is experiencing high demand. Please try again in a few moments.";
+    if (status === 401) {
+      return "Unauthorized (401). Invalid API key. Get a new key from https://aistudio.google.com/app/apikey";
+    }
+    if (status === 403) {
+      if (bodySnippet && /billing|quota/i.test(bodySnippet)) {
+        return "Billing required (403). This API key requires billing setup. Check your Google Cloud billing.";
+      }
+      return "Access forbidden (403). API key may not have permission for this model or region.";
+    }
+    if (status === 429) {
+      if (bodySnippet && /quota|exceeded|billing/i.test(bodySnippet)) {
+        return "API quota exceeded (429). You've exceeded your current quota. Check your plan at https://aistudio.google.com/app/apikey";
+      }
+      return "Rate limited (429). Gemini API is experiencing high demand. Try enabling 'Disable image processing' in settings to reduce API load, or wait a few moments and try again.";
+    }
     if (status === 503) return "Service unavailable (503). Gemini API is currently experiencing high demand. Please try again later.";
     if (status === 0 || status >= 500) {
       if (bodySnippet && /high demand|currently experiencing/i.test(bodySnippet)) {
-        return "Gemini API is experiencing high demand. This is temporary - please try again in a few moments.";
+        return "Gemini API is experiencing high demand. This is temporary - please try again in a few moments. Consider enabling 'Disable image processing' in settings to reduce API load.";
       }
-      return "Gemini API or network error. Try again.";
+      return "Gemini API or network error. Check your internet connection and try again.";
     }
     return "Request failed (" + status + ").";
   }
@@ -634,6 +682,35 @@
   }
 
   /**
+   * Global status display function for retry messages
+   */
+  function showRetryStatus(message) {
+    // Try to find active modal and update loading text
+    const activeModal = document.querySelector('.far-ia-task-modal');
+    if (activeModal) {
+      const loadingText = activeModal.querySelector('.far-ia-loading-text');
+      if (loadingText) {
+        loadingText.textContent = message;
+        loadingText.style.display = 'block';
+      }
+    }
+    
+    // Also try to find custom offer button
+    const customOfferBtn = document.querySelector('.far-custom-offer-ai-btn');
+    if (customOfferBtn) {
+      const originalText = customOfferBtn.textContent;
+      customOfferBtn.textContent = message;
+      customOfferBtn.disabled = true;
+      
+      // Restore original text after delay
+      setTimeout(() => {
+        customOfferBtn.textContent = originalText;
+        customOfferBtn.disabled = false;
+      }, 3000);
+    }
+  }
+
+  /**
    * Sleep function for retry delays
    */
   function sleep(ms) {
@@ -646,12 +723,43 @@
   async function geminiGenerateContent(getSettings, messages, options) {
     const s = getSettings();
     const apiKey = (s && s.geminiApiKey && String(s.geminiApiKey).trim()) || "";
+    
+    // Debug logging
+    console.log('=== Gemini API Request Debug ===');
+    console.log('1. Settings check:', {
+      hasApiKey: !!apiKey,
+      apiKeyLength: apiKey ? apiKey.length : 0,
+      apiKeyPrefix: apiKey ? apiKey.substring(0, 10) + '...' : 'none',
+      model: s && s.geminiModel && String(s.geminiModel).trim()
+    });
+    
     if (!apiKey) {
+      console.error('ERROR: No API key found');
       throw new Error("Add your Gemini API key in Fiverr Assistant settings.");
     }
+    
+    // Validate API key format
+    console.log('2. API key validation:', {
+      startsWithAIza: apiKey.startsWith("AIza"),
+      length: apiKey.length,
+      minLength: apiKey.length >= 30
+    });
+    
+    if (!apiKey.startsWith("AIza")) {
+      console.error('ERROR: Invalid API key format');
+      throw new Error("Invalid API key format. Gemini API keys should start with 'AIza'. Get a new key from https://aistudio.google.com/app/apikey");
+    }
+    
+    if (apiKey.length < 30) {
+      console.error('ERROR: API key too short');
+      throw new Error("API key appears too short. Please check you copied the full key from https://aistudio.google.com/app/apikey");
+    }
+    
     const model = (s && s.geminiModel && String(s.geminiModel).trim()) || "gemini-2.5-flash";
+    console.log('3. Using model:', model);
     
     const geminiMessages = convertMessagesToGeminiFormat(messages);
+    console.log('4. Converted messages:', geminiMessages);
     
     const body = {
       contents: geminiMessages,
@@ -660,33 +768,63 @@
         maxOutputTokens: 8192,
       },
     };
+    
+    console.log('5. Request body:', JSON.stringify(body, null, 2));
 
     const url = `${GEMINI_CHAT_URL}${model}:generateContent`;
+    console.log('6. Request URL:', url.replace(/key=[^&]*/, 'key=***REDACTED***'));
     
     // Retry mechanism for rate limiting and high demand errors
     const maxRetries = 3;
-    const baseDelay = 1000; // 1 second
+    const baseDelay = 2000; // 2 seconds for better user experience
     
     for (let attempt = 0; attempt < maxRetries; attempt++) {
+      console.log(`7. Attempt ${attempt + 1}/${maxRetries}`);
+      
       try {
-        const res = await fetch(`${url}?key=${apiKey}`, {
+        const fetchOptions = {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
           },
           body: JSON.stringify(body),
+        };
+        
+        console.log('8. Fetch options:', {
+          method: fetchOptions.method,
+          headers: fetchOptions.headers,
+          bodyLength: fetchOptions.body.length
+        });
+        
+        const res = await fetch(`${url}?key=${apiKey}`, fetchOptions);
+        
+        console.log('9. Response received:', {
+          status: res.status,
+          statusText: res.statusText,
+          headers: Object.fromEntries(res.headers.entries()),
+          ok: res.ok
         });
 
         const rawText = await res.text();
+        console.log('10. Raw response text:', rawText);
+        
         let data;
         try {
           data = JSON.parse(rawText);
-        } catch (_) {
+          console.log('11. Parsed JSON data:', data);
+        } catch (error) {
+          console.error('11. JSON parse error:', error);
           data = null;
         }
 
         if (!res.ok) {
           const apiErr = data && data.error && typeof data.error.message === "string" ? data.error.message : "";
+          
+          console.log('12. API Error details:', {
+            status: res.status,
+            apiError: apiErr,
+            errorData: data && data.error
+          });
           
           // Check if this is a retryable error
           const isRetryable = (
@@ -696,14 +834,26 @@
             (res.status === 0 && attempt < maxRetries - 1) // Network error (but not on last attempt)
           );
           
+          console.log('13. Is retryable error:', {
+            isRetryable,
+            currentAttempt: attempt,
+            maxRetries: maxRetries - 1
+          });
+          
           if (isRetryable && attempt < maxRetries - 1) {
             const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000; // Exponential backoff with jitter
-            console.log(`Gemini API retry ${attempt + 1}/${maxRetries} after ${delay}ms due to: ${res.status} ${apiErr}`);
+            const retryMsg = attempt === 0 
+              ? `Gemini API busy. Retrying ${attempt + 1}/${maxRetries} in ${Math.round(delay/1000)}s...`
+              : `Still busy. Retrying ${attempt + 1}/${maxRetries} in ${Math.round(delay/1000)}s...`;
+            console.log('14. Retrying:', retryMsg);
+            // Show user-friendly retry message in UI
+            showRetryStatus(retryMsg);
             await sleep(delay);
             continue;
           }
           
           // Not retryable or last attempt - throw error
+          console.log('15. Final error - throwing exception');
           let msg = mapGeminiError(res.status, apiErr);
           if (apiErr && !/api[_-]?key/i.test(apiErr)) {
             if (!(res.status === 400 && /unsupported.image/i.test(apiErr))) {
@@ -714,38 +864,65 @@
         }
         
         // Success - parse response
+        console.log('16. Parsing successful response');
         const candidate = data && data.candidates && data.candidates[0];
+        console.log('17. Candidate data:', candidate);
+        
         const content = candidate && candidate.content;
+        console.log('18. Content data:', content);
+        
         const parts = content && content.parts;
+        console.log('19. Parts data:', parts);
         
         if (parts && parts.length > 0) {
           const textParts = parts
             .filter((p) => p && p.text)
             .map((p) => p.text);
-          return stripFencesAndPreamble(textParts.join("\n"));
+          console.log('20. Text parts:', textParts);
+          
+          const finalText = stripFencesAndPreamble(textParts.join("\n"));
+          console.log('21. Final text to return:', finalText);
+          console.log('=== Gemini API Request Complete ===\n');
+          
+          return finalText;
         }
         
+        console.log('20. No text parts found, returning empty string');
+        console.log('=== Gemini API Request Complete (Empty) ===\n');
         return "";
         
       } catch (error) {
+        console.log('22. Exception caught:', {
+          error: error,
+          message: error.message,
+          stack: error.stack ? error.stack.substring(0, 500) : 'no stack',
+          attempt: attempt,
+          isLastAttempt: attempt === maxRetries - 1
+        });
+        
         // If this is the last attempt, re-throw the error
         if (attempt === maxRetries - 1) {
+          console.log('23. Last attempt failed, throwing error');
+          console.log('=== Gemini API Request Failed ===\n');
           throw error;
         }
         
         // For network errors, retry with exponential backoff
         if (error.message.includes("network") || error.message.includes("fetch")) {
           const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
-          console.log(`Gemini API retry ${attempt + 1}/${maxRetries} after ${delay}ms due to network error`);
+          console.log(`24. Network error - retry ${attempt + 1}/${maxRetries} after ${delay}ms`);
           await sleep(delay);
           continue;
         }
         
         // For other errors, don't retry
+        console.log('25. Non-retryable error, throwing immediately');
+        console.log('=== Gemini API Request Failed ===\n');
         throw error;
       }
     }
     
+    console.log('26. All retries exhausted');
     throw new Error("Gemini API request failed after all retries.");
   }
 
@@ -847,52 +1024,59 @@
       err.style.display = "none";
       err.textContent = "";
       btn.disabled = true;
-      const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
-      const form = ta.closest("form");
-      const gigHeading =
-        form && form.querySelector('h6[data-track-tag="heading"]');
-      const titleText = gigHeading ? String(gigHeading.textContent || "").replace(/\s+/g, " ").trim() : "";
+      const originalBtnText = btn.textContent;
+      
+      try {
+        const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
+        const form = ta.closest("form");
+        const gigHeading =
+          form && form.querySelector('h6[data-track-tag="heading"]');
+        const titleText = gigHeading ? String(gigHeading.textContent || "").replace(/\s+/g, " ").trim() : "";
 
-      const sellerName = getSellerDisplayName(getSettings);
-      const sys =
-        BASE_SYSTEM_PROMPT +
-        " Task: Write ONLY the text for the Fiverr custom offer description field (what the buyer reads). Clear scope, deliverables, and what is included; mention timeline or revisions only if grounded in the thread. Professional Fiverr-style offer copy, not a chat greeting. Strict maximum 1500 characters (field limit). No markdown fences, no preamble or labels—just the description body. Do not invent prices, deadlines, or package details not supported by the conversation.";
+        const sellerName = getSellerDisplayName(getSettings);
+        const sys =
+          BASE_SYSTEM_PROMPT +
+          " Task: Write ONLY the text for the Fiverr custom offer description field (what the buyer reads). Clear scope, deliverables, and what is included; mention timeline or revisions only if grounded in the thread. Professional Fiverr-style offer copy, not a chat greeting. Strict maximum 1500 characters (field limit). No markdown fences, no preamble or labels—just the description body. Do not invent prices, deadlines, or package details not supported by the conversation.";
 
-      const userText =
-        "Gig / offer title shown in this form: " +
-        (titleText || "(not found)") +
-        "\n\nSeller display name: " +
-        sellerName +
-        "\n\nInbox conversation with this buyer:\n" +
-        transcript +
-        "\n\nProduce the offer description text only. If the thread is empty or uninformative, write a short professional scope summary and invite the buyer to confirm details—do not invent a specific project.";
+        const userText =
+          "Gig / offer title shown in this form: " +
+          (titleText || "(not found)") +
+          "\n\nSeller display name: " +
+          sellerName +
+          "\n\nInbox conversation with this buyer:\n" +
+          transcript +
+          "\n\nProduce the offer description text only. If the thread is empty or uninformative, write a short professional scope summary and invite the buyer to confirm details—do not invent a specific project.";
 
-      const userContent = await buildUserContentWithImages(userText, imageUrls, getSettings);
+        const userContent = await buildUserContentWithImages(userText, imageUrls, getSettings);
 
-      geminiGenerateContent(
-        getSettings,
-        [
-          { role: "system", content: sys },
-          { role: "user", content: userContent },
-        ],
-        { temperature: 0.45 }
-      )
-        .then((text) => {
-          let out = (text || "").trim();
-          const maxLen = parseInt(ta.getAttribute("maxlength") || "1500", 10) || 1500;
-          if (out.length > maxLen) out = out.slice(0, maxLen);
-          ta.value = out;
-          ta.dispatchEvent(new Event("input", { bubbles: true }));
-          ta.dispatchEvent(new Event("change", { bubbles: true }));
-          ta.focus();
-        })
-        .catch((e) => {
-          err.textContent = e.message || "Could not generate description.";
-          err.style.display = "block";
-        })
-        .finally(() => {
-          btn.disabled = false;
-        });
+        const text = await geminiGenerateContent(
+          getSettings,
+          [
+            { role: "system", content: sys },
+            { role: "user", content: userContent },
+          ],
+          { temperature: 0.45 }
+        );
+        
+        let out = (text || "").trim();
+        const maxLen = parseInt(ta.getAttribute("maxlength") || "1500", 10) || 1500;
+        if (out.length > maxLen) out = out.slice(0, maxLen);
+        ta.value = out;
+        ta.dispatchEvent(new Event("input", { bubbles: true }));
+        ta.dispatchEvent(new Event("change", { bubbles: true }));
+        ta.focus();
+      } catch (e) {
+        // Enhance error message with suggestions for rate limiting
+        let errorMsg = e.message || "Could not generate description.";
+        if (errorMsg.includes("Rate limited") || errorMsg.includes("high demand") || errorMsg.includes("quota")) {
+          errorMsg += " Tip: Enable 'Disable image processing' in extension settings to reduce API load during busy periods.";
+        }
+        err.textContent = errorMsg;
+        err.style.display = "block";
+      } finally {
+        btn.disabled = false;
+        btn.textContent = originalBtnText;
+      }
     });
 
     wrap.appendChild(btn);
@@ -1050,6 +1234,7 @@
         '<button type="button" class="far-ia-btn" data-a="first">Generate first message — short welcome; invite requirements</button>' +
         '<button type="button" class="far-ia-btn" data-a="reply">Generate professional response — reply to buyer’s last message</button>' +
         '<button type="button" class="far-ia-btn" data-a="clarify">Generate clarification message — ask focused questions from the thread</button>' +
+        '<button type="button" class="far-ia-btn" data-a="analysis">Analyze communication — improve success score</button>' +
         '<div class="far-ia-cost-row">' +
         '<input type="text" class="far-ia-cost-input" data-cost-input placeholder="$ / price" title="Your price to mention in the cost message" aria-label="Your cost or price" />' +
         '<button type="button" class="far-ia-btn far-ia-cost-btn" data-a="cost">Generate cost message</button>' +
@@ -1132,6 +1317,30 @@
         return buildPresetUserText(kind, transcript, getSettings, { costPrice: myCost });
       }
 
+      async function runCommunicationAnalysis() {
+        chatPanelHistory = [];
+        chatLog.innerHTML = "";
+        err.style.display = "none";
+        out.value = "";
+        setLoading(true);
+        
+        // Show loading text
+        const loadingText = dlg.querySelector('.far-ia-loading-text');
+        if (loadingText) loadingText.style.display = 'block';
+        
+        try {
+          const analysis = await generateCommunicationAnalysis(getSettings);
+          out.value = analysis;
+        } catch (e) {
+          err.textContent = e.message || "Error";
+          err.style.display = "block";
+        } finally {
+          setLoading(false);
+          const loadingText = dlg.querySelector('.far-ia-loading-text');
+          if (loadingText) loadingText.style.display = 'none';
+        }
+      }
+
       async function runPreset(kind) {
         chatPanelHistory = [];
         chatLog.innerHTML = "";
@@ -1180,6 +1389,10 @@
           if (kind === "task") {
             const taskNote = noteTa ? String(noteTa.value || "").trim() : "";
             openTaskExplanationModal(taskNote);
+            return;
+          }
+          if (kind === "analysis") {
+            runCommunicationAnalysis();
             return;
           }
           runPreset(kind);
