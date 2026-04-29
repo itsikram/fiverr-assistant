@@ -2342,8 +2342,17 @@ const phoneCall = () => {
     const storedNextReload = stored[NEXT_RELOAD_TIMESTAMP_KEY];
     if (storedNextReload !== undefined && storedNextReload !== null) {
       const parsedNextReload = parseInt(storedNextReload, 10);
-      if (!Number.isNaN(parsedNextReload)) {
-        nextReloadTimestamp = parsedNextReload > 0 ? parsedNextReload : null;
+      if (!Number.isNaN(parsedNextReload) && parsedNextReload > 0) {
+        // Check if the stored timestamp has already passed
+        if (parsedNextReload <= Date.now()) {
+          // Timestamp expired - reset to null so a new reload is scheduled immediately
+          nextReloadTimestamp = null;
+        } else {
+          // Timestamp is still in the future - keep it
+          nextReloadTimestamp = parsedNextReload;
+        }
+      } else {
+        nextReloadTimestamp = null;
       }
     }
 
@@ -4275,8 +4284,16 @@ const phoneCall = () => {
         
         console.log("Fiverr Assistant Content: Scheduling next reload with pageLinks:", pageLinks);
 
-        const delay = getRandomMiliSecond(minReloadingSecond, maxReloadingSecond);
-        nextReloadTimestamp = Date.now() + delay;
+        // If a valid future timestamp exists (from storage), use it; otherwise generate new delay
+        let delay;
+        if (nextReloadTimestamp && nextReloadTimestamp > Date.now()) {
+          delay = nextReloadTimestamp - Date.now();
+          console.log("Fiverr Assistant Content: Using stored reload timestamp, delay:", delay);
+        } else {
+          delay = getRandomMiliSecond(minReloadingSecond, maxReloadingSecond);
+          nextReloadTimestamp = Date.now() + delay;
+          console.log("Fiverr Assistant Content: Generated new reload delay:", delay);
+        }
         persistReloadState();
         updateStatusDisplay();
 
@@ -4289,8 +4306,7 @@ const phoneCall = () => {
           }
 
           if (siteDomain !== "www.fiverr.com") {
-            persistReloadState();
-            updateStatusDisplay();
+            scheduleNextReload();
             return;
           }
 
