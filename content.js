@@ -1,83 +1,108 @@
 (async function () {
   // Global flag to track if fabs extension is active
   let fabsReloaderDetected = false;
-  
+
   // Check function to detect if "fabs fiverr reloader assistant" is active
   const checkForFabsReloader = () => {
     // Check for window properties that might be set by fabs extension
-    if (window.fabsReloader || window.fabsFiverrReloader || window.__fabsReloader) {
+    if (
+      window.fabsReloader ||
+      window.fabsFiverrReloader ||
+      window.__fabsReloader
+    ) {
       return true;
     }
-    
+
     // Check for localStorage/sessionStorage flags
     try {
-      if (localStorage.getItem('fabsReloaderActive') === 'true' || 
-          localStorage.getItem('fabsFiverrReloader') === 'true' ||
-          sessionStorage.getItem('fabsReloaderActive') === 'true') {
+      if (
+        localStorage.getItem("fabsReloaderActive") === "true" ||
+        localStorage.getItem("fabsFiverrReloader") === "true" ||
+        sessionStorage.getItem("fabsReloaderActive") === "true"
+      ) {
         return true;
       }
     } catch (e) {}
-    
+
     // Check for DOM elements or classes that might indicate fabs extension
-    if (document.querySelector('[data-fabs-reloader]') || 
-        document.querySelector('.fabs-reloader') ||
-        document.querySelector('#fabs-reloader')) {
+    if (
+      document.querySelector("[data-fabs-reloader]") ||
+      document.querySelector(".fabs-reloader") ||
+      document.querySelector("#fabs-reloader")
+    ) {
       return true;
     }
-    
+
     // Check for script tags with fabs identifier
-    const scripts = document.querySelectorAll('script');
+    const scripts = document.querySelectorAll("script");
     for (const script of scripts) {
-      if (script.src && (script.src.includes('fabs') && script.src.includes('reloader'))) {
+      if (
+        script.src &&
+        script.src.includes("fabs") &&
+        script.src.includes("reloader")
+      ) {
         return true;
       }
-      if (script.textContent && script.textContent.includes('fabs') && script.textContent.includes('reloader')) {
+      if (
+        script.textContent &&
+        script.textContent.includes("fabs") &&
+        script.textContent.includes("reloader")
+      ) {
         return true;
       }
     }
-    
+
     // Check for extension-specific global variables (common patterns)
-    if (typeof window.fabs !== 'undefined' || 
-        typeof window.fabsReloader !== 'undefined' ||
-        typeof window.fabsFiverrReloader !== 'undefined') {
+    if (
+      typeof window.fabs !== "undefined" ||
+      typeof window.fabsReloader !== "undefined" ||
+      typeof window.fabsFiverrReloader !== "undefined"
+    ) {
       return true;
     }
-    
+
     // Check for any element with fabs in id or class
-    if (document.querySelector('[id*="fabs"]') || document.querySelector('[class*="fabs"]')) {
+    if (
+      document.querySelector('[id*="fabs"]') ||
+      document.querySelector('[class*="fabs"]')
+    ) {
       return true;
     }
-    
+
     return false;
   };
-  
+
   // Exit early if fabs reloader is detected at startup
   if (checkForFabsReloader()) {
     fabsReloaderDetected = true;
-    console.log('Fiverr Assistant: fabs fiverr reloader assistant is active. Exiting to prevent conflicts.');
+    console.log(
+      "Fiverr Assistant: fabs fiverr reloader assistant is active. Exiting to prevent conflicts.",
+    );
     return; // Exit the entire script
   }
-  
+
   // Set up periodic monitoring for fabs extension (check every 2 seconds)
   const fabsMonitorInterval = setInterval(() => {
     if (checkForFabsReloader()) {
       fabsReloaderDetected = true;
-      console.log('Fiverr Assistant: fabs fiverr reloader assistant detected. Stopping all functionality to prevent conflicts.');
+      console.log(
+        "Fiverr Assistant: fabs fiverr reloader assistant detected. Stopping all functionality to prevent conflicts.",
+      );
       clearInterval(fabsMonitorInterval);
-      
+
       // Stop all intervals and timeouts
       if (messageCheckIntervalId) clearInterval(messageCheckIntervalId);
       if (nextReloadTimeoutId) clearTimeout(nextReloadTimeoutId);
       if (statusUpdateIntervalId) clearInterval(statusUpdateIntervalId);
       if (offlineCheckIntervalId) clearInterval(offlineCheckIntervalId);
-      
+
       // Remove status display
       removeStatusDisplay();
-      
+
       return; // Exit monitoring
     }
   }, 2000);
-  
+
   // Helper function to check if we should continue execution
   const shouldContinueExecution = () => {
     if (fabsReloaderDetected || checkForFabsReloader()) {
@@ -86,78 +111,92 @@
     }
     return true;
   };
-  
+
   // Filter out known third-party errors to reduce console noise
   const originalConsoleError = console.error;
-  console.error = function(...args) {
-    const errorString = args.join(' ');
+  console.error = function (...args) {
+    const errorString = args.join(" ");
     // Filter out Qualtrics chunk loading errors
-    if (errorString.includes('Loading chunk') && errorString.includes('qualtrics.com')) {
+    if (
+      errorString.includes("Loading chunk") &&
+      errorString.includes("qualtrics.com")
+    ) {
       return; // Suppress this error
     }
     // Call original console.error for all other errors
     originalConsoleError.apply(console, args);
   };
-let lastCallTime = 0; // stores the timestamp of the last API call
-const phoneCall = () => {
-  // Don't make phone calls or show alerts if fabs reloader is active
-  // Check the global flag directly (it's defined before this function)
-  if (typeof fabsReloaderDetected !== 'undefined' && fabsReloaderDetected) {
-    return;
-  }
-  
-  const now = Date.now(); // current timestamp in milliseconds
-  const FIVE_MINUTES = 5 * 60 * 1000; // 5 minutes in ms
+  let lastCallTime = 0; // stores the timestamp of the last API call
+  const phoneCall = () => {
+    // Don't make phone calls or show alerts if fabs reloader is active
+    // Check the global flag directly (it's defined before this function)
+    if (typeof fabsReloaderDetected !== "undefined" && fabsReloaderDetected) {
+      return;
+    }
 
-  if (now - lastCallTime >= FIVE_MINUTES) {
-    // it's been more than 5 minutes since last call
-    fetch("https://connect-server-7h7d.onrender.com/api/connect/phone-call?to=8801581400711&text=you have new client message in fiverr please check this out i am repeating again  you have received message from new client in fiverr.")
-      .then(res => {
-        // Check if response is ok
-        if (!res.ok) {
-          throw new Error(`HTTP error! status: ${res.status}`);
-        }
-        // Check content-type before parsing as JSON
-        const contentType = res.headers.get("content-type");
-        if (contentType && contentType.includes("application/json")) {
-          return res.json();
-        } else {
-          // If not JSON, return the text response
-          return res.text().then(text => {
-            console.warn("API response is not JSON:", text);
-            return { success: true, message: text };
-          });
-        }
-      })
-      .then(data  => {
-        // Check again before showing alert
-        if (typeof fabsReloaderDetected !== 'undefined' && fabsReloaderDetected) {
-          return;
-        }
-        alert('call made successfully');
-        console.log("Call API response:", data)
-      })
-      .catch(err => console.error("Error calling API:", err));
+    const now = Date.now(); // current timestamp in milliseconds
+    const FIVE_MINUTES = 5 * 60 * 1000; // 5 minutes in ms
 
-    lastCallTime = now; // update last call timestamp
-  } else {
-    console.log("API call skipped: called less than 5 minutes ago");
-  }
-};
+    if (now - lastCallTime >= FIVE_MINUTES) {
+      // it's been more than 5 minutes since last call
+      fetch(
+        "https://connect-server-7h7d.onrender.com/api/connect/phone-call?to=8801581400711&text=you have new client message in fiverr please check this out i am repeating again  you have received message from new client in fiverr.",
+      )
+        .then((res) => {
+          // Check if response is ok
+          if (!res.ok) {
+            throw new Error(`HTTP error! status: ${res.status}`);
+          }
+          // Check content-type before parsing as JSON
+          const contentType = res.headers.get("content-type");
+          if (contentType && contentType.includes("application/json")) {
+            return res.json();
+          } else {
+            // If not JSON, return the text response
+            return res.text().then((text) => {
+              console.warn("API response is not JSON:", text);
+              return { success: true, message: text };
+            });
+          }
+        })
+        .then((data) => {
+          // Check again before showing alert
+          if (
+            typeof fabsReloaderDetected !== "undefined" &&
+            fabsReloaderDetected
+          ) {
+            return;
+          }
+          console.log("Call API response:", data);
+        })
+        .catch((err) => console.error("Error calling API:", err));
+
+      lastCallTime = now; // update last call timestamp
+    } else {
+      console.log("API call skipped: called less than 5 minutes ago");
+    }
+  };
   // Handle unhandled promise rejections from third-party scripts
-  window.addEventListener('unhandledrejection', (event) => {
+  window.addEventListener("unhandledrejection", (event) => {
     const error = event.reason;
-    const errorMessage = error?.message || String(error || '');
-    const errorStack = error?.stack || '';
-    
+    const errorMessage = error?.message || String(error || "");
+    const errorStack = error?.stack || "";
+
     // Filter out Qualtrics chunk loading errors
-    if (errorMessage.includes('Loading chunk') && (errorMessage.includes('qualtrics.com') || errorStack.includes('qualtrics.com'))) {
+    if (
+      errorMessage.includes("Loading chunk") &&
+      (errorMessage.includes("qualtrics.com") ||
+        errorStack.includes("qualtrics.com"))
+    ) {
       event.preventDefault(); // Suppress the error
       return;
     }
-    
+
     // Filter out WebTransport errors (common third-party errors)
-    if (error?.name === 'WebTransportError' || errorMessage.includes('WebTransport')) {
+    if (
+      error?.name === "WebTransportError" ||
+      errorMessage.includes("WebTransport")
+    ) {
       event.preventDefault();
       return;
     }
@@ -170,14 +209,14 @@ const phoneCall = () => {
     hasBrowserAPI && browser.storage && browser.storage.local
       ? browser.storage.local
       : hasChromeAPI && chrome.storage && chrome.storage.local
-      ? chrome.storage.local
-      : null;
+        ? chrome.storage.local
+        : null;
   const runtime =
     hasBrowserAPI && browser.runtime
       ? browser.runtime
       : hasChromeAPI && chrome.runtime
-      ? chrome.runtime
-      : null;
+        ? chrome.runtime
+        : null;
 
   function coerceBooleanSetting(value, defaultValue = false) {
     if (typeof value === "boolean") {
@@ -209,7 +248,9 @@ const phoneCall = () => {
     if (hasBrowserAPI && runtime.sendMessage.length <= 1) {
       try {
         const result = runtime.sendMessage(message);
-        return result && typeof result.then === "function" ? result : Promise.resolve(result);
+        return result && typeof result.then === "function"
+          ? result
+          : Promise.resolve(result);
       } catch (error) {
         return Promise.reject(error);
       }
@@ -251,11 +292,17 @@ const phoneCall = () => {
     if (extensionStorage) {
       try {
         const result = await extensionStorage.get("autoReloadEnabled");
-        if (result && Object.prototype.hasOwnProperty.call(result, "autoReloadEnabled")) {
+        if (
+          result &&
+          Object.prototype.hasOwnProperty.call(result, "autoReloadEnabled")
+        ) {
           return coerceBooleanSetting(result.autoReloadEnabled, true);
         }
       } catch (error) {
-        console.warn("Fiverr Auto Reloader: unable to read auto reload preference from extension storage", error);
+        console.warn(
+          "Fiverr Auto Reloader: unable to read auto reload preference from extension storage",
+          error,
+        );
       }
     }
     // Fallback to localStorage for backward compatibility
@@ -263,7 +310,10 @@ const phoneCall = () => {
       const storedValue = localStorage.getItem("autoReloadEnabled");
       return coerceBooleanSetting(storedValue, true);
     } catch (error) {
-      console.warn("Fiverr Auto Reloader: unable to read stored auto reload preference", error);
+      console.warn(
+        "Fiverr Auto Reloader: unable to read stored auto reload preference",
+        error,
+      );
       return true;
     }
   };
@@ -298,7 +348,7 @@ const phoneCall = () => {
   const MONITORING_DATE_KEY = "farMonitoringDate";
   const CONNECTION_START_KEY = "farConnectionStart";
   const MONITORING_START_KEY = "farMonitoringStart";
-  
+
   const getTodayDateString = () => {
     const now = new Date();
     const year = now.getFullYear();
@@ -306,11 +356,11 @@ const phoneCall = () => {
     const day = String(now.getDate()).padStart(2, "0");
     return `${year}-${month}-${day}`;
   };
-  
+
   const checkAndResetDailyCount = () => {
     const today = getTodayDateString();
     const storedDate = localStorage.getItem(RELOAD_DATE_KEY);
-    
+
     if (storedDate !== today) {
       // Date has changed, reset the count
       reloadCount = 0;
@@ -322,7 +372,7 @@ const phoneCall = () => {
     }
     return false; // Count was not reset
   };
-  
+
   // Initialize reload count with daily check
   const storedDate = localStorage.getItem(RELOAD_DATE_KEY);
   const today = getTodayDateString();
@@ -390,7 +440,10 @@ const phoneCall = () => {
         return response.tabId;
       }
     } catch (error) {
-      console.warn("Fiverr Auto Reloader: unable to determine current tab id", error);
+      console.warn(
+        "Fiverr Auto Reloader: unable to determine current tab id",
+        error,
+      );
     }
     return null;
   };
@@ -410,7 +463,10 @@ const phoneCall = () => {
           }
         }
       } catch (error) {
-        console.warn("Fiverr Auto Reloader: unable to read primary tab id", error);
+        console.warn(
+          "Fiverr Auto Reloader: unable to read primary tab id",
+          error,
+        );
       }
     }
 
@@ -438,11 +494,16 @@ const phoneCall = () => {
     designatedPrimaryTabId = null;
   }
 
-  hasPrimaryOverride = typeof designatedPrimaryTabId === "number" && !Number.isNaN(designatedPrimaryTabId);
+  hasPrimaryOverride =
+    typeof designatedPrimaryTabId === "number" &&
+    !Number.isNaN(designatedPrimaryTabId);
 
   if (hasPrimaryOverride) {
     try {
-      localStorage.setItem(PRIMARY_TAB_ID_STORAGE_KEY, String(designatedPrimaryTabId));
+      localStorage.setItem(
+        PRIMARY_TAB_ID_STORAGE_KEY,
+        String(designatedPrimaryTabId),
+      );
     } catch (_) {}
   } else {
     try {
@@ -450,7 +511,10 @@ const phoneCall = () => {
     } catch (_) {}
   }
 
-  if (hasPrimaryOverride && (currentTabId == null || currentTabId !== designatedPrimaryTabId)) {
+  if (
+    hasPrimaryOverride &&
+    (currentTabId == null || currentTabId !== designatedPrimaryTabId)
+  ) {
     if (
       runtime &&
       runtime.onMessage &&
@@ -473,7 +537,7 @@ const phoneCall = () => {
   const persistReloadState = () => {
     // Check if we need to reset for a new day before persisting
     checkAndResetDailyCount();
-    
+
     try {
       const today = getTodayDateString();
       localStorage.setItem(RELOAD_COUNT_KEY, String(reloadCount));
@@ -491,15 +555,26 @@ const phoneCall = () => {
       try {
         const result = extensionStorage.set(payload);
         if (result && typeof result.catch === "function") {
-          result.catch((error) => console.warn("Fiverr Auto Reloader: unable to persist reload state", error));
+          result.catch((error) =>
+            console.warn(
+              "Fiverr Auto Reloader: unable to persist reload state",
+              error,
+            ),
+          );
         }
       } catch (error) {
-        console.warn("Fiverr Auto Reloader: unable to persist reload state", error);
+        console.warn(
+          "Fiverr Auto Reloader: unable to persist reload state",
+          error,
+        );
       }
     }
   };
 
-  let clearScheduledReload = ({ updateDisplay = true, persist = true } = {}) => {
+  let clearScheduledReload = ({
+    updateDisplay = true,
+    persist = true,
+  } = {}) => {
     if (nextReloadTimeoutId) {
       clearTimeout(nextReloadTimeoutId);
       nextReloadTimeoutId = null;
@@ -534,27 +609,38 @@ const phoneCall = () => {
     // Save the stopped state to chrome.storage.local so it persists after page reload
     if (extensionStorage) {
       const reactivateTimestamp = Date.now() + AUTO_REACTIVATE_DELAY_MS;
-      extensionStorage.set({ 
-        autoReloadEnabled: false,
-        [AUTO_REACTIVATE_TIMESTAMP_KEY]: reactivateTimestamp
-      }).catch((error) => {
-        console.warn("Fiverr Assistant: Failed to save auto-reload stopped state", error);
-      });
-      
+      extensionStorage
+        .set({
+          autoReloadEnabled: false,
+          [AUTO_REACTIVATE_TIMESTAMP_KEY]: reactivateTimestamp,
+        })
+        .catch((error) => {
+          console.warn(
+            "Fiverr Assistant: Failed to save auto-reload stopped state",
+            error,
+          );
+        });
+
       // Set timeout to auto-reactivate after 1 minute
       autoReactivateTimeoutId = setTimeout(() => {
         autoReactivateTimeoutId = null;
         if (!isF10Clicked && featuresInitialized) {
           enableAutoReload();
-          console.log("Fiverr Assistant: Auto-reload auto-reactivated after 1 minute");
+          console.log(
+            "Fiverr Assistant: Auto-reload auto-reactivated after 1 minute",
+          );
         }
         // Remove the timestamp from storage
         if (extensionStorage) {
-          extensionStorage.remove(AUTO_REACTIVATE_TIMESTAMP_KEY).catch(() => {});
+          extensionStorage
+            .remove(AUTO_REACTIVATE_TIMESTAMP_KEY)
+            .catch(() => {});
         }
       }, AUTO_REACTIVATE_DELAY_MS);
-      
-      console.log("Fiverr Assistant: Auto-reload paused, will auto-reactivate in 1 minute");
+
+      console.log(
+        "Fiverr Assistant: Auto-reload paused, will auto-reactivate in 1 minute",
+      );
     }
   };
   let enableAutoReload = () => {
@@ -576,14 +662,20 @@ const phoneCall = () => {
     }
     // Save the enabled state to chrome.storage.local so it persists after page reload
     if (extensionStorage) {
-      extensionStorage.set({ 
-        autoReloadEnabled: true
-      }).then(() => {
-        // Remove reactivation timestamp if it exists
-        return extensionStorage.remove(AUTO_REACTIVATE_TIMESTAMP_KEY);
-      }).catch((error) => {
-        console.warn("Fiverr Assistant: Failed to save auto-reload enabled state", error);
-      });
+      extensionStorage
+        .set({
+          autoReloadEnabled: true,
+        })
+        .then(() => {
+          // Remove reactivation timestamp if it exists
+          return extensionStorage.remove(AUTO_REACTIVATE_TIMESTAMP_KEY);
+        })
+        .catch((error) => {
+          console.warn(
+            "Fiverr Assistant: Failed to save auto-reload enabled state",
+            error,
+          );
+        });
     }
   };
 
@@ -594,112 +686,139 @@ const phoneCall = () => {
       clearTimeout(notificationPauseTimeoutId);
       notificationPauseTimeoutId = null;
     }
-    
+
     // Pause auto-reload
     pauseAutoReload();
-    
+
     // Resume after 5 minutes (300000 milliseconds)
     notificationPauseTimeoutId = setTimeout(() => {
       notificationPauseTimeoutId = null;
       if (!isF10Clicked && featuresInitialized) {
         enableAutoReload();
-        console.log("Fiverr Assistant: Auto-reload resumed after 5-minute notification pause");
+        console.log(
+          "Fiverr Assistant: Auto-reload resumed after 5-minute notification pause",
+        );
       }
     }, 300000); // 5 minutes
-    
-    console.log("Fiverr Assistant: Auto-reload paused for 5 minutes due to notification");
+
+    console.log(
+      "Fiverr Assistant: Auto-reload paused for 5 minutes due to notification",
+    );
   };
 
   // Time tracking variables
   let connectionStartTime = null;
   let monitoringStartTime = null;
   let timeTrackingIntervalId = null;
-  
+
   const getStoredTime = (timeKey, dateKey) => {
     try {
       const today = getTodayDateString();
       const storedDate = localStorage.getItem(dateKey);
-      
+
       // If date doesn't match today, return 0 (new day)
       if (storedDate !== today) {
         return 0;
       }
-      
+
       const stored = localStorage.getItem(timeKey);
       return stored ? parseInt(stored, 10) : 0;
     } catch (_) {
       return 0;
     }
   };
-  
+
   const setStoredTime = (timeKey, dateKey, value) => {
     try {
       const today = getTodayDateString();
       localStorage.setItem(timeKey, String(value));
       localStorage.setItem(dateKey, today);
       if (extensionStorage) {
-        extensionStorage.set({ [timeKey]: value, [dateKey]: today }).catch(() => {});
+        extensionStorage
+          .set({ [timeKey]: value, [dateKey]: today })
+          .catch(() => {});
       }
     } catch (_) {}
   };
-  
+
   const checkAndResetDailyTime = (timeKey, dateKey) => {
     const today = getTodayDateString();
     const storedDate = localStorage.getItem(dateKey);
-    
+
     if (storedDate !== today) {
       // New day, reset time
       try {
         localStorage.setItem(timeKey, "0");
         localStorage.setItem(dateKey, today);
         if (extensionStorage) {
-          extensionStorage.set({ [timeKey]: 0, [dateKey]: today }).catch(() => {});
+          extensionStorage
+            .set({ [timeKey]: 0, [dateKey]: today })
+            .catch(() => {});
         }
       } catch (_) {}
       return true; // Time was reset
     }
     return false; // Time was not reset
   };
-  
+
   const updateTimeTracking = () => {
     const now = Date.now();
-    
+
     // Check and reset daily time if needed
     checkAndResetDailyTime(CONNECTION_TIME_KEY, CONNECTION_DATE_KEY);
     checkAndResetDailyTime(MONITORING_TIME_KEY, MONITORING_DATE_KEY);
-    
+
     // Update connection time if online
     if (isOnline && connectionStartTime) {
       const elapsed = now - connectionStartTime;
-      const currentTotal = getStoredTime(CONNECTION_TIME_KEY, CONNECTION_DATE_KEY);
-      setStoredTime(CONNECTION_TIME_KEY, CONNECTION_DATE_KEY, currentTotal + elapsed);
+      const currentTotal = getStoredTime(
+        CONNECTION_TIME_KEY,
+        CONNECTION_DATE_KEY,
+      );
+      setStoredTime(
+        CONNECTION_TIME_KEY,
+        CONNECTION_DATE_KEY,
+        currentTotal + elapsed,
+      );
       connectionStartTime = now;
       try {
         localStorage.setItem(CONNECTION_START_KEY, String(connectionStartTime));
       } catch (_) {}
     }
-    
+
     // Update monitoring time if monitoring is active
-    if (monitoringStartTime && autoReload && featuresInitialized && isPrimaryTab) {
+    if (
+      monitoringStartTime &&
+      autoReload &&
+      featuresInitialized &&
+      isPrimaryTab
+    ) {
       const elapsed = now - monitoringStartTime;
-      const currentTotal = getStoredTime(MONITORING_TIME_KEY, MONITORING_DATE_KEY);
-      setStoredTime(MONITORING_TIME_KEY, MONITORING_DATE_KEY, currentTotal + elapsed);
+      const currentTotal = getStoredTime(
+        MONITORING_TIME_KEY,
+        MONITORING_DATE_KEY,
+      );
+      setStoredTime(
+        MONITORING_TIME_KEY,
+        MONITORING_DATE_KEY,
+        currentTotal + elapsed,
+      );
       monitoringStartTime = now;
       try {
         localStorage.setItem(MONITORING_START_KEY, String(monitoringStartTime));
       } catch (_) {}
     }
   };
-  
+
   const startConnectionTracking = () => {
     if (isOnline && !connectionStartTime) {
       // Check if we need to reset for new day
       checkAndResetDailyTime(CONNECTION_TIME_KEY, CONNECTION_DATE_KEY);
-      
+
       const storedStart = localStorage.getItem(CONNECTION_START_KEY);
       const today = getTodayDateString();
       const storedDate = localStorage.getItem(CONNECTION_DATE_KEY);
-      
+
       // Only restore start time if it's from today
       if (storedStart && storedDate === today) {
         connectionStartTime = parseInt(storedStart, 10);
@@ -709,7 +828,7 @@ const phoneCall = () => {
       }
     }
   };
-  
+
   const stopConnectionTracking = () => {
     if (connectionStartTime) {
       updateTimeTracking();
@@ -717,16 +836,21 @@ const phoneCall = () => {
       localStorage.removeItem(CONNECTION_START_KEY);
     }
   };
-  
+
   const startMonitoringTracking = () => {
-    if (autoReload && featuresInitialized && isPrimaryTab && !monitoringStartTime) {
+    if (
+      autoReload &&
+      featuresInitialized &&
+      isPrimaryTab &&
+      !monitoringStartTime
+    ) {
       // Check if we need to reset for new day
       checkAndResetDailyTime(MONITORING_TIME_KEY, MONITORING_DATE_KEY);
-      
+
       const storedStart = localStorage.getItem(MONITORING_START_KEY);
       const today = getTodayDateString();
       const storedDate = localStorage.getItem(MONITORING_DATE_KEY);
-      
+
       // Only restore start time if it's from today
       if (storedStart && storedDate === today) {
         monitoringStartTime = parseInt(storedStart, 10);
@@ -736,7 +860,7 @@ const phoneCall = () => {
       }
     }
   };
-  
+
   const stopMonitoringTracking = () => {
     if (monitoringStartTime) {
       updateTimeTracking();
@@ -744,16 +868,16 @@ const phoneCall = () => {
       localStorage.removeItem(MONITORING_START_KEY);
     }
   };
-  
+
   const initializeTimeTracking = () => {
     // Start connection tracking if online
     startConnectionTracking();
-    
+
     // Start monitoring tracking if conditions are met
     if (autoReload && featuresInitialized && isPrimaryTab) {
       startMonitoringTracking();
     }
-    
+
     // Set up periodic updates (every 30 seconds)
     if (!timeTrackingIntervalId) {
       timeTrackingIntervalId = setInterval(() => {
@@ -761,7 +885,7 @@ const phoneCall = () => {
       }, 30000);
     }
   };
-  
+
   // Offline detection
   let isOnline = navigator.onLine;
   let wasOffline = !navigator.onLine;
@@ -770,27 +894,29 @@ const phoneCall = () => {
   let pageLoadCheckDone = false; // Flag to prevent multiple checks on same page load
   const MAX_CONSECUTIVE_RELOADS = 10; // Maximum reload attempts before giving up
   const RELOAD_CHECK_DELAY = 8000; // Wait 8 seconds after page load before checking (increased from 5)
-  
+
   // Function to detect if page is showing "no internet connection" error
   const isShowingOfflineError = () => {
     if (siteDomain !== "www.fiverr.com" && siteDomain !== "fiverr.com") {
       return false;
     }
-    
+
     // Wait a bit for page to load before checking
     const timeSinceLoad = Date.now() - lastReloadCheckTime;
     if (timeSinceLoad < RELOAD_CHECK_DELAY && lastReloadCheckTime > 0) {
       // Too soon after load, don't check yet
       return false;
     }
-    
+
     if (!document.body) {
       return false;
     }
-    
+
     const title = document.title.toLowerCase();
-    const bodyText = document.body ? document.body.textContent.toLowerCase() : "";
-    
+    const bodyText = document.body
+      ? document.body.textContent.toLowerCase()
+      : "";
+
     // Check for STRONG error indicators in title first (most reliable)
     const strongErrorIndicators = [
       "the connection has timed out",
@@ -799,78 +925,89 @@ const phoneCall = () => {
       "err_internet_disconnected",
       "dns_probe_finished_no_internet",
       "unable to find the server",
-      "server not found"
+      "server not found",
     ];
-    
-    if (strongErrorIndicators.some(indicator => title.includes(indicator))) {
+
+    if (strongErrorIndicators.some((indicator) => title.includes(indicator))) {
       return true;
     }
-    
+
     // Check for Firefox-specific error page - must have ALL these texts together
     const firefoxErrorTexts = [
       "the connection has timed out",
       "the server at",
-      "is taking too long to respond"
+      "is taking too long to respond",
     ];
-    
+
     // Only consider it an error if ALL Firefox error texts are present AND we have very little content
-    if (firefoxErrorTexts.every(text => bodyText.includes(text))) {
+    if (firefoxErrorTexts.every((text) => bodyText.includes(text))) {
       // Additional check: error pages have very little content
       if (document.body.textContent.trim().length < 500) {
         return true;
       }
     }
-    
+
     // Check for Chrome error pages - must have specific error text AND minimal content
-    if (bodyText.includes("this site can't be reached") || bodyText.includes("err_internet_disconnected")) {
+    if (
+      bodyText.includes("this site can't be reached") ||
+      bodyText.includes("err_internet_disconnected")
+    ) {
       if (document.body.textContent.trim().length < 500) {
         return true;
       }
     }
-    
+
     // Only check for missing Fiverr content if we have very little content overall
     // This prevents false positives during normal page loads
     const bodyTextLength = document.body.textContent.trim().length;
     if (bodyTextLength < 100) {
       // Very little content - might be an error page
-      const hasFiverrContent = document.querySelector('header, nav, [class*="header"], [class*="nav"], [id*="header"], [id*="nav"], [class*="fiverr"], main, [role="main"], [data-testid]');
+      const hasFiverrContent = document.querySelector(
+        'header, nav, [class*="header"], [class*="nav"], [id*="header"], [id*="nav"], [class*="fiverr"], main, [role="main"], [data-testid]',
+      );
       if (!hasFiverrContent) {
         // No Fiverr content and very little text - likely error page
         return true;
       }
     }
-    
+
     return false;
   };
-  
+
   // Function to check and reload if showing offline error
   const checkAndReloadIfOffline = () => {
     if (!autoReload || !isPrimaryTab || siteDomain !== "www.fiverr.com") {
       consecutiveReloadAttempts = 0; // Reset if conditions not met
       return;
     }
-    
+
     if (isShowingOfflineError()) {
       consecutiveReloadAttempts++;
-      
+
       if (consecutiveReloadAttempts > MAX_CONSECUTIVE_RELOADS) {
-        console.warn(`Fiverr Assistant: Max reload attempts (${MAX_CONSECUTIVE_RELOADS}) reached, stopping auto-reload for offline errors`);
+        console.warn(
+          `Fiverr Assistant: Max reload attempts (${MAX_CONSECUTIVE_RELOADS}) reached, stopping auto-reload for offline errors`,
+        );
         return;
       }
-      
-      console.log(`Fiverr Assistant: Detected offline/error page (attempt ${consecutiveReloadAttempts}/${MAX_CONSECUTIVE_RELOADS}), reloading...`);
+
+      console.log(
+        `Fiverr Assistant: Detected offline/error page (attempt ${consecutiveReloadAttempts}/${MAX_CONSECUTIVE_RELOADS}), reloading...`,
+      );
       markPrimaryNavigation();
       lastReloadCheckTime = Date.now();
       window.location.reload();
     } else {
       // Page loaded successfully, reset counter
       if (consecutiveReloadAttempts > 0) {
-        console.log("Fiverr Assistant: Page loaded successfully after offline error");
+        console.log(
+          "Fiverr Assistant: Page loaded successfully after offline error",
+        );
         consecutiveReloadAttempts = 0;
       }
     }
   };
-  
+
   // Check on page load if we're still showing an error (after a delay to let page load)
   const checkPageLoadStatus = () => {
     if (!autoReload || !isPrimaryTab || siteDomain !== "www.fiverr.com") {
@@ -878,16 +1015,16 @@ const phoneCall = () => {
       pageLoadCheckDone = false;
       return;
     }
-    
+
     // Prevent multiple checks on the same page load
     if (pageLoadCheckDone) {
       return;
     }
-    
+
     // Mark that we're checking this page load
     pageLoadCheckDone = true;
     lastReloadCheckTime = Date.now();
-    
+
     // Wait longer for the page to fully load before checking
     setTimeout(() => {
       // Only check if we're still on the same page and conditions are still met
@@ -895,29 +1032,38 @@ const phoneCall = () => {
         pageLoadCheckDone = false;
         return;
       }
-      
+
       if (isShowingOfflineError()) {
-        console.log("Fiverr Assistant: Page still showing error after load, will reload...");
+        console.log(
+          "Fiverr Assistant: Page still showing error after load, will reload...",
+        );
         checkAndReloadIfOffline();
       } else {
         // Page loaded successfully, reset counter
         if (consecutiveReloadAttempts > 0) {
-          console.log("Fiverr Assistant: Page loaded successfully after offline error");
+          console.log(
+            "Fiverr Assistant: Page loaded successfully after offline error",
+          );
         }
         consecutiveReloadAttempts = 0;
         pageLoadCheckDone = false; // Reset flag for next page load
       }
     }, RELOAD_CHECK_DELAY);
   };
-  
+
   window.addEventListener("online", () => {
     const wasOfflineBefore = wasOffline;
     isOnline = true;
     wasOffline = false;
     startConnectionTracking();
-    
+
     // Reload page when coming back online (if we were offline before)
-    if (wasOfflineBefore && autoReload && isPrimaryTab && siteDomain === "www.fiverr.com") {
+    if (
+      wasOfflineBefore &&
+      autoReload &&
+      isPrimaryTab &&
+      siteDomain === "www.fiverr.com"
+    ) {
       console.log("Fiverr Assistant: Connection restored, reloading page...");
       markPrimaryNavigation();
       // Small delay to ensure connection is stable
@@ -926,13 +1072,13 @@ const phoneCall = () => {
       }, 500);
       return;
     }
-    
+
     if (autoReload) {
       scheduleNextReload();
     }
     updateStatusDisplay();
   });
-  
+
   window.addEventListener("offline", () => {
     isOnline = false;
     wasOffline = true;
@@ -940,16 +1086,16 @@ const phoneCall = () => {
     clearScheduledReload();
     updateStatusDisplay();
   });
-  
+
   // Periodically check for offline error pages (every 10 seconds)
   const startOfflineErrorChecking = () => {
     if (offlineCheckIntervalId) {
       return;
     }
-    
+
     // Don't check immediately - let the page load first
     // The page load event handler will check after the page is fully loaded
-    
+
     offlineCheckIntervalId = setInterval(() => {
       if (isOnline && autoReload && isPrimaryTab) {
         // Only check if enough time has passed since last check
@@ -960,7 +1106,7 @@ const phoneCall = () => {
       }
     }, 15000); // Check every 15 seconds (increased from 10 to be less aggressive)
   };
-  
+
   const stopOfflineErrorChecking = () => {
     if (offlineCheckIntervalId) {
       clearInterval(offlineCheckIntervalId);
@@ -1003,7 +1149,7 @@ const phoneCall = () => {
   let notificationPauseTimeoutId = null; // Track timeout for 5-minute pause after notification
   let lastNotificationTime = 0; // Track last notification time to prevent rapid repeats
   const NOTIFICATION_COOLDOWN_MS = 5000; // 5 second cooldown between notifications
-  
+
   // DOM query caching for performance
   let cachedUnreadIcon = null;
   let cachedNewClientFlag = null;
@@ -1028,7 +1174,10 @@ const phoneCall = () => {
         }
         messageObserver.disconnect();
       } catch (error) {
-        console.warn("Fiverr Assistant: Error disconnecting message observer", error);
+        console.warn(
+          "Fiverr Assistant: Error disconnecting message observer",
+          error,
+        );
       }
       messageObserver = null;
     }
@@ -1056,46 +1205,57 @@ const phoneCall = () => {
   // and not an old client with Pro Client badge
   const isValidNewClientFlag = (element) => {
     if (!element) return false;
-    
+
     // First, check for Pro Client badge (old client) - if found, it's NOT a new client
-    const allSvgs = element.querySelectorAll('svg');
+    const allSvgs = element.querySelectorAll("svg");
     for (let svg of allSvgs) {
-      const paths = svg.querySelectorAll('path');
+      const paths = svg.querySelectorAll("path");
       for (let path of paths) {
-        const d = path.getAttribute('d') || '';
+        const d = path.getAttribute("d") || "";
         // Pro Client badge has these specific path patterns - if found, reject as new client
-        if (d.includes('M13.657 4.476') || d.includes('M8.8 7.086') || d.includes('M6 0C2.5')) {
+        if (
+          d.includes("M13.657 4.476") ||
+          d.includes("M8.8 7.086") ||
+          d.includes("M6 0C2.5")
+        ) {
           return false;
         }
       }
     }
-    
+
     // Now check for clock icon (new client indicator)
     // Clock icon has viewBox="0 0 16 17" and specific path patterns
     const clockIcon = element.querySelector('svg[viewBox="0 0 16 17"]');
     if (clockIcon) {
-      const paths = clockIcon.querySelectorAll('path');
+      const paths = clockIcon.querySelectorAll("path");
       for (let path of paths) {
-        const d = path.getAttribute('d') || '';
+        const d = path.getAttribute("d") || "";
         // Clock icon has these specific path patterns
-        if (d.includes('M8 5.8') || d.includes('M8 15.25a6.75') || d.includes('v2.7l1.35')) {
+        if (
+          d.includes("M8 5.8") ||
+          d.includes("M8 15.25a6.75") ||
+          d.includes("v2.7l1.35")
+        ) {
           return true;
         }
       }
     }
-    
+
     // Also check any SVG for clock icon patterns (fallback)
     for (let svg of allSvgs) {
-      const paths = svg.querySelectorAll('path');
+      const paths = svg.querySelectorAll("path");
       for (let path of paths) {
-        const d = path.getAttribute('d') || '';
+        const d = path.getAttribute("d") || "";
         // Clock icon patterns (but only if we didn't find Pro Client badge above)
-        if (d.includes('M8 5.8') || (d.includes('M8 15.25a6.75') && d.includes('6.75 6.75 0 1 0'))) {
+        if (
+          d.includes("M8 5.8") ||
+          (d.includes("M8 15.25a6.75") && d.includes("6.75 6.75 0 1 0"))
+        ) {
           return true;
         }
       }
     }
-    
+
     // If we can't determine, default to false to avoid false positives
     return false;
   };
@@ -1105,10 +1265,13 @@ const phoneCall = () => {
       return null;
     }
 
-    const preferredSelector = settings.selectorNewClientFlag || defaultSettings.selectorNewClientFlag;
+    const preferredSelector =
+      settings.selectorNewClientFlag || defaultSettings.selectorNewClientFlag;
 
     if (preferredScope) {
-      const preferredRow = preferredScope.closest('[data-testid="contact"], div.contact, [class*="contact"], li, a');
+      const preferredRow = preferredScope.closest(
+        '[data-testid="contact"], div.contact, [class*="contact"], li, a',
+      );
       if (preferredRow && isValidNewClientFlag(preferredRow)) {
         return preferredRow;
       }
@@ -1124,20 +1287,25 @@ const phoneCall = () => {
           return preferred;
         }
       } catch (error) {
-        console.warn("Fiverr Assistant: Invalid selectorNewClientFlag, falling back to heuristic detection", error);
+        console.warn(
+          "Fiverr Assistant: Invalid selectorNewClientFlag, falling back to heuristic detection",
+          error,
+        );
       }
     }
 
     const candidateSet = new Set();
     const candidateSelectors = [
       '[data-testid="contact"]',
-      'div.contact',
-      '[class*="contact"]'
+      "div.contact",
+      '[class*="contact"]',
     ];
 
     for (const selector of candidateSelectors) {
       try {
-        root.querySelectorAll(selector).forEach((element) => candidateSet.add(element));
+        root
+          .querySelectorAll(selector)
+          .forEach((element) => candidateSet.add(element));
       } catch (_) {}
     }
 
@@ -1147,9 +1315,13 @@ const phoneCall = () => {
       }
     }
 
-    const clockIcons = root.querySelectorAll('svg[data-track-tag="clock_icon"], svg[viewBox="0 0 16 17"]');
+    const clockIcons = root.querySelectorAll(
+      'svg[data-track-tag="clock_icon"], svg[viewBox="0 0 16 17"]',
+    );
     for (const clockIcon of clockIcons) {
-      const contactCandidate = clockIcon.closest('[data-testid="contact"], div.contact, [class*="contact"], li, a');
+      const contactCandidate = clockIcon.closest(
+        '[data-testid="contact"], div.contact, [class*="contact"], li, a',
+      );
       if (contactCandidate && isValidNewClientFlag(contactCandidate)) {
         return contactCandidate;
       }
@@ -1164,30 +1336,42 @@ const phoneCall = () => {
       return;
     }
 
-    const unreadIconSelector = settings.selectorUnreadIcon || defaultSettings.selectorUnreadIcon;
-    const newClientFlagSelector = settings.selectorNewClientFlag || defaultSettings.selectorNewClientFlag;
-    
+    const unreadIconSelector =
+      settings.selectorUnreadIcon || defaultSettings.selectorUnreadIcon;
+    const newClientFlagSelector =
+      settings.selectorNewClientFlag || defaultSettings.selectorNewClientFlag;
+
     // Use cached DOM queries if available and fresh
     const now = Date.now();
     let hasMessage;
     let newClientFlag;
-    
-    if (now - cacheTimestamp < DOM_CACHE_TTL && 
-        cachedUnreadIconSelector === unreadIconSelector && 
-        cachedNewClientFlagSelector === newClientFlagSelector &&
-        cachedUnreadIcon && document.body.contains(cachedUnreadIcon)) {
+
+    if (
+      now - cacheTimestamp < DOM_CACHE_TTL &&
+      cachedUnreadIconSelector === unreadIconSelector &&
+      cachedNewClientFlagSelector === newClientFlagSelector &&
+      cachedUnreadIcon &&
+      document.body.contains(cachedUnreadIcon)
+    ) {
       // Use cached results
       hasMessage = cachedUnreadIcon;
-      const cachedFlag = cachedNewClientFlag && document.body.contains(cachedNewClientFlag) ? cachedNewClientFlag : null;
+      const cachedFlag =
+        cachedNewClientFlag && document.body.contains(cachedNewClientFlag)
+          ? cachedNewClientFlag
+          : null;
       // Validate cached flag to ensure it's actually a new client (clock icon)
-      newClientFlag = cachedFlag && isValidNewClientFlag(cachedFlag) ? cachedFlag : null;
+      newClientFlag =
+        cachedFlag && isValidNewClientFlag(cachedFlag) ? cachedFlag : null;
     } else {
       // Refresh cache
       hasMessage = document.querySelector(unreadIconSelector);
-      const foundFlag = hasMessage ? findNewClientFlag(document, hasMessage) : null;
+      const foundFlag = hasMessage
+        ? findNewClientFlag(document, hasMessage)
+        : null;
       // Validate found flag to ensure it's actually a new client (clock icon), not Pro Client badge
-      newClientFlag = foundFlag && isValidNewClientFlag(foundFlag) ? foundFlag : null;
-      
+      newClientFlag =
+        foundFlag && isValidNewClientFlag(foundFlag) ? foundFlag : null;
+
       // Update cache
       cachedUnreadIcon = hasMessage;
       cachedNewClientFlag = newClientFlag;
@@ -1200,99 +1384,237 @@ const phoneCall = () => {
       if (newClientFlag) {
         // Create a unique identifier for this new client message
         // Use the flag element's position or parent structure as identifier
-        const messageId = newClientFlag.textContent || newClientFlag.getAttribute('data-id') || 
-                         (newClientFlag.parentElement ? newClientFlag.parentElement.textContent.substring(0, 50) : '') ||
-                         Date.now().toString();
-        
+        const messageId =
+          newClientFlag.textContent ||
+          newClientFlag.getAttribute("data-id") ||
+          (newClientFlag.parentElement
+            ? newClientFlag.parentElement.textContent.substring(0, 50)
+            : "") ||
+          Date.now().toString();
+
         // Only process if we haven't seen this message before
         if (!processedNewClientMessages.has(messageId)) {
           // This is a new message, process it immediately
           processedNewClientMessages.add(messageId);
           lastNotificationTime = Date.now();
-          
-          // Try to extract client name from DOM using comprehensive extraction function
-          let clientName = extractClientName(newClientFlag);
-          
+
+          // Try to extract client name from DOM
+          // First, find the .contact element that contains this new client flag
+          let contactElement = newClientFlag
+            ? newClientFlag.closest('[data-testid="contact"]') ||
+              newClientFlag.closest(".contact") ||
+              newClientFlag.closest('[class*="contact"]')
+            : null;
+
+          let clientName = null;
+
+          // If we found a contact element, extract the client name from it
+          if (contactElement) {
+            // For contact elements, look for the .user-info section which contains the username
+            const userInfoElement = contactElement.querySelector(".user-info");
+            if (userInfoElement) {
+              // Get the first paragraph element (should contain the username)
+              const nameElement = userInfoElement.querySelector("p");
+              if (nameElement) {
+                // Try textContent first, then innerText, then innerHTML as fallbacks
+                let extractedText =
+                  nameElement.textContent?.trim() ||
+                  nameElement.innerText?.trim() ||
+                  "";
+
+                // Clean up any extra whitespace
+                extractedText = extractedText.replace(/\s+/g, " ").trim();
+
+                if (extractedText && extractedText.length > 1) {
+                  clientName = extractedText;
+                  console.log(
+                    "Fiverr Assistant: Successfully extracted client name from user-info p tag (new client)",
+                    { clientName, length: clientName.length },
+                  );
+                }
+              }
+
+              // Fallback: if paragraph didn't work, try first div with text
+              if (!clientName) {
+                const firstTextDiv = userInfoElement.querySelector("div");
+                if (firstTextDiv) {
+                  let extractedText = firstTextDiv.textContent?.trim() || "";
+                  extractedText = extractedText.replace(/\s+/g, " ").trim();
+
+                  // Extract just the first name if multiple words
+                  const firstWord = extractedText.split(/\s+/)[0];
+                  if (
+                    firstWord &&
+                    firstWord.length > 1 &&
+                    firstWord.length < 50
+                  ) {
+                    clientName = firstWord;
+                    console.log(
+                      "Fiverr Assistant: Extracted first word from div as fallback (new client)",
+                      { clientName },
+                    );
+                  }
+                }
+              }
+            }
+
+            // Fallback: try to extract from newClientFlag if user-info method didn't work
+            if (!clientName) {
+              clientName = extractClientName(newClientFlag);
+              console.log(
+                "Fiverr Assistant: Extracted client name from new client flag (extractClientName fallback)",
+                { clientName },
+              );
+            }
+          } else {
+            // Fallback to extraction function if no contact element found
+            clientName = extractClientName(newClientFlag);
+            console.log(
+              "Fiverr Assistant: Extracted client name from new client flag (no contact element found)",
+              { clientName },
+            );
+          }
+
           // Fallback: If extraction failed but messageId looks like a name, use it
           // This handles cases where newClientFlag.textContent IS the name (like "Luciano")
-          if (!clientName && messageId && typeof messageId === 'string') {
+          if (!clientName && messageId && typeof messageId === "string") {
             const namePattern = /^[a-zA-Z0-9_-]{2,50}$/;
-            const excludedWords = /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat|the|a|an|and|or|but|is|are|was|were|has|have|had|will|would|could|should|may|might|can|must)$/i;
-            if (namePattern.test(messageId.trim()) && !excludedWords.test(messageId.trim())) {
+            const excludedWords =
+              /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat|the|a|an|and|or|but|is|are|was|were|has|have|had|will|would|could|should|may|might|can|must)$/i;
+            if (
+              namePattern.test(messageId.trim()) &&
+              !excludedWords.test(messageId.trim())
+            ) {
               clientName = messageId.trim();
             }
           }
-          
+
           // Check if client is in ignored list - skip audio and notification if ignored
           const isIgnored = clientName ? isClientIgnored(clientName) : false;
-          
-          if (!isIgnored) {
-          // Play sound instantly (if enabled in settings)
-          if (coerceBooleanSetting(settings.enable_new_client_sound, true)) {
-            phoneCall()
-            playAudio("new");
-          }
-          if (coerceBooleanSetting(settings.enable_new_client_notification, true)) {
-            sendNotification("New client Message", clientName);
-            }
-          
-          // Pause auto-reload for 5 minutes when notification plays
-          pauseAutoReloadForNotification();
-          
-          activateFiverrTab();
 
-          scheduleNewClientAutoReply(messageId, newClientFlag, clientName);
-          
-          // Instantly redirect to inbox when new message is detected
-          if (window.location.href !== inboxUrl && isOnline) {
-            markPrimaryNavigation();
-            window.location.href = inboxUrl;
-          }
-          
-          console.log("Fiverr Assistant: New client message detected instantly, sound played, redirecting to inbox, reloader paused for 5 minutes", {
-            messageId,
-            clientName
-          });
+          if (!isIgnored) {
+            // Check if client is targeted
+            const isTargeted = clientName
+              ? isClientTargeted(clientName)
+              : false;
+
+            console.log(
+              "Fiverr Assistant: Sound decision for new client message",
+              {
+                clientName,
+                isTargeted,
+                isIgnored,
+                enableNewClientSound: coerceBooleanSetting(
+                  settings.enable_new_client_sound,
+                  true,
+                ),
+              },
+            );
+
+            // Play sound instantly (if enabled in settings)
+            if (coerceBooleanSetting(settings.enable_new_client_sound, true)) {
+              if (isTargeted) {
+                // Play targeted client sound for targeted new clients
+                console.log(
+                  "Fiverr Assistant: Playing targeted client sound for new targeted client",
+                  {
+                    clientName,
+                    isTargeted: true,
+                  },
+                );
+                playAudio("targeted");
+              } else {
+                // Play new client sound for regular new clients
+                console.log(
+                  "Fiverr Assistant: Playing new client sound for regular new client",
+                  {
+                    clientName,
+                    isTargeted: false,
+                  },
+                );
+                phoneCall();
+                playAudio("new");
+              }
+            }
+            if (
+              coerceBooleanSetting(
+                settings.enable_new_client_notification,
+                true,
+              )
+            ) {
+              sendNotification("New client Message", clientName);
+            }
+
+            // Pause auto-reload for 5 minutes when notification plays
+            pauseAutoReloadForNotification();
+
+            activateFiverrTab();
+
+            scheduleNewClientAutoReply(messageId, newClientFlag, clientName);
+
+            // Instantly redirect to inbox when new message is detected
+            if (window.location.href !== inboxUrl && isOnline) {
+              markPrimaryNavigation();
+              window.location.href = inboxUrl;
+            }
+
+            console.log(
+              "Fiverr Assistant: New client message detected instantly, sound played, redirecting to inbox, reloader paused for 5 minutes",
+              {
+                messageId,
+                clientName,
+              },
+            );
           } else {
-            console.log("Fiverr Assistant: Client is in ignored list, skipping audio, notification, tab activation, and redirect", { clientName });
+            console.log(
+              "Fiverr Assistant: Client is in ignored list, skipping audio, notification, tab activation, and redirect",
+              { clientName },
+            );
           }
-          
+
           // Clean up old processed messages (keep only last 20 for better tracking)
           if (processedNewClientMessages.size > 20) {
             const firstItem = processedNewClientMessages.values().next().value;
             processedNewClientMessages.delete(firstItem);
           }
-          
+
           // Invalidate cache after detecting new message
           cacheTimestamp = 0;
         } else {
           // Message already processed - check cooldown to prevent rapid repeated notifications
           const timeSinceLastNotification = Date.now() - lastNotificationTime;
           if (timeSinceLastNotification < NOTIFICATION_COOLDOWN_MS) {
-            console.log("Fiverr Assistant: New client message already processed, cooldown active - skipping duplicate notification");
+            console.log(
+              "Fiverr Assistant: New client message already processed, cooldown active - skipping duplicate notification",
+            );
             return;
           } else {
-            console.log("Fiverr Assistant: New client message already processed, but cooldown passed - this is likely a duplicate detection");
+            console.log(
+              "Fiverr Assistant: New client message already processed, but cooldown passed - this is likely a duplicate detection",
+            );
           }
         }
       } else {
         // Has message but not a new client - could be an old client message
         // Still show alert but with different message
-        
+
         // Create a stable messageId by looking at the conversation/message element
         // Try to find the actual conversation element to get a stable identifier
         let messageId = null;
         let useTimestampFallback = false;
-        
+
         try {
           // Try to find the conversation element that contains the unread icon
-          const conversationElement = hasMessage.closest('[class*="message"], [class*="conversation"], [class*="chat"], [class*="inbox-item"], li, a');
+          const conversationElement = hasMessage.closest(
+            '[class*="message"], [class*="conversation"], [class*="chat"], [class*="inbox-item"], li, a',
+          );
           if (conversationElement) {
             // Try to get a stable ID from the conversation element
-            messageId = conversationElement.getAttribute('data-id') || 
-                       conversationElement.getAttribute('data-conversation-id') ||
-                       conversationElement.getAttribute('id');
-            
+            messageId =
+              conversationElement.getAttribute("data-id") ||
+              conversationElement.getAttribute("data-conversation-id") ||
+              conversationElement.getAttribute("id");
+
             // If we have an href, use it as the ID (most stable)
             if (!messageId && conversationElement.href) {
               const href = conversationElement.href;
@@ -1300,15 +1622,17 @@ const phoneCall = () => {
               const urlMatch = href.match(/\/inbox\/([^\/\?]+)/);
               if (urlMatch) {
                 messageId = `old-client-${urlMatch[1]}`;
-              } else if (href.includes('fiverr.com')) {
+              } else if (href.includes("fiverr.com")) {
                 // Use a hash of the URL for stability
-                messageId = `old-client-url-${href.split('?')[0]}`;
+                messageId = `old-client-url-${href.split("?")[0]}`;
               }
             }
-            
+
             // Fallback: use text content from conversation element (first 100 chars)
             if (!messageId && conversationElement.textContent) {
-              const textContent = conversationElement.textContent.trim().substring(0, 100);
+              const textContent = conversationElement.textContent
+                .trim()
+                .substring(0, 100);
               if (textContent && textContent.length > 10) {
                 messageId = `old-client-${textContent}`;
               }
@@ -1317,12 +1641,15 @@ const phoneCall = () => {
         } catch (e) {
           console.warn("Fiverr Assistant: Error extracting conversation ID", e);
         }
-        
+
         // Final fallback: use unread icon's parent structure
         if (!messageId) {
           try {
             if (hasMessage.parentElement) {
-              const parentText = hasMessage.parentElement.textContent?.trim().substring(0, 100) || '';
+              const parentText =
+                hasMessage.parentElement.textContent
+                  ?.trim()
+                  .substring(0, 100) || "";
               if (parentText && parentText.length > 10) {
                 messageId = `old-client-${parentText}`;
               }
@@ -1331,11 +1658,11 @@ const phoneCall = () => {
             console.warn("Fiverr Assistant: Error extracting parent text", e);
           }
         }
-        
+
         // Last resort: use unread icon itself (but this is less stable)
         if (!messageId) {
-          messageId = hasMessage.getAttribute('data-id') || 
-                     hasMessage.getAttribute('id');
+          messageId =
+            hasMessage.getAttribute("data-id") || hasMessage.getAttribute("id");
           if (!messageId && hasMessage.textContent) {
             const iconText = hasMessage.textContent.trim().substring(0, 50);
             if (iconText && iconText.length > 0) {
@@ -1343,114 +1670,247 @@ const phoneCall = () => {
             }
           }
         }
-        
+
         // If still no stable ID, use a timestamp-based approach with cooldown protection
         if (!messageId) {
           // Use a combination of current URL and a rounded timestamp (to nearest 10 seconds)
           // This prevents loops while still allowing notifications
           const roundedTime = Math.floor(Date.now() / 10000) * 10000; // Round to nearest 10 seconds
-          const currentUrl = window.location.href.split('?')[0];
+          const currentUrl = window.location.href.split("?")[0];
           messageId = `old-client-fallback-${currentUrl}-${roundedTime}`;
           useTimestampFallback = true;
-          console.log("Fiverr Assistant: Using timestamp-based fallback for messageId", messageId);
+          console.log(
+            "Fiverr Assistant: Using timestamp-based fallback for messageId",
+            messageId,
+          );
         }
-        
+
         // Check cooldown first if using timestamp fallback (to prevent rapid notifications)
         if (useTimestampFallback) {
           const timeSinceLastNotification = Date.now() - lastNotificationTime;
           if (timeSinceLastNotification < NOTIFICATION_COOLDOWN_MS) {
-            console.log("Fiverr Assistant: Using timestamp fallback, cooldown active - skipping duplicate notification");
+            console.log(
+              "Fiverr Assistant: Using timestamp fallback, cooldown active - skipping duplicate notification",
+            );
             return;
           }
         }
-        
+
         // Only process if we haven't seen this message before
         if (!processedNewClientMessages.has(messageId)) {
           // This is a new message, process it immediately
           processedNewClientMessages.add(messageId);
           lastNotificationTime = Date.now();
-          
+
           // Try to extract client name from DOM
-          let clientName = extractClientName(hasMessage);
-          
-          console.log("Fiverr Assistant: Extracted client name for old client message", {
-            clientName,
-            messageId: messageId ? messageId.substring(0, 100) : null
-          });
-          
+          // First, find the contact element (same as for new clients)
+          let contactElement = hasMessage
+            ? hasMessage.closest('[data-testid="contact"]') ||
+              hasMessage.closest(".contact") ||
+              hasMessage.closest('[class*="contact"]')
+            : null;
+
+          let clientName = null;
+
+          // If we found a contact element, extract the client name from it
+          if (contactElement) {
+            // For contact elements, look for the .user-info section which contains the username
+            const userInfoElement = contactElement.querySelector(".user-info");
+            if (userInfoElement) {
+              // Get the first paragraph element (should contain the username)
+              const nameElement = userInfoElement.querySelector("p");
+              if (nameElement) {
+                // Try textContent first, then innerText, then innerHTML as fallbacks
+                let extractedText =
+                  nameElement.textContent?.trim() ||
+                  nameElement.innerText?.trim() ||
+                  "";
+
+                // Clean up any extra whitespace
+                extractedText = extractedText.replace(/\s+/g, " ").trim();
+
+                if (extractedText && extractedText.length > 1) {
+                  clientName = extractedText;
+                  console.log(
+                    "Fiverr Assistant: Successfully extracted client name from user-info p tag",
+                    { clientName, length: clientName.length },
+                  );
+                }
+              }
+
+              // Fallback: if paragraph didn't work, try first div with text
+              if (!clientName) {
+                const firstTextDiv = userInfoElement.querySelector("div");
+                if (firstTextDiv) {
+                  let extractedText = firstTextDiv.textContent?.trim() || "";
+                  extractedText = extractedText.replace(/\s+/g, " ").trim();
+
+                  // Extract just the first name if multiple words
+                  const firstWord = extractedText.split(/\s+/)[0];
+                  if (
+                    firstWord &&
+                    firstWord.length > 1 &&
+                    firstWord.length < 50
+                  ) {
+                    clientName = firstWord;
+                    console.log(
+                      "Fiverr Assistant: Extracted first word from div as fallback",
+                      { clientName },
+                    );
+                  }
+                }
+              }
+            }
+
+            // Fallback: try to extract from contact element if user-info method didn't work
+            if (!clientName) {
+              clientName = extractClientName(contactElement);
+              console.log(
+                "Fiverr Assistant: Extracted client name from contact element (extractClientName fallback)",
+                { clientName },
+              );
+            }
+          } else {
+            // Fallback to old method if no contact element found
+            clientName = extractClientName(hasMessage);
+            console.log(
+              "Fiverr Assistant: Extracted client name from unread icon (no contact element found)",
+              { clientName },
+            );
+          }
+
+          console.log(
+            "Fiverr Assistant: FINAL client name extraction for old client message",
+            {
+              clientName,
+              clientNameLength: clientName ? clientName.length : 0,
+              messageId: messageId ? messageId.substring(0, 100) : null,
+              contactElement: contactElement
+                ? contactElement.className
+                : "not found",
+              hasMessageElement: hasMessage ? hasMessage.tagName : "not found",
+            },
+          );
+
           // Check if client is in ignored list - skip audio and notification if ignored
           const isIgnored = clientName ? isClientIgnored(clientName) : false;
-          
+
           if (!isIgnored) {
-          // Check if client is targeted and play appropriate sound
-          const isTargeted = clientName ? isClientTargeted(clientName) : false;
-          
-          console.log("Fiverr Assistant: Sound decision for old client message", {
-            clientName,
-            isTargeted,
-            isIgnored,
-            enableOldClientSound: coerceBooleanSetting(settings.enable_old_client_sound, true)
-          });
-          
-          if (isTargeted) {
-            // Play targeted client sound
-            if (coerceBooleanSetting(settings.enable_old_client_sound, true)) {
-              const targetedSoundUrl = getVal("targeted_client_sound") || settings.targeted_client_sound || defaultSettings.targeted_client_sound || "";
-              console.log("Fiverr Assistant: Playing targeted client sound for", {
+            // Check if client is targeted and play appropriate sound
+            const isTargeted = clientName
+              ? isClientTargeted(clientName)
+              : false;
+
+            console.log(
+              "Fiverr Assistant: Sound decision for old client message",
+              {
                 clientName,
-                isTargeted: true,
-                targetedSoundUrl: targetedSoundUrl ? targetedSoundUrl.substring(0, 100) : "NOT CONFIGURED - will use default"
-              });
-              // Always play targeted sound, even if URL is not configured (will use default)
-              playAudio("targeted");
+                isTargeted,
+                isIgnored,
+                enableOldClientSound: coerceBooleanSetting(
+                  settings.enable_old_client_sound,
+                  true,
+                ),
+              },
+            );
+
+            if (isTargeted) {
+              // Play targeted client sound
+              if (
+                coerceBooleanSetting(settings.enable_old_client_sound, true)
+              ) {
+                const targetedSoundUrl =
+                  getVal("targeted_client_sound") ||
+                  settings.targeted_client_sound ||
+                  defaultSettings.targeted_client_sound ||
+                  "";
+                console.log(
+                  "Fiverr Assistant: Playing targeted client sound for",
+                  {
+                    clientName,
+                    isTargeted: true,
+                    targetedSoundUrl: targetedSoundUrl
+                      ? targetedSoundUrl.substring(0, 100)
+                      : "NOT CONFIGURED - will use default",
+                  },
+                );
+                // Always play targeted sound, even if URL is not configured (will use default)
+                playAudio("targeted");
+              } else {
+                console.log(
+                  "Fiverr Assistant: Targeted client sound is disabled in settings",
+                );
+              }
             } else {
-              console.log("Fiverr Assistant: Targeted client sound is disabled in settings");
+              // Play old client sound for non-targeted clients
+              if (
+                coerceBooleanSetting(settings.enable_old_client_sound, true)
+              ) {
+                console.log(
+                  "Fiverr Assistant: Playing old client sound for non-targeted client",
+                  {
+                    clientName,
+                    isTargeted: false,
+                  },
+                );
+                playAudio("old");
+                phoneCall();
+              }
+            }
+
+            if (
+              coerceBooleanSetting(
+                settings.enable_old_client_notification,
+                true,
+              )
+            ) {
+              sendNotification("Old client Message", clientName);
+            }
+
+            // Show unread clients alert to display all unread clients
+            setTimeout(() => {
+              showUnreadClientsAlert();
+            }, 500);
+
+            // Instantly redirect to inbox when new message is detected
+            if (window.location.href !== inboxUrl && isOnline) {
+              markPrimaryNavigation();
+              window.location.href = inboxUrl;
             }
           } else {
-            // Play old client sound for non-targeted clients
-            if (coerceBooleanSetting(settings.enable_old_client_sound, true)) {
-              console.log("Fiverr Assistant: Playing old client sound for non-targeted client", {
-                clientName,
-                isTargeted: false
-              });
-              playAudio("old");
-              phoneCall();
-            }
+            console.log(
+              "Fiverr Assistant: Client is in ignored list, skipping audio, notification, and redirect",
+              { clientName },
+            );
           }
-          
-          if (coerceBooleanSetting(settings.enable_old_client_notification, true)) {
-            sendNotification("New Message", clientName);
-            }
-          
-          // Instantly redirect to inbox when new message is detected
-          if (window.location.href !== inboxUrl && isOnline) {
-            markPrimaryNavigation();
-            window.location.href = inboxUrl;
-          }
-          } else {
-            console.log("Fiverr Assistant: Client is in ignored list, skipping audio, notification, and redirect", { clientName });
-          }
-          
-          console.log("Fiverr Assistant: New message detected (not new client), redirecting to inbox (tab not focused)", {
-            messageId: messageId.substring(0, 100),
-            useTimestampFallback
-          });
-          
+
+          console.log(
+            "Fiverr Assistant: New message detected (not new client), redirecting to inbox (tab not focused)",
+            {
+              messageId: messageId.substring(0, 100),
+              useTimestampFallback,
+            },
+          );
+
           // Clean up old processed messages (keep only last 20 for better tracking)
           if (processedNewClientMessages.size > 20) {
             const firstItem = processedNewClientMessages.values().next().value;
             processedNewClientMessages.delete(firstItem);
           }
-          
+
           cacheTimestamp = 0;
         } else {
           // Message already processed - check cooldown to prevent rapid repeated notifications
           const timeSinceLastNotification = Date.now() - lastNotificationTime;
           if (timeSinceLastNotification < NOTIFICATION_COOLDOWN_MS) {
-            console.log("Fiverr Assistant: Old client message already processed, cooldown active - skipping duplicate notification");
+            console.log(
+              "Fiverr Assistant: Old client message already processed, cooldown active - skipping duplicate notification",
+            );
             return;
           } else {
-            console.log("Fiverr Assistant: Old client message already processed, but cooldown passed - this is likely a duplicate detection");
+            console.log(
+              "Fiverr Assistant: Old client message already processed, but cooldown passed - this is likely a duplicate detection",
+            );
           }
         }
       }
@@ -1462,35 +1922,47 @@ const phoneCall = () => {
     if (!shouldContinueExecution()) {
       return;
     }
-    
+
     if (siteDomain !== "www.fiverr.com") {
       return;
     }
 
-    const unreadIconSelector = settings.selectorUnreadIcon || defaultSettings.selectorUnreadIcon;
-    const newClientFlagSelector = settings.selectorNewClientFlag || defaultSettings.selectorNewClientFlag;
-    
+    const unreadIconSelector =
+      settings.selectorUnreadIcon || defaultSettings.selectorUnreadIcon;
+    const newClientFlagSelector =
+      settings.selectorNewClientFlag || defaultSettings.selectorNewClientFlag;
+
     // Use cached DOM queries if available and fresh
     const now = Date.now();
     let hasMessage;
     let newClientFlag;
-    
-    if (now - cacheTimestamp < DOM_CACHE_TTL && 
-        cachedUnreadIconSelector === unreadIconSelector && 
-        cachedNewClientFlagSelector === newClientFlagSelector &&
-        cachedUnreadIcon && document.body.contains(cachedUnreadIcon)) {
+
+    if (
+      now - cacheTimestamp < DOM_CACHE_TTL &&
+      cachedUnreadIconSelector === unreadIconSelector &&
+      cachedNewClientFlagSelector === newClientFlagSelector &&
+      cachedUnreadIcon &&
+      document.body.contains(cachedUnreadIcon)
+    ) {
       // Use cached results
       hasMessage = cachedUnreadIcon;
-      const cachedFlag = cachedNewClientFlag && document.body.contains(cachedNewClientFlag) ? cachedNewClientFlag : null;
+      const cachedFlag =
+        cachedNewClientFlag && document.body.contains(cachedNewClientFlag)
+          ? cachedNewClientFlag
+          : null;
       // Validate cached flag to ensure it's actually a new client (clock icon)
-      newClientFlag = cachedFlag && isValidNewClientFlag(cachedFlag) ? cachedFlag : null;
+      newClientFlag =
+        cachedFlag && isValidNewClientFlag(cachedFlag) ? cachedFlag : null;
     } else {
       // Refresh cache
       hasMessage = document.querySelector(unreadIconSelector);
-      const foundFlag = hasMessage ? findNewClientFlag(document, hasMessage) : null;
+      const foundFlag = hasMessage
+        ? findNewClientFlag(document, hasMessage)
+        : null;
       // Validate found flag to ensure it's actually a new client (clock icon), not Pro Client badge
-      newClientFlag = foundFlag && isValidNewClientFlag(foundFlag) ? foundFlag : null;
-      
+      newClientFlag =
+        foundFlag && isValidNewClientFlag(foundFlag) ? foundFlag : null;
+
       // Update cache
       cachedUnreadIcon = hasMessage;
       cachedNewClientFlag = newClientFlag;
@@ -1540,38 +2012,40 @@ const phoneCall = () => {
         if (!mutations || mutations.length === 0) {
           return;
         }
-        
+
         // Check if any mutation affects message-related elements
-        const hasRelevantChanges = mutations.some(mutation => {
+        const hasRelevantChanges = mutations.some((mutation) => {
           const target = mutation.target;
           if (!target || !target.nodeType) return false;
-          
+
           // Check if mutation is in message-related containers
-          const isInMessageArea = target.closest && (
-            target.closest('.messages-wrapper') ||
-            target.closest('.inbox-container') ||
-            target.closest('nav') ||
-            target.closest('header') ||
-            target.closest('[class*="message"]') ||
-            target.closest('[class*="inbox"]')
-          );
-          
+          const isInMessageArea =
+            target.closest &&
+            (target.closest(".messages-wrapper") ||
+              target.closest(".inbox-container") ||
+              target.closest("nav") ||
+              target.closest("header") ||
+              target.closest('[class*="message"]') ||
+              target.closest('[class*="inbox"]'));
+
           // Also check if the target itself is a message-related element
-          const isMessageElement = target.classList && (
-            target.classList.contains('unread-icon') ||
-            target.classList.contains('messages-wrapper') ||
-            target.classList.contains('inbox-container') ||
-            target.matches && target.matches('[class*="message"]')
+          const isMessageElement =
+            target.classList &&
+            (target.classList.contains("unread-icon") ||
+              target.classList.contains("messages-wrapper") ||
+              target.classList.contains("inbox-container") ||
+              (target.matches && target.matches('[class*="message"]')));
+
+          return (
+            isInMessageArea || isMessageElement || mutation.type === "childList"
           );
-          
-          return isInMessageArea || isMessageElement || mutation.type === 'childList';
         });
-        
+
         // Only process if there are relevant changes
         if (!hasRelevantChanges) {
           return;
         }
-        
+
         // Use minimal debounce for instant detection
         if (messageObserver.debounceTimer) {
           clearTimeout(messageObserver.debounceTimer);
@@ -1584,35 +2058,43 @@ const phoneCall = () => {
       });
 
       // Try to find a more specific container for messages, otherwise observe body
-      const unreadIconSelector = settings.selectorUnreadIcon || defaultSettings.selectorUnreadIcon;
+      const unreadIconSelector =
+        settings.selectorUnreadIcon || defaultSettings.selectorUnreadIcon;
       const unreadIcon = document.querySelector(unreadIconSelector);
       let targetElement = null;
-      
+
       // Try to narrow the observation scope
       if (unreadIcon) {
         // Try to find the closest message container
-        targetElement = unreadIcon.closest('.messages-wrapper') ||
-                       unreadIcon.closest('.inbox-container') ||
-                       unreadIcon.closest('nav') ||
-                       unreadIcon.closest('header');
+        targetElement =
+          unreadIcon.closest(".messages-wrapper") ||
+          unreadIcon.closest(".inbox-container") ||
+          unreadIcon.closest("nav") ||
+          unreadIcon.closest("header");
       }
-      
+
       // Fallback to body if no specific container found
       targetElement = targetElement || document.body;
-      
+
       // Observe the target element for changes
       // Always use subtree: true to catch all DOM changes for instant detection
-      messageObserver.observe(targetElement || document.body || document.documentElement, {
-        childList: true,
-        subtree: true, // Always use subtree to catch all changes instantly
-        attributes: true,
-        attributeFilter: ['class', 'style', 'data-testid'] // Watch for class/style/data changes
-      });
+      messageObserver.observe(
+        targetElement || document.body || document.documentElement,
+        {
+          childList: true,
+          subtree: true, // Always use subtree to catch all changes instantly
+          attributes: true,
+          attributeFilter: ["class", "style", "data-testid"], // Watch for class/style/data changes
+        },
+      );
 
-      console.log("Fiverr Assistant: Message observer started for instant new client detection", {
-        targetElement: targetElement ? targetElement.tagName : 'body',
-        useSubtree: true
-      });
+      console.log(
+        "Fiverr Assistant: Message observer started for instant new client detection",
+        {
+          targetElement: targetElement ? targetElement.tagName : "body",
+          useSubtree: true,
+        },
+      );
     } catch (error) {
       console.warn("Fiverr Assistant: Failed to start message observer", error);
     }
@@ -1623,7 +2105,7 @@ const phoneCall = () => {
     if (!shouldContinueExecution()) {
       return;
     }
-    
+
     clearMessageCheckInterval();
 
     if (siteDomain !== "www.fiverr.com") {
@@ -1631,8 +2113,11 @@ const phoneCall = () => {
     }
 
     runMessageCheck();
-    messageCheckIntervalId = setInterval(runMessageCheck, MESSAGE_CHECK_INTERVAL_MS);
-    
+    messageCheckIntervalId = setInterval(
+      runMessageCheck,
+      MESSAGE_CHECK_INTERVAL_MS,
+    );
+
     // Start the observer for instant detection
     startMessageObserver();
   };
@@ -1651,16 +2136,25 @@ const phoneCall = () => {
         return parsed;
       }
     } catch (error) {
-      console.warn("Fiverr Auto Reloader: unable to parse primary tab record", error);
+      console.warn(
+        "Fiverr Auto Reloader: unable to parse primary tab record",
+        error,
+      );
     }
     return null;
   };
 
   const writePrimaryTabRecord = () => {
     try {
-      localStorage.setItem(PRIMARY_TAB_KEY, JSON.stringify({ id: tabIdentifier, timestamp: Date.now() }));
+      localStorage.setItem(
+        PRIMARY_TAB_KEY,
+        JSON.stringify({ id: tabIdentifier, timestamp: Date.now() }),
+      );
     } catch (error) {
-      console.warn("Fiverr Auto Reloader: unable to write primary tab record", error);
+      console.warn(
+        "Fiverr Auto Reloader: unable to write primary tab record",
+        error,
+      );
     }
   };
 
@@ -1720,7 +2214,10 @@ const phoneCall = () => {
                 markPrimaryNavigation();
                 window.location.href = "https://www.fiverr.com/";
               } catch (error) {
-                console.warn("Fiverr Auto Reloader: failed to redirect primary tab when back online", error);
+                console.warn(
+                  "Fiverr Auto Reloader: failed to redirect primary tab when back online",
+                  error,
+                );
               }
             };
             window.addEventListener("online", redirectWhenOnline);
@@ -1758,7 +2255,8 @@ const phoneCall = () => {
     isPrimaryTab = true;
   }
 
-  const defaultSound = "https://storefrontsignonline.com/wp-content/uploads/2025/10/money_trees.mp3";
+  const defaultSound =
+    "https://storefrontsignonline.com/wp-content/uploads/2025/10/money_trees.mp3";
   const defaultSettings = {
     profile: "",
     profileUsername: "",
@@ -1767,7 +2265,8 @@ const phoneCall = () => {
     pageLinks: "",
     new_client_sound: defaultSound,
     targeted_client_sound: defaultSound,
-    old_client_sound: "https://storefrontsignonline.com/wp-content/uploads/2025/10/bicycle-ring.mp3",
+    old_client_sound:
+      "https://storefrontsignonline.com/wp-content/uploads/2025/10/bicycle-ring.mp3",
     relStart: "30",
     relEnd: "180",
     autoReloadEnabled: "true",
@@ -1800,7 +2299,11 @@ const phoneCall = () => {
   })();
   const AUDIO_DB_NAME = "farAudioCache";
   const AUDIO_STORE_NAME = "sounds";
-  const AUDIO_SETTING_KEYS = ["new_client_sound", "targeted_client_sound", "old_client_sound"];
+  const AUDIO_SETTING_KEYS = [
+    "new_client_sound",
+    "targeted_client_sound",
+    "old_client_sound",
+  ];
   const SOUND_TYPE_TO_SETTING_KEY = {
     new: "new_client_sound",
     targated: "targeted_client_sound",
@@ -1811,7 +2314,8 @@ const phoneCall = () => {
   let audioDbPromise = null;
   const inFlightAudioCache = new Map();
 
-  const normalizeUrl = (value) => (typeof value === "string" ? value.trim() : "");
+  const normalizeUrl = (value) =>
+    typeof value === "string" ? value.trim() : "";
 
   const fetchAudioViaRuntime = async (url) => {
     if (!url || typeof url !== "string") {
@@ -1829,7 +2333,10 @@ const phoneCall = () => {
       }
       return new Blob([response.buffer], blobOptions);
     } catch (error) {
-      console.warn("Fiverr Auto Reloader: background audio fetch failed", error);
+      console.warn(
+        "Fiverr Auto Reloader: background audio fetch failed",
+        error,
+      );
       return null;
     }
   };
@@ -1868,7 +2375,10 @@ const phoneCall = () => {
         reject(error);
       }
     }).catch((error) => {
-      console.warn("Fiverr Auto Reloader: unable to open audio cache database", error);
+      console.warn(
+        "Fiverr Auto Reloader: unable to open audio cache database",
+        error,
+      );
       audioDbPromise = null;
       throw error;
     });
@@ -1907,7 +2417,11 @@ const phoneCall = () => {
       return null;
     }
     const record = await readCachedAudioRecord(key);
-    if (record && record.sourceUrl === normalizedUrl && record.blob instanceof Blob) {
+    if (
+      record &&
+      record.sourceUrl === normalizedUrl &&
+      record.blob instanceof Blob
+    ) {
       console.info("Fiverr Auto Reloader: audio cache hit", {
         settingKey: key,
         sourceUrl: normalizedUrl,
@@ -1920,7 +2434,10 @@ const phoneCall = () => {
 
   const writeCachedAudioRecord = async (key, value) => {
     if (!supportsIndexedDB) {
-      console.warn("Fiverr Assistant: IndexedDB not supported, cannot save audio to IndexedDB", { settingKey: key });
+      console.warn(
+        "Fiverr Assistant: IndexedDB not supported, cannot save audio to IndexedDB",
+        { settingKey: key },
+      );
       return;
     }
     try {
@@ -1948,11 +2465,14 @@ const phoneCall = () => {
         };
       });
     } catch (error) {
-      console.error("Fiverr Assistant: Exception while saving audio to IndexedDB", {
-        settingKey: key,
-        sourceUrl: value?.sourceUrl,
-        error: error.message,
-      });
+      console.error(
+        "Fiverr Assistant: Exception while saving audio to IndexedDB",
+        {
+          settingKey: key,
+          sourceUrl: value?.sourceUrl,
+          error: error.message,
+        },
+      );
     }
   };
 
@@ -1970,97 +2490,136 @@ const phoneCall = () => {
         request.onerror = () => reject(request.error);
       });
     } catch (error) {
-      console.warn("Fiverr Auto Reloader: failed to delete cached audio", error);
+      console.warn(
+        "Fiverr Auto Reloader: failed to delete cached audio",
+        error,
+      );
     }
   };
 
   const fetchAndCacheAudio = async (key, url) => {
     if (!supportsIndexedDB || !url) {
       if (!supportsIndexedDB) {
-        console.warn("Fiverr Assistant: IndexedDB not supported, cannot save audio file", { settingKey: key });
+        console.warn(
+          "Fiverr Assistant: IndexedDB not supported, cannot save audio file",
+          { settingKey: key },
+        );
       }
       return null;
     }
     const normalizedUrl = normalizeUrl(url);
     if (!normalizedUrl) {
-      console.warn("Fiverr Assistant: Invalid audio URL", { settingKey: key, url });
+      console.warn("Fiverr Assistant: Invalid audio URL", {
+        settingKey: key,
+        url,
+      });
       return null;
     }
     // Check if audio is already saved in IndexedDB before fetching
     const existing = await readCachedAudioRecord(key);
-    if (existing && existing.sourceUrl === normalizedUrl && existing.blob instanceof Blob) {
-      console.info("Fiverr Assistant: Audio already saved in IndexedDB, skipping fetch", {
-        settingKey: key,
-        sourceUrl: normalizedUrl,
-        blobSize: existing.blob.size,
-        timestamp: existing.timestamp,
-      });
+    if (
+      existing &&
+      existing.sourceUrl === normalizedUrl &&
+      existing.blob instanceof Blob
+    ) {
+      console.info(
+        "Fiverr Assistant: Audio already saved in IndexedDB, skipping fetch",
+        {
+          settingKey: key,
+          sourceUrl: normalizedUrl,
+          blobSize: existing.blob.size,
+          timestamp: existing.timestamp,
+        },
+      );
       return existing.blob;
     }
     try {
-      console.log("Fiverr Assistant: Fetching audio file to save to IndexedDB", {
-        settingKey: key,
-        sourceUrl: normalizedUrl,
-      });
+      console.log(
+        "Fiverr Assistant: Fetching audio file to save to IndexedDB",
+        {
+          settingKey: key,
+          sourceUrl: normalizedUrl,
+        },
+      );
       const response = await fetch(normalizedUrl, { cache: "no-store" });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status} ${response.statusText}`);
       }
       const blob = await response.blob();
-      console.info("Fiverr Assistant: Audio file fetched, saving to IndexedDB", {
-        settingKey: key,
-        sourceUrl: normalizedUrl,
-        blobSize: blob.size,
-        blobType: blob.type,
-      });
+      console.info(
+        "Fiverr Assistant: Audio file fetched, saving to IndexedDB",
+        {
+          settingKey: key,
+          sourceUrl: normalizedUrl,
+          blobSize: blob.size,
+          blobType: blob.type,
+        },
+      );
       await writeCachedAudioRecord(key, {
         sourceUrl: normalizedUrl,
         blob,
         timestamp: Date.now(),
       });
-      console.info("Fiverr Assistant: Audio file successfully saved to IndexedDB", {
-        settingKey: key,
-        sourceUrl: normalizedUrl,
-        blobSize: blob.size,
-      });
-      return blob;
-    } catch (error) {
-      console.warn("Fiverr Assistant: Failed to fetch audio directly, trying background fetch", {
-        settingKey: key,
-        sourceUrl: normalizedUrl,
-        error: error.message,
-      });
-      const fallbackBlob = await fetchAudioViaRuntime(normalizedUrl);
-      if (!fallbackBlob) {
-        console.error("Fiverr Assistant: Failed to fetch audio via background, cannot save to IndexedDB", {
+      console.info(
+        "Fiverr Assistant: Audio file successfully saved to IndexedDB",
+        {
           settingKey: key,
           sourceUrl: normalizedUrl,
-        });
+          blobSize: blob.size,
+        },
+      );
+      return blob;
+    } catch (error) {
+      console.warn(
+        "Fiverr Assistant: Failed to fetch audio directly, trying background fetch",
+        {
+          settingKey: key,
+          sourceUrl: normalizedUrl,
+          error: error.message,
+        },
+      );
+      const fallbackBlob = await fetchAudioViaRuntime(normalizedUrl);
+      if (!fallbackBlob) {
+        console.error(
+          "Fiverr Assistant: Failed to fetch audio via background, cannot save to IndexedDB",
+          {
+            settingKey: key,
+            sourceUrl: normalizedUrl,
+          },
+        );
         return null;
       }
-      console.info("Fiverr Assistant: Audio file fetched via background, saving to IndexedDB", {
-        settingKey: key,
-        sourceUrl: normalizedUrl,
-        blobSize: fallbackBlob.size,
-        blobType: fallbackBlob.type,
-      });
+      console.info(
+        "Fiverr Assistant: Audio file fetched via background, saving to IndexedDB",
+        {
+          settingKey: key,
+          sourceUrl: normalizedUrl,
+          blobSize: fallbackBlob.size,
+          blobType: fallbackBlob.type,
+        },
+      );
       await writeCachedAudioRecord(key, {
         sourceUrl: normalizedUrl,
         blob: fallbackBlob,
         timestamp: Date.now(),
       });
-      console.info("Fiverr Assistant: Audio file successfully saved to IndexedDB via background fetch", {
-        settingKey: key,
-        sourceUrl: normalizedUrl,
-        blobSize: fallbackBlob.size,
-      });
+      console.info(
+        "Fiverr Assistant: Audio file successfully saved to IndexedDB via background fetch",
+        {
+          settingKey: key,
+          sourceUrl: normalizedUrl,
+          blobSize: fallbackBlob.size,
+        },
+      );
       return fallbackBlob;
     }
   };
 
   const ensureAudioBlob = async (key, url) => {
     if (!supportsIndexedDB) {
-      console.warn("Fiverr Assistant: IndexedDB not supported, cannot cache audio");
+      console.warn(
+        "Fiverr Assistant: IndexedDB not supported, cannot cache audio",
+      );
       return null;
     }
     const normalizedUrl = typeof url === "string" ? url.trim() : "";
@@ -2078,26 +2637,36 @@ const phoneCall = () => {
     const promise = (async () => {
       try {
         const existing = await readCachedAudioRecord(key);
-        if (existing && existing.sourceUrl === normalizedUrl && existing.blob instanceof Blob) {
+        if (
+          existing &&
+          existing.sourceUrl === normalizedUrl &&
+          existing.blob instanceof Blob
+        ) {
           console.info("Fiverr Assistant: Audio already cached in IndexedDB", {
             settingKey: key,
             sourceUrl: normalizedUrl,
           });
           return existing.blob;
         }
-        
+
         // Audio not in cache, fetch and save it
-        console.log("Fiverr Assistant: Audio not in IndexedDB, fetching and saving...", {
-          settingKey: key,
-          sourceUrl: normalizedUrl,
-        });
-        const blob = await fetchAndCacheAudio(key, normalizedUrl);
-        if (blob) {
-          console.info("Fiverr Assistant: Audio successfully saved to IndexedDB", {
+        console.log(
+          "Fiverr Assistant: Audio not in IndexedDB, fetching and saving...",
+          {
             settingKey: key,
             sourceUrl: normalizedUrl,
-            blobSize: blob.size,
-          });
+          },
+        );
+        const blob = await fetchAndCacheAudio(key, normalizedUrl);
+        if (blob) {
+          console.info(
+            "Fiverr Assistant: Audio successfully saved to IndexedDB",
+            {
+              settingKey: key,
+              sourceUrl: normalizedUrl,
+              blobSize: blob.size,
+            },
+          );
         } else {
           console.warn("Fiverr Assistant: Failed to fetch and cache audio", {
             settingKey: key,
@@ -2125,10 +2694,14 @@ const phoneCall = () => {
 
   const warmAudioCache = async () => {
     if (!supportsIndexedDB) {
-      console.warn("Fiverr Assistant: IndexedDB not supported, cannot cache audio files");
+      console.warn(
+        "Fiverr Assistant: IndexedDB not supported, cannot cache audio files",
+      );
       return;
     }
-    console.log("Fiverr Assistant: Warming audio cache - checking and saving all notification sounds to IndexedDB");
+    console.log(
+      "Fiverr Assistant: Warming audio cache - checking and saving all notification sounds to IndexedDB",
+    );
     const uniqueKeys = [...new Set(AUDIO_SETTING_KEYS)];
     const results = await Promise.allSettled(
       uniqueKeys.map(async (key) => {
@@ -2144,28 +2717,47 @@ const phoneCall = () => {
         if (normalizedUrl) {
           const blob = await ensureAudioBlob(key, normalizedUrl);
           if (blob) {
-            console.info("Fiverr Assistant: Audio file saved/verified in IndexedDB", {
-              settingKey: key,
-              sourceUrl: normalizedUrl,
+            console.info(
+              "Fiverr Assistant: Audio file saved/verified in IndexedDB",
+              {
+                settingKey: key,
+                sourceUrl: normalizedUrl,
+                blobSize: blob.size,
+              },
+            );
+            return {
+              key,
+              url: normalizedUrl,
+              success: true,
               blobSize: blob.size,
-            });
-            return { key, url: normalizedUrl, success: true, blobSize: blob.size };
+            };
           } else {
-            console.warn("Fiverr Assistant: Failed to save audio file to IndexedDB", {
-              settingKey: key,
-              sourceUrl: normalizedUrl,
-            });
+            console.warn(
+              "Fiverr Assistant: Failed to save audio file to IndexedDB",
+              {
+                settingKey: key,
+                sourceUrl: normalizedUrl,
+              },
+            );
             return { key, url: normalizedUrl, success: false };
           }
         } else {
-          console.log("Fiverr Assistant: No URL configured for audio setting", { settingKey: key });
+          console.log("Fiverr Assistant: No URL configured for audio setting", {
+            settingKey: key,
+          });
           return { key, url: null, success: true }; // No URL is not an error
         }
-      })
+      }),
     );
-    
-    const successful = results.filter(r => r.status === "fulfilled" && r.value?.success).length;
-    const failed = results.filter(r => r.status === "rejected" || (r.status === "fulfilled" && !r.value?.success)).length;
+
+    const successful = results.filter(
+      (r) => r.status === "fulfilled" && r.value?.success,
+    ).length;
+    const failed = results.filter(
+      (r) =>
+        r.status === "rejected" ||
+        (r.status === "fulfilled" && !r.value?.success),
+    ).length;
     console.log("Fiverr Assistant: Audio cache warm-up complete", {
       total: uniqueKeys.length,
       successful,
@@ -2176,13 +2768,17 @@ const phoneCall = () => {
   // Function to verify and save all audio files if not already saved
   const verifyAndSaveAllAudioFiles = async () => {
     if (!supportsIndexedDB) {
-      console.warn("Fiverr Assistant: IndexedDB not supported, cannot verify audio files");
+      console.warn(
+        "Fiverr Assistant: IndexedDB not supported, cannot verify audio files",
+      );
       return;
     }
-    console.log("Fiverr Assistant: Verifying all notification sound files are saved to IndexedDB");
+    console.log(
+      "Fiverr Assistant: Verifying all notification sound files are saved to IndexedDB",
+    );
     const uniqueKeys = [...new Set(AUDIO_SETTING_KEYS)];
     const verificationResults = [];
-    
+
     for (const key of uniqueKeys) {
       let currentUrl = settings[key] || "";
       if (!currentUrl) {
@@ -2193,38 +2789,68 @@ const phoneCall = () => {
         }
       }
       const normalizedUrl = normalizeUrl(currentUrl);
-      
+
       if (normalizedUrl) {
         try {
           // Check if already in cache
           const cached = await readCachedAudioRecord(key);
-          if (cached && cached.sourceUrl === normalizedUrl && cached.blob instanceof Blob) {
-            console.log("Fiverr Assistant: Audio file already saved in IndexedDB", {
-              settingKey: key,
-              sourceUrl: normalizedUrl,
+          if (
+            cached &&
+            cached.sourceUrl === normalizedUrl &&
+            cached.blob instanceof Blob
+          ) {
+            console.log(
+              "Fiverr Assistant: Audio file already saved in IndexedDB",
+              {
+                settingKey: key,
+                sourceUrl: normalizedUrl,
+                blobSize: cached.blob.size,
+              },
+            );
+            verificationResults.push({
+              key,
+              url: normalizedUrl,
+              status: "already_saved",
               blobSize: cached.blob.size,
             });
-            verificationResults.push({ key, url: normalizedUrl, status: "already_saved", blobSize: cached.blob.size });
           } else {
             // Not in cache, fetch and save
-            console.log("Fiverr Assistant: Audio file not in IndexedDB, fetching and saving...", {
-              settingKey: key,
-              sourceUrl: normalizedUrl,
-            });
+            console.log(
+              "Fiverr Assistant: Audio file not in IndexedDB, fetching and saving...",
+              {
+                settingKey: key,
+                sourceUrl: normalizedUrl,
+              },
+            );
             const blob = await fetchAndCacheAudio(key, normalizedUrl);
             if (blob) {
-              console.info("Fiverr Assistant: Audio file successfully saved to IndexedDB", {
-                settingKey: key,
-                sourceUrl: normalizedUrl,
+              console.info(
+                "Fiverr Assistant: Audio file successfully saved to IndexedDB",
+                {
+                  settingKey: key,
+                  sourceUrl: normalizedUrl,
+                  blobSize: blob.size,
+                },
+              );
+              verificationResults.push({
+                key,
+                url: normalizedUrl,
+                status: "saved",
                 blobSize: blob.size,
               });
-              verificationResults.push({ key, url: normalizedUrl, status: "saved", blobSize: blob.size });
             } else {
-              console.error("Fiverr Assistant: Failed to save audio file to IndexedDB", {
-                settingKey: key,
-                sourceUrl: normalizedUrl,
+              console.error(
+                "Fiverr Assistant: Failed to save audio file to IndexedDB",
+                {
+                  settingKey: key,
+                  sourceUrl: normalizedUrl,
+                },
+              );
+              verificationResults.push({
+                key,
+                url: normalizedUrl,
+                status: "failed",
               });
-              verificationResults.push({ key, url: normalizedUrl, status: "failed" });
             }
           }
         } catch (error) {
@@ -2233,21 +2859,30 @@ const phoneCall = () => {
             sourceUrl: normalizedUrl,
             error: error.message,
           });
-          verificationResults.push({ key, url: normalizedUrl, status: "error", error: error.message });
+          verificationResults.push({
+            key,
+            url: normalizedUrl,
+            status: "error",
+            error: error.message,
+          });
         }
       } else {
         verificationResults.push({ key, url: null, status: "no_url" });
       }
     }
-    
+
     const summary = {
       total: uniqueKeys.length,
-      already_saved: verificationResults.filter(r => r.status === "already_saved").length,
-      saved: verificationResults.filter(r => r.status === "saved").length,
-      failed: verificationResults.filter(r => r.status === "failed" || r.status === "error").length,
-      no_url: verificationResults.filter(r => r.status === "no_url").length,
+      already_saved: verificationResults.filter(
+        (r) => r.status === "already_saved",
+      ).length,
+      saved: verificationResults.filter((r) => r.status === "saved").length,
+      failed: verificationResults.filter(
+        (r) => r.status === "failed" || r.status === "error",
+      ).length,
+      no_url: verificationResults.filter((r) => r.status === "no_url").length,
     };
-    
+
     console.log("Fiverr Assistant: Audio file verification complete", summary);
     return { results: verificationResults, summary };
   };
@@ -2275,16 +2910,21 @@ const phoneCall = () => {
       console.error("Unable to persist setting in localStorage:", key, err);
     }
     if (extensionStorage) {
-      extensionStorage.set({ [key]: value }).catch((error) => console.error("Failed to persist setting:", error));
+      extensionStorage
+        .set({ [key]: value })
+        .catch((error) => console.error("Failed to persist setting:", error));
     }
     if (AUDIO_SETTING_KEYS.includes(key)) {
       // Ensure audio file is saved to IndexedDB when setting is updated
       const normalizedUrl = normalizeUrl(value);
       if (normalizedUrl) {
-        console.log("Fiverr Assistant: Audio setting updated, ensuring file is saved to IndexedDB", {
-          settingKey: key,
-          sourceUrl: normalizedUrl,
-        });
+        console.log(
+          "Fiverr Assistant: Audio setting updated, ensuring file is saved to IndexedDB",
+          {
+            settingKey: key,
+            sourceUrl: normalizedUrl,
+          },
+        );
         ensureAudioBlob(key, normalizedUrl).catch((error) => {
           console.error("Fiverr Assistant: Failed to save audio to IndexedDB", {
             settingKey: key,
@@ -2327,11 +2967,20 @@ const phoneCall = () => {
       }
     }
 
-    if (stored && Object.prototype.hasOwnProperty.call(stored, PRIMARY_TAB_ID_STORAGE_KEY)) {
+    if (
+      stored &&
+      Object.prototype.hasOwnProperty.call(stored, PRIMARY_TAB_ID_STORAGE_KEY)
+    ) {
       const storedPrimaryId = stored[PRIMARY_TAB_ID_STORAGE_KEY];
-      if (typeof storedPrimaryId === "number" && !Number.isNaN(storedPrimaryId)) {
+      if (
+        typeof storedPrimaryId === "number" &&
+        !Number.isNaN(storedPrimaryId)
+      ) {
         designatedPrimaryTabId = storedPrimaryId;
-      } else if (typeof storedPrimaryId === "string" && storedPrimaryId.trim() !== "") {
+      } else if (
+        typeof storedPrimaryId === "string" &&
+        storedPrimaryId.trim() !== ""
+      ) {
         const parsedPrimaryId = parseInt(storedPrimaryId, 10);
         if (!Number.isNaN(parsedPrimaryId)) {
           designatedPrimaryTabId = parsedPrimaryId;
@@ -2351,19 +3000,31 @@ const phoneCall = () => {
         if (storedValue !== localValue) {
           pendingStorageUpdates[key] = localValue;
         }
-      } else if (storedValue !== undefined && storedValue !== null && storedValue !== "") {
+      } else if (
+        storedValue !== undefined &&
+        storedValue !== null &&
+        storedValue !== ""
+      ) {
         settings[key] = storedValue;
         try {
           localStorage.setItem(key, storedValue);
         } catch (err) {
           console.error("Unable to sync setting to localStorage:", key, err);
         }
-      } else if (defaultValue !== undefined && defaultValue !== null && defaultValue !== "") {
+      } else if (
+        defaultValue !== undefined &&
+        defaultValue !== null &&
+        defaultValue !== ""
+      ) {
         settings[key] = defaultValue;
         try {
           localStorage.setItem(key, defaultValue);
         } catch (err) {
-          console.error("Unable to write default setting to localStorage:", key, err);
+          console.error(
+            "Unable to write default setting to localStorage:",
+            key,
+            err,
+          );
         }
         pendingStorageUpdates[key] = defaultValue;
       } else {
@@ -2373,13 +3034,17 @@ const phoneCall = () => {
 
     // Check if we need to reset for a new day
     checkAndResetDailyCount();
-    
+
     const storedReloadCount = stored[RELOAD_COUNT_KEY];
     const storedDate = stored[RELOAD_DATE_KEY];
     const today = getTodayDateString();
-    
+
     // Only use stored count if it's from today
-    if (storedDate === today && storedReloadCount !== undefined && storedReloadCount !== null) {
+    if (
+      storedDate === today &&
+      storedReloadCount !== undefined &&
+      storedReloadCount !== null
+    ) {
       const parsedCount = parseInt(storedReloadCount, 10);
       if (!Number.isNaN(parsedCount)) {
         reloadCount = parsedCount;
@@ -2548,7 +3213,12 @@ const phoneCall = () => {
     }
   };
 
-  const applyLangSelectionToUI = (langSelect, customInput, customWrap, savedCode) => {
+  const applyLangSelectionToUI = (
+    langSelect,
+    customInput,
+    customWrap,
+    savedCode,
+  ) => {
     const s = String(savedCode || "").trim();
     if (!s || s.toLowerCase() === "auto") {
       langSelect.value = "";
@@ -2643,12 +3313,16 @@ const phoneCall = () => {
     farInboxHistoryListenStarted = true;
     const notifyRoots = () => {
       const path = window.location.pathname || "";
-      document.querySelectorAll("[data-far-inbox-translate-root]").forEach((root) => {
-        if (root.dataset.farClientPath !== path) {
-          root.dataset.farClientPath = path;
-          root.dispatchEvent(new CustomEvent("far-inbox-client-changed", { bubbles: false }));
-        }
-      });
+      document
+        .querySelectorAll("[data-far-inbox-translate-root]")
+        .forEach((root) => {
+          if (root.dataset.farClientPath !== path) {
+            root.dataset.farClientPath = path;
+            root.dispatchEvent(
+              new CustomEvent("far-inbox-client-changed", { bubbles: false }),
+            );
+          }
+        });
     };
     window.addEventListener("popstate", notifyRoots);
     try {
@@ -2681,7 +3355,8 @@ const phoneCall = () => {
     if (!el) {
       return;
     }
-    const proto = window.HTMLTextAreaElement && window.HTMLTextAreaElement.prototype;
+    const proto =
+      window.HTMLTextAreaElement && window.HTMLTextAreaElement.prototype;
     const desc = proto ? Object.getOwnPropertyDescriptor(proto, "value") : null;
     if (desc && desc.set) {
       desc.set.call(el, value);
@@ -2689,7 +3364,9 @@ const phoneCall = () => {
       el.value = value;
     }
     try {
-      el.dispatchEvent(new InputEvent("input", { bubbles: true, composed: true }));
+      el.dispatchEvent(
+        new InputEvent("input", { bubbles: true, composed: true }),
+      );
     } catch (_) {
       el.dispatchEvent(new Event("input", { bubbles: true }));
     }
@@ -2718,9 +3395,12 @@ const phoneCall = () => {
       const res = await fetch(url);
       const json = await res.json();
       const status = json && json.responseStatus;
-      const translated = json && json.responseData && json.responseData.translatedText;
+      const translated =
+        json && json.responseData && json.responseData.translatedText;
       if (status !== 200 || !translated) {
-        const err = (json && json.responseData && json.responseData.error) || "Translation error";
+        const err =
+          (json && json.responseData && json.responseData.error) ||
+          "Translation error";
         throw new Error(String(err));
       }
       parts.push(translated);
@@ -2808,7 +3488,8 @@ const phoneCall = () => {
     toggle.type = "button";
     toggle.className = "far-inbox-translate-toggle";
     toggle.setAttribute("aria-label", "Toggle translation composer");
-    toggle.title = "Compose in English; translated text fills the message box below";
+    toggle.title =
+      "Compose in English; translated text fills the message box below";
     toggle.innerHTML =
       '<svg class="far-inbox-translate-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
       '<path d="m5 8 6 6"/><path d="M4 14 10 8l2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>' +
@@ -2843,7 +3524,10 @@ const phoneCall = () => {
     toolbarRow.appendChild(toggle);
     leftCol.appendChild(toolbarRow);
 
-    if (typeof window.FarInboxAi !== "undefined" && window.FarInboxAi.attachToolbarButton) {
+    if (
+      typeof window.FarInboxAi !== "undefined" &&
+      window.FarInboxAi.attachToolbarButton
+    ) {
       window.FarInboxAi.attachToolbarButton(toolbarRow, sendTa, root, () => ({
         profile: settings.profile,
         profileUsername: settings.profileUsername,
@@ -2856,7 +3540,8 @@ const phoneCall = () => {
     }
 
     const col = document.createElement("div");
-    col.style.cssText = "flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;";
+    col.style.cssText =
+      "flex:1;min-width:0;display:flex;flex-direction:column;gap:6px;";
 
     const englishWrap = document.createElement("div");
     englishWrap.className = "far-inbox-translate-english-wrap";
@@ -2880,7 +3565,8 @@ const phoneCall = () => {
     const englishTa = document.createElement("textarea");
     englishTa.className = "far-inbox-translate-english";
     englishTa.setAttribute("aria-label", "Write message in English");
-    englishTa.placeholder = "Write in English — the Fiverr field below updates automatically…";
+    englishTa.placeholder =
+      "Write in English — the Fiverr field below updates automatically…";
     englishTa.rows = 2;
 
     fromCol.appendChild(fromLabel);
@@ -2908,7 +3594,12 @@ const phoneCall = () => {
         if (saved) {
           applyLangSelectionToUI(langSelect, customInput, customWrap, saved);
         } else {
-          applyLangSelectionToUI(langSelect, customInput, customWrap, settings.inboxTranslateClientLang || "");
+          applyLangSelectionToUI(
+            langSelect,
+            customInput,
+            customWrap,
+            settings.inboxTranslateClientLang || "",
+          );
         }
         inboxTranslateCachedLang = null;
       });
@@ -2999,7 +3690,8 @@ const phoneCall = () => {
     };
 
     langSelect.addEventListener("change", () => {
-      customWrap.style.display = langSelect.value === "custom" ? "block" : "none";
+      customWrap.style.display =
+        langSelect.value === "custom" ? "block" : "none";
       if (langSelect.value !== "custom") {
         customInput.value = "";
       }
@@ -3040,7 +3732,10 @@ const phoneCall = () => {
       }
     });
 
-    const debounceMs = Math.max(200, parseInt(String(settings.inboxTranslateDebounceMs || "500"), 10) || 500);
+    const debounceMs = Math.max(
+      200,
+      parseInt(String(settings.inboxTranslateDebounceMs || "500"), 10) || 500,
+    );
     englishTa.addEventListener("input", () => {
       clearTimeout(debounceTimer);
       debounceTimer = setTimeout(runTranslate, debounceMs);
@@ -3060,7 +3755,9 @@ const phoneCall = () => {
       const path = window.location.pathname || "";
       if (existingRoot.dataset.farClientPath !== path) {
         existingRoot.dataset.farClientPath = path;
-        existingRoot.dispatchEvent(new CustomEvent("far-inbox-client-changed", { bubbles: false }));
+        existingRoot.dispatchEvent(
+          new CustomEvent("far-inbox-client-changed", { bubbles: false }),
+        );
       }
       return;
     }
@@ -3077,7 +3774,10 @@ const phoneCall = () => {
     }
     ensureInboxTranslateStyles();
     tryEnhanceInboxTranslate();
-    if (typeof window.FarInboxAi !== "undefined" && window.FarInboxAi.startCustomOfferDescriptionHelper) {
+    if (
+      typeof window.FarInboxAi !== "undefined" &&
+      window.FarInboxAi.startCustomOfferDescriptionHelper
+    ) {
       window.FarInboxAi.startCustomOfferDescriptionHelper(() => ({
         profile: settings.profile,
         profileUsername: settings.profileUsername,
@@ -3098,7 +3798,10 @@ const phoneCall = () => {
         tryEnhanceInboxTranslate();
       });
     });
-    inboxTranslateComposerObserver.observe(document.documentElement, { childList: true, subtree: true });
+    inboxTranslateComposerObserver.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
   };
 
   let getVal = (id) => {
@@ -3164,7 +3867,7 @@ const phoneCall = () => {
     }
     if (!inboxUser) {
       console.warn(
-        "Fiverr Assistant: New-client auto-reply not scheduled — could not resolve inbox username from the notification row (open thread from list so the link includes /inbox/username)."
+        "Fiverr Assistant: New-client auto-reply not scheduled — could not resolve inbox username from the notification row (open thread from list so the link includes /inbox/username).",
       );
       return;
     }
@@ -3194,9 +3897,13 @@ const phoneCall = () => {
         clearNewClientAutoReplySchedule();
         return;
       }
-      if (newClientAutoReplyState.retryCount >= NEW_CLIENT_AUTO_REPLY_MAX_RETRIES) {
+      if (
+        newClientAutoReplyState.retryCount >= NEW_CLIENT_AUTO_REPLY_MAX_RETRIES
+      ) {
         clearNewClientAutoReplySchedule();
-        console.log("Fiverr Assistant: New-client auto-reply stopped after max retries");
+        console.log(
+          "Fiverr Assistant: New-client auto-reply stopped after max retries",
+        );
         return;
       }
       newClientAutoReplyState.retryCount += 1;
@@ -3271,7 +3978,10 @@ const phoneCall = () => {
       return false;
     }
 
-    if (typeof window.FarInboxAi === "undefined" || !window.FarInboxAi.isLastInboxMessageFromBuyer) {
+    if (
+      typeof window.FarInboxAi === "undefined" ||
+      !window.FarInboxAi.isLastInboxMessageFromBuyer
+    ) {
       return false;
     }
     const getAi = () => ({
@@ -3333,108 +4043,333 @@ const phoneCall = () => {
 
   // Function to check if a client name is in the ignored clients list
   const isClientIgnored = (clientName) => {
-    if (!clientName || typeof clientName !== 'string') {
+    if (!clientName || typeof clientName !== "string") {
       return false;
     }
-    
+
     // Get ignoreClients from multiple sources (global variable, settings, localStorage)
-    let ignoreClientsList = ignoreClients || '';
-    
+    let ignoreClientsList = ignoreClients || "";
+
     // Fallback to settings if global variable is empty
-    if (!ignoreClientsList && typeof settings !== 'undefined' && settings && settings.ignoreClients) {
+    if (
+      !ignoreClientsList &&
+      typeof settings !== "undefined" &&
+      settings &&
+      settings.ignoreClients
+    ) {
       ignoreClientsList = settings.ignoreClients;
     }
-    
+
     // Fallback to localStorage if still empty
     if (!ignoreClientsList) {
       try {
-        ignoreClientsList = getVal("ignoreClients") || '';
+        ignoreClientsList = getVal("ignoreClients") || "";
       } catch (e) {
         // Ignore errors
       }
     }
-    
-    if (!ignoreClientsList || ignoreClientsList.trim() === '') {
+
+    if (!ignoreClientsList || ignoreClientsList.trim() === "") {
       return false;
     }
-    
-    const ignoredList = ignoreClientsList.split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
+
+    const ignoredList = ignoreClientsList
+      .split(",")
+      .map((c) => c.trim().toLowerCase())
+      .filter(Boolean);
     const clientNameLower = clientName.trim().toLowerCase();
-    
+
     const isIgnored = ignoredList.includes(clientNameLower);
-    
+
     // Debug logging only when client is found in ignored list
     if (isIgnored) {
-      console.log("Fiverr Assistant: Client is in ignored list", { 
-        clientName, 
-        clientNameLower, 
-        ignoredList
+      console.log("Fiverr Assistant: Client is in ignored list", {
+        clientName,
+        clientNameLower,
+        ignoredList,
       });
     }
-    
+
     return isIgnored;
   };
-  
+
   // Function to check if a client name is in the targeted clients list
   // This function follows the exact same pattern as isClientIgnored for consistency
   const isClientTargeted = (clientName) => {
-    if (!clientName || typeof clientName !== 'string') {
+    if (!clientName || typeof clientName !== "string") {
       return false;
     }
-    
+
     // Get targetedClients from multiple sources (global variable, settings, localStorage)
     // Use the exact same pattern as isClientIgnored
-    let targetedClientsList = targetedClients || '';
-    
+    let targetedClientsList = targetedClients || "";
+
     // Fallback to settings if global variable is empty
-    if (!targetedClientsList && typeof settings !== 'undefined' && settings && settings.targetedClients) {
+    if (
+      !targetedClientsList &&
+      typeof settings !== "undefined" &&
+      settings &&
+      settings.targetedClients
+    ) {
       targetedClientsList = settings.targetedClients;
     }
-    
+
     // Fallback to localStorage if still empty
     if (!targetedClientsList) {
       try {
-        targetedClientsList = getVal("targetedClients") || '';
+        targetedClientsList = getVal("targetedClients") || "";
       } catch (e) {
         // Ignore errors
       }
     }
-    
+
     // Always log for debugging
     console.log("Fiverr Assistant: Checking if client is targeted", {
       clientName,
-      targetedClientsList: targetedClientsList ? targetedClientsList.substring(0, 200) : "empty",
-      targetedClientsGlobal: targetedClients ? targetedClients.substring(0, 200) : "empty",
-      settingsTargetedClients: (typeof settings !== 'undefined' && settings && settings.targetedClients) ? settings.targetedClients.substring(0, 200) : "not in settings"
+      targetedClientsList: targetedClientsList
+        ? targetedClientsList.substring(0, 200)
+        : "empty",
+      targetedClientsGlobal: targetedClients
+        ? targetedClients.substring(0, 200)
+        : "empty",
+      settingsTargetedClients:
+        typeof settings !== "undefined" && settings && settings.targetedClients
+          ? settings.targetedClients.substring(0, 200)
+          : "not in settings",
     });
-    
-    if (!targetedClientsList || targetedClientsList.trim() === '') {
+
+    if (!targetedClientsList || targetedClientsList.trim() === "") {
       console.log("Fiverr Assistant: No targeted clients list found");
       return false;
     }
-    
-    const targetedList = targetedClientsList.split(',').map(c => c.trim().toLowerCase()).filter(Boolean);
+
+    const targetedList = targetedClientsList
+      .split(",")
+      .map((c) => c.trim().toLowerCase())
+      .filter(Boolean);
     const clientNameLower = clientName.trim().toLowerCase();
-    
+
     const isTargeted = targetedList.includes(clientNameLower);
-    
+
     // Always log the result for debugging
-    console.log("Fiverr Assistant: Targeted client check result", { 
-      clientName, 
-      clientNameLower, 
+    console.log("Fiverr Assistant: Targeted client check result", {
+      clientName,
+      clientNameLower,
       targetedList,
-      isTargeted
+      isTargeted,
     });
-    
+
     return isTargeted;
   };
-  
+
+  // Function to show alert with all unread clients
+  const showUnreadClientsAlert = () => {
+    console.log("=== Fiverr Assistant: showUnreadClientsAlert STARTED ===");
+
+    // Check if on Fiverr and on inbox page (handle query params)
+    if (siteDomain !== "www.fiverr.com") {
+      console.log("❌ Not on Fiverr domain:", siteDomain);
+      return;
+    }
+
+    const currentPath = window.location.pathname || "";
+    console.log("📍 Current path:", currentPath);
+
+    if (currentPath !== "/inbox" && !currentPath.startsWith("/inbox/")) {
+      console.log("❌ Not on inbox page");
+      return;
+    }
+
+    console.log("✅ On Fiverr inbox page");
+
+    // Debug: Log current targeted clients
+    const currentTargetedClients =
+      targetedClients ||
+      getVal("targetedClients") ||
+      (settings && settings.targetedClients) ||
+      "";
+    console.log("🎯 Current targeted clients setting:", currentTargetedClients);
+
+    try {
+      const unreadClients = new Set();
+      const targetedUnreadClients = new Set();
+
+      console.log("🔍 Looking for unread messages...");
+
+      // STRATEGY 1: Look for all [data-testid="contact"] elements (the actual Fiverr structure)
+      console.log(
+        "--- Strategy 1: Searching [data-testid='contact'] elements ---",
+      );
+      const contactElements = document.querySelectorAll(
+        '[data-testid="contact"]',
+      );
+      console.log(`Found ${contactElements.length} contact elements`);
+
+      contactElements.forEach((contact, idx) => {
+        console.log(`\n  [Contact ${idx}]`);
+
+        // Get the client name from .user-info p
+        let clientName = null;
+        const nameElement = contact.querySelector(".user-info p");
+        if (nameElement) {
+          clientName = nameElement.textContent?.trim();
+          console.log(`    → Client name: "${clientName}"`);
+        }
+
+        if (!clientName) {
+          console.log(`    → No name found in .user-info p`);
+          return;
+        }
+
+        // Check if this contact has unread indicator
+        // Look for badge with a number (unread count)
+        const unreadCountElement = Array.from(
+          contact.querySelectorAll("p"),
+        ).find((p) => {
+          const text = p.textContent?.trim();
+          return text && /^\d+$/.test(text); // Is it just a number?
+        });
+
+        if (unreadCountElement) {
+          const unreadCount = unreadCountElement.textContent?.trim();
+          console.log(`    ✓ Has unread count badge: ${unreadCount}`);
+          unreadClients.add(clientName);
+
+          // Check if this client is targeted
+          const isTargeted = isClientTargeted(clientName);
+          console.log(
+            `    🎯 Is targeted: ${isTargeted} (checking "${clientName}")`,
+          );
+
+          if (isTargeted) {
+            targetedUnreadClients.add(clientName);
+            console.log(`    ⭐ Added to targeted list`);
+          }
+
+          console.log(`    ✅ Added to unread list: "${clientName}"`);
+        } else {
+          console.log(`    ❌ No unread indicator found`);
+        }
+      });
+
+      // STRATEGY 2: Alternative - look for any contact with a numeric badge
+      if (unreadClients.size === 0) {
+        console.log(
+          "\n--- Strategy 2: Looking for contacts with numeric badges ---",
+        );
+
+        const allContacts = document.querySelectorAll(
+          '[data-testid="contact"]',
+        );
+        console.log(`Scanning ${allContacts.length} contacts for badges...`);
+
+        allContacts.forEach((contact, idx) => {
+          // Find all numbers/badges in the contact
+          const allText = Array.from(contact.querySelectorAll("*"))
+            .filter((el) => el.children.length === 0) // Leaf nodes only
+            .map((el) => el.textContent?.trim())
+            .filter((t) => t && /^\d+$/.test(t)); // Numbers only
+
+          if (allText.length > 0) {
+            console.log(`  [${idx}] Found badges: ${allText.join(", ")}`);
+
+            const nameElement = contact.querySelector(".user-info p");
+            if (nameElement) {
+              const clientName = nameElement.textContent?.trim();
+              console.log(`       Client: "${clientName}"`);
+              unreadClients.add(clientName);
+
+              // Check if targeted
+              const isTargeted = isClientTargeted(clientName);
+              console.log(`       🎯 Is targeted: ${isTargeted}`);
+              if (isTargeted) {
+                targetedUnreadClients.add(clientName);
+                console.log(`       ⭐ Is targeted - Added to targeted list`);
+              }
+
+              console.log(`       ✅ Added (has badge)`);
+            }
+          }
+        });
+      }
+
+      console.log(
+        `\n📊 FINAL RESULT: Found ${unreadClients.size} unread clients`,
+      );
+      console.log(`⭐ Targeted unread clients: ${targetedUnreadClients.size}`);
+
+      if (unreadClients.size > 0) {
+        const clientArray = Array.from(unreadClients).sort();
+        const targetedArray = Array.from(targetedUnreadClients).sort();
+
+        console.log("All unread clients:", clientArray);
+        console.log("Targeted unread clients:", targetedArray);
+
+        // Build alert message with targeting info
+        let message = `Unread messages from:\n`;
+
+        clientArray.forEach((client) => {
+          if (targetedArray.includes(client)) {
+            message += `⭐ ${client} (TARGETED)\n`;
+          } else {
+            message += `${client}\n`;
+          }
+        });
+
+        message += `\nTotal: ${unreadClients.size} client(s)`;
+        if (targetedArray.length > 0) {
+          message += `\nTargeted: ${targetedArray.length} client(s)`;
+        }
+
+        alert(message);
+        console.log("✅ Alert shown successfully");
+
+        // Play targeted sound if there are any targeted clients with unread messages
+        if (targetedArray.length > 0) {
+          console.log(
+            `\n🔊 Playing targeted client sound for ${targetedArray.length} targeted client(s): ${targetedArray.join(", ")}`,
+          );
+          playAudio("targeted");
+          activateFiverrTab();
+        }
+      } else {
+        console.log("❌ No unread clients found");
+        console.log("Debug info:");
+        console.log(
+          `  - [data-testid="contact"] count: ${document.querySelectorAll('[data-testid="contact"]').length}`,
+        );
+        console.log(
+          `  - .messages-wrapper exists: ${document.querySelector(".messages-wrapper") ? "YES" : "NO"}`,
+        );
+
+        // Show first few contact names for debugging
+        const sampleContacts = document.querySelectorAll(
+          '[data-testid="contact"]',
+        );
+        if (sampleContacts.length > 0) {
+          console.log("  - Sample contacts found:");
+          for (let i = 0; i < Math.min(3, sampleContacts.length); i++) {
+            const nameEl = sampleContacts[i].querySelector(".user-info p");
+            if (nameEl) {
+              console.log(`    [${i}] "${nameEl.textContent?.trim()}"`);
+            }
+          }
+        }
+      }
+    } catch (e) {
+      console.error("❌ ERROR in showUnreadClientsAlert:", e);
+      console.error(e.stack);
+    }
+
+    console.log("=== Fiverr Assistant: showUnreadClientsAlert ENDED ===\n");
+  };
+
   // Function to extract client name from Fiverr chat HTML
   const extractClientName = (element) => {
     if (!element) return null;
-    
+
     let clientName = null;
-    
+
     try {
       // Strategy 0: SIMPLEST - Check the element's own textContent first (most direct)
       // This handles cases where textContent IS the name (like "Luciano")
@@ -3443,8 +4378,9 @@ const phoneCall = () => {
         // Simple name pattern: 2-50 chars, letters/numbers/underscores/hyphens
         const simpleNamePattern = /^[a-zA-Z0-9_-]{2,50}$/;
         // Common UI words to exclude
-        const excludedWords = /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat|the|a|an|and|or|but|is|are|was|were|has|have|had|will|would|could|should|may|might|can|must)$/i;
-        
+        const excludedWords =
+          /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat|the|a|an|and|or|but|is|are|was|were|has|have|had|will|would|could|should|may|might|can|must)$/i;
+
         // If textContent is a simple name, use it immediately
         if (simpleNamePattern.test(elementText)) {
           if (!excludedWords.test(elementText)) {
@@ -3452,59 +4388,72 @@ const phoneCall = () => {
             return clientName; // Return early if we found it
           }
         }
-        
+
         // If not a simple name, try to extract first word that looks like a name
-        const firstWordMatch = elementText.match(/^([a-zA-Z0-9_-]{2,50})(?:\s|$|,|\.|:)/);
+        const firstWordMatch = elementText.match(
+          /^([a-zA-Z0-9_-]{2,50})(?:\s|$|,|\.|:)/,
+        );
         if (firstWordMatch && firstWordMatch[1]) {
           const potentialName = firstWordMatch[1];
-          if (simpleNamePattern.test(potentialName) && !excludedWords.test(potentialName)) {
+          if (
+            simpleNamePattern.test(potentialName) &&
+            !excludedWords.test(potentialName)
+          ) {
             clientName = potentialName;
             return clientName; // Return early if we found it
           }
         }
       }
-      
+
       // Strategy 0.1: Check direct text nodes (not including child element text)
       if (!clientName) {
-      let directText = '';
-      if (element.childNodes) {
-        for (const node of element.childNodes) {
-          if (node.nodeType === Node.TEXT_NODE) {
-            directText += node.textContent || '';
+        let directText = "";
+        if (element.childNodes) {
+          for (const node of element.childNodes) {
+            if (node.nodeType === Node.TEXT_NODE) {
+              directText += node.textContent || "";
+            }
           }
         }
-      }
-      directText = directText.trim();
-      
+        directText = directText.trim();
+
         if (directText) {
           const simpleNamePattern = /^[a-zA-Z0-9_-]{2,50}$/;
-          const excludedWords = /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat|the|a|an|and|or|but)$/i;
-          
-          if (simpleNamePattern.test(directText) && !excludedWords.test(directText)) {
-          clientName = directText;
+          const excludedWords =
+            /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat|the|a|an|and|or|but)$/i;
+
+          if (
+            simpleNamePattern.test(directText) &&
+            !excludedWords.test(directText)
+          ) {
+            clientName = directText;
             return clientName; // Return early if we found it
           }
         }
       }
-      
+
       // Strategy 0.5: Check parent element's text content for name patterns
       if (!clientName && element.parentElement) {
         const parentText = element.parentElement.textContent?.trim();
         if (parentText) {
           // Look for patterns like "Luciano" at the start, or "from Luciano", etc.
           const patterns = [
-            /^([a-zA-Z0-9_-]{2,50})(?:\s|$)/,  // Name at start
+            /^([a-zA-Z0-9_-]{2,50})(?:\s|$)/, // Name at start
             /(?:from|by|message from|sent by)\s+([a-zA-Z0-9_-]{2,50})/i,
             /@([a-zA-Z0-9_-]{2,50})/,
-            /^([A-Z][a-zA-Z0-9_-]{1,49})(?:\s|$)/  // Capitalized name at start
+            /^([A-Z][a-zA-Z0-9_-]{1,49})(?:\s|$)/, // Capitalized name at start
           ];
-          
+
           for (const pattern of patterns) {
             const match = parentText.match(pattern);
             if (match && match[1]) {
               const potentialName = match[1];
               // Validate it's not a common UI word
-              if (!potentialName.match(/^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat)$/i)) {
+              if (
+                !potentialName.match(
+                  /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat)$/i,
+                )
+              ) {
                 clientName = potentialName;
                 break;
               }
@@ -3512,7 +4461,7 @@ const phoneCall = () => {
           }
         }
       }
-      
+
       // Strategy 1: Look for username/name in common Fiverr chat selectors
       const commonSelectors = [
         '[class*="username"]',
@@ -3525,12 +4474,14 @@ const phoneCall = () => {
         'a[href*="/users/"]',
         '[class*="conversation"] [class*="title"]',
         '[class*="chat"] [class*="title"]',
-        '[class*="inbox-item"] [class*="title"]'
+        '[class*="inbox-item"] [class*="title"]',
       ];
-      
+
       // Try to find the conversation/message container first
-      const container = element.closest('[class*="message"], [class*="conversation"], [class*="chat"], [class*="inbox-item"], li, a');
-      
+      const container = element.closest(
+        '[class*="message"], [class*="conversation"], [class*="chat"], [class*="inbox-item"], li, a',
+      );
+
       if (container) {
         // Try each selector
         for (const selector of commonSelectors) {
@@ -3546,12 +4497,12 @@ const phoneCall = () => {
             }
           }
         }
-        
+
         // Strategy 2: Look for links to user profiles
         if (!clientName) {
           const userLink = container.querySelector('a[href*="/users/"]');
           if (userLink) {
-            const href = userLink.getAttribute('href');
+            const href = userLink.getAttribute("href");
             if (href) {
               const urlMatch = href.match(/\/users\/([^\/\?]+)/);
               if (urlMatch && urlMatch[1]) {
@@ -3565,32 +4516,36 @@ const phoneCall = () => {
             }
           }
         }
-        
+
         // Strategy 3: Extract from title or heading elements
         if (!clientName) {
-          const titleElement = container.querySelector('h1, h2, h3, h4, [class*="title"], [class*="heading"]');
+          const titleElement = container.querySelector(
+            'h1, h2, h3, h4, [class*="title"], [class*="heading"]',
+          );
           if (titleElement) {
             const titleText = titleElement.textContent?.trim();
             if (titleText && titleText.length > 0 && titleText.length < 100) {
               // Remove common prefixes/suffixes
-              const cleaned = titleText.replace(/^(new message|message from|from|by)\s*/i, '').trim();
+              const cleaned = titleText
+                .replace(/^(new message|message from|from|by)\s*/i, "")
+                .trim();
               if (cleaned && cleaned.length > 0) {
                 clientName = cleaned;
               }
             }
           }
         }
-        
+
         // Strategy 4: Look for text patterns in the container
         if (!clientName) {
-          const containerText = container.textContent || '';
+          const containerText = container.textContent || "";
           // Try to match patterns like "from username", "by username", "@username"
           const patterns = [
             /(?:from|by|message from)\s+([a-zA-Z0-9_-]{2,50})/i,
             /@([a-zA-Z0-9_-]{2,50})/,
-            /^([a-zA-Z0-9_-]{2,50})\s+(?:sent|wrote|says)/i
+            /^([a-zA-Z0-9_-]{2,50})\s+(?:sent|wrote|says)/i,
           ];
-          
+
           for (const pattern of patterns) {
             const match = containerText.match(pattern);
             if (match && match[1]) {
@@ -3599,7 +4554,7 @@ const phoneCall = () => {
             }
           }
         }
-        
+
         // Strategy 5: Get first meaningful text from the container (excluding common UI elements)
         if (!clientName) {
           const allTextNodes = [];
@@ -3611,15 +4566,19 @@ const phoneCall = () => {
                 const text = node.textContent?.trim();
                 if (text && text.length > 2 && text.length < 50) {
                   // Exclude common UI text
-                  if (!text.match(/^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete)$/i)) {
+                  if (
+                    !text.match(
+                      /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete)$/i,
+                    )
+                  ) {
                     return NodeFilter.FILTER_ACCEPT;
                   }
                 }
                 return NodeFilter.FILTER_REJECT;
-              }
-            }
+              },
+            },
           );
-          
+
           let node;
           while ((node = walker.nextNode())) {
             const text = node.textContent?.trim();
@@ -3627,7 +4586,7 @@ const phoneCall = () => {
               allTextNodes.push(text);
             }
           }
-          
+
           if (allTextNodes.length > 0) {
             // Use the first meaningful text that looks like a name
             for (const text of allTextNodes) {
@@ -3639,7 +4598,7 @@ const phoneCall = () => {
           }
         }
       }
-      
+
       // Strategy 6: Check sibling elements (name might be in a sibling span/div)
       if (!clientName && element.parentElement) {
         const siblings = Array.from(element.parentElement.children || []);
@@ -3648,79 +4607,98 @@ const phoneCall = () => {
           const siblingText = sibling.textContent?.trim();
           if (siblingText) {
             const namePattern = /^[a-zA-Z0-9_-]{2,50}$/;
-            if (namePattern.test(siblingText) && !siblingText.match(/^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third)$/i)) {
+            if (
+              namePattern.test(siblingText) &&
+              !siblingText.match(
+                /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third)$/i,
+              )
+            ) {
               clientName = siblingText;
               break;
             }
           }
         }
       }
-      
+
       // Strategy 7: Fallback - look in parent elements with better pattern matching
       if (!clientName && element.parentElement) {
-        const parentText = element.parentElement.textContent || '';
+        const parentText = element.parentElement.textContent || "";
         const patterns = [
           /(?:from|by|message from|sent by)\s+([a-zA-Z0-9_-]{2,50})/i,
           /@([a-zA-Z0-9_-]{2,50})/,
-          /^([A-Z][a-zA-Z0-9_-]{1,49})(?:\s|$)/,  // Capitalized name at start
-          /^([a-zA-Z0-9_-]{2,50})(?:\s|$)/  // Any name-like text at start
+          /^([A-Z][a-zA-Z0-9_-]{1,49})(?:\s|$)/, // Capitalized name at start
+          /^([a-zA-Z0-9_-]{2,50})(?:\s|$)/, // Any name-like text at start
         ];
-        
+
         for (const pattern of patterns) {
           const match = parentText.match(pattern);
           if (match && match[1]) {
             const potentialName = match[1];
             // Validate it's not a common UI word
-            if (!potentialName.match(/^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat)$/i)) {
+            if (
+              !potentialName.match(
+                /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat)$/i,
+              )
+            ) {
               clientName = potentialName;
               break;
             }
           }
         }
       }
-      
+
       // Strategy 8: Last resort - check if element's textContent is a simple name
       // This handles cases where the flag element's textContent IS the name (like "Luciano")
       if (!clientName) {
         const text = element.textContent?.trim();
         if (text) {
           // Extract first word that looks like a name
-          const firstWordMatch = text.match(/^([a-zA-Z0-9_-]{2,50})(?:\s|$|,|\.|:)/);
+          const firstWordMatch = text.match(
+            /^([a-zA-Z0-9_-]{2,50})(?:\s|$|,|\.|:)/,
+          );
           if (firstWordMatch && firstWordMatch[1]) {
             const potentialName = firstWordMatch[1];
             // Only exclude obvious non-name words
-            if (!potentialName.match(/^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat|the|a|an|and|or|but)$/i)) {
+            if (
+              !potentialName.match(
+                /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat|the|a|an|and|or|but)$/i,
+              )
+            ) {
               clientName = potentialName;
             }
           }
           // If no match but text is simple and looks like a name, use it
-          else if (text.match(/^[a-zA-Z0-9_-]{2,50}$/) && !text.match(/^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat|the|a|an|and|or|but)$/i)) {
+          else if (
+            text.match(/^[a-zA-Z0-9_-]{2,50}$/) &&
+            !text.match(
+              /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|first|second|third|inbox|conversation|chat|the|a|an|and|or|but)$/i,
+            )
+          ) {
             clientName = text;
           }
         }
       }
-      
     } catch (e) {
       console.warn("Fiverr Assistant: Error extracting client name", e);
     }
-    
+
     // Clean up the client name
     if (clientName) {
       clientName = clientName.trim();
       // Remove extra whitespace and limit length
-      clientName = clientName.replace(/\s+/g, ' ').substring(0, 50);
+      clientName = clientName.replace(/\s+/g, " ").substring(0, 50);
       // Return null if it's too short or looks invalid
       if (clientName.length < 2) {
         clientName = null;
       }
     }
-    
+
     return clientName;
   };
-  
+
   // Track currently playing audio elements so we can stop them on user interaction
   const playingAudioElements = new Set();
-  
+
   // Function to stop all currently playing notification sounds
   const stopAllNotificationSounds = () => {
     playingAudioElements.forEach((audio) => {
@@ -3749,7 +4727,8 @@ const phoneCall = () => {
       if (!isFiverrInboxPage()) {
         return;
       }
-      inboxUserActivityReloadBlockedUntil = Date.now() + INBOX_USER_ACTIVITY_RELOAD_COOLDOWN_MS;
+      inboxUserActivityReloadBlockedUntil =
+        Date.now() + INBOX_USER_ACTIVITY_RELOAD_COOLDOWN_MS;
       lastAction = Date.now();
       stopAllNotificationSounds();
       if (autoReload) {
@@ -3788,15 +4767,22 @@ const phoneCall = () => {
 
   if (runtime && runtime.onMessage) {
     runtime.onMessage.addListener((message) => {
-      console.log("Fiverr Assistant Content: Received message", message?.type, message?.payload ? Object.keys(message.payload) : "no payload");
-      
+      console.log(
+        "Fiverr Assistant Content: Received message",
+        message?.type,
+        message?.payload ? Object.keys(message.payload) : "no payload",
+      );
+
       if (!message || message.type !== "settingsUpdated" || !message.payload) {
         if (message && message.type === "primaryTabStatus") {
           const { primaryTabId, isPrimary } = message;
           if (typeof primaryTabId === "number" && !Number.isNaN(primaryTabId)) {
             designatedPrimaryTabId = primaryTabId;
             try {
-              localStorage.setItem(PRIMARY_TAB_ID_STORAGE_KEY, String(primaryTabId));
+              localStorage.setItem(
+                PRIMARY_TAB_ID_STORAGE_KEY,
+                String(primaryTabId),
+              );
             } catch (_) {}
           } else {
             designatedPrimaryTabId = null;
@@ -3812,24 +4798,28 @@ const phoneCall = () => {
           }
           return;
         }
-        
+
         if (message && message.type === "pauseAutoReloadFor15Minutes") {
           // Trigger the same pause functionality as F8 key
           if (featuresInitialized && typeof pauseAutoReload === "function") {
             pauseAutoReload();
-            console.log("Fiverr Assistant: Auto-reload paused for 15 minutes from options page");
-            
+            console.log(
+              "Fiverr Assistant: Auto-reload paused for 15 minutes from options page",
+            );
+
             // Resume after 15 minutes (900000 milliseconds)
             setTimeout(() => {
               if (!isF10Clicked && featuresInitialized) {
                 enableAutoReload();
-                console.log("Fiverr Assistant: Auto-reload resumed after 15-minute pause from options page");
+                console.log(
+                  "Fiverr Assistant: Auto-reload resumed after 15-minute pause from options page",
+                );
               }
             }, 900000);
           }
           return;
         }
-        
+
         return;
       }
 
@@ -3841,24 +4831,50 @@ const phoneCall = () => {
       });
 
       // Use payload values directly instead of reading from localStorage to avoid timing issues
-      targetedClients = message.payload.targetedClients !== undefined ? String(message.payload.targetedClients || "") : (getVal("targetedClients") || "");
-      ignoreClients = message.payload.ignoreClients !== undefined ? String(message.payload.ignoreClients || "") : (getVal("ignoreClients") || "");
-      pageLinks = message.payload.pageLinks !== undefined ? processPageLinks(String(message.payload.pageLinks || "")) : processPageLinks(getVal("pageLinks"));
-      minReloadingSecond = message.payload.relStart !== undefined ? (parseInt(String(message.payload.relStart), 10) || 30) : (parseInt(getVal("relStart"), 10) || minReloadingSecond);
-      maxReloadingSecond = message.payload.relEnd !== undefined ? (parseInt(String(message.payload.relEnd), 10) || 180) : (parseInt(getVal("relEnd"), 10) || maxReloadingSecond);
-      
+      targetedClients =
+        message.payload.targetedClients !== undefined
+          ? String(message.payload.targetedClients || "")
+          : getVal("targetedClients") || "";
+      ignoreClients =
+        message.payload.ignoreClients !== undefined
+          ? String(message.payload.ignoreClients || "")
+          : getVal("ignoreClients") || "";
+      pageLinks =
+        message.payload.pageLinks !== undefined
+          ? processPageLinks(String(message.payload.pageLinks || ""))
+          : processPageLinks(getVal("pageLinks"));
+      minReloadingSecond =
+        message.payload.relStart !== undefined
+          ? parseInt(String(message.payload.relStart), 10) || 30
+          : parseInt(getVal("relStart"), 10) || minReloadingSecond;
+      maxReloadingSecond =
+        message.payload.relEnd !== undefined
+          ? parseInt(String(message.payload.relEnd), 10) || 180
+          : parseInt(getVal("relEnd"), 10) || maxReloadingSecond;
+
       console.log("Fiverr Assistant Content: Settings updated", {
         pageLinks: pageLinks,
         pageLinksLength: pageLinks.length,
         minReloadingSecond: minReloadingSecond,
         maxReloadingSecond: maxReloadingSecond,
-        autoReloadEnabled: message.payload.autoReloadEnabled
+        autoReloadEnabled: message.payload.autoReloadEnabled,
       });
-      
-      if (Object.prototype.hasOwnProperty.call(message.payload, "autoReloadEnabled")) {
-        const shouldEnable = coerceBooleanSetting(message.payload.autoReloadEnabled, true);
+
+      if (
+        Object.prototype.hasOwnProperty.call(
+          message.payload,
+          "autoReloadEnabled",
+        )
+      ) {
+        const shouldEnable = coerceBooleanSetting(
+          message.payload.autoReloadEnabled,
+          true,
+        );
         if (shouldEnable) {
-          console.log("Fiverr Assistant Content: Enabling auto-reload, featuresInitialized:", featuresInitialized);
+          console.log(
+            "Fiverr Assistant Content: Enabling auto-reload, featuresInitialized:",
+            featuresInitialized,
+          );
           enableAutoReload();
         } else {
           pauseAutoReload();
@@ -3879,10 +4895,12 @@ const phoneCall = () => {
   async function initialize() {
     // Check if fabs reloader is active - exit if detected
     if (!shouldContinueExecution()) {
-      console.log('Fiverr Assistant: Cannot initialize - fabs fiverr reloader assistant is active');
+      console.log(
+        "Fiverr Assistant: Cannot initialize - fabs fiverr reloader assistant is active",
+      );
       return Promise.resolve();
     }
-    
+
     if (initializePromise) {
       return initializePromise;
     }
@@ -3890,10 +4908,12 @@ const phoneCall = () => {
     initializePromise = (async () => {
       // Check again after async operations
       if (!shouldContinueExecution()) {
-        console.log('Fiverr Assistant: Cannot initialize - fabs fiverr reloader assistant detected during initialization');
+        console.log(
+          "Fiverr Assistant: Cannot initialize - fabs fiverr reloader assistant detected during initialization",
+        );
         return;
       }
-      
+
       await hydrateSettings();
 
       if (
@@ -3907,29 +4927,39 @@ const phoneCall = () => {
       // Check for pending auto-reactivation after page reload
       if (extensionStorage && !autoReload) {
         try {
-          const result = await extensionStorage.get(AUTO_REACTIVATE_TIMESTAMP_KEY);
+          const result = await extensionStorage.get(
+            AUTO_REACTIVATE_TIMESTAMP_KEY,
+          );
           if (result && result[AUTO_REACTIVATE_TIMESTAMP_KEY]) {
             const reactivateTimestamp = result[AUTO_REACTIVATE_TIMESTAMP_KEY];
             const now = Date.now();
             const remainingTime = reactivateTimestamp - now;
-            
+
             if (remainingTime > 0) {
               // There's a pending reactivation, set up the timeout
-              console.log(`Fiverr Assistant: Found pending auto-reactivation, will reactivate in ${Math.ceil(remainingTime / 1000)} seconds`);
+              console.log(
+                `Fiverr Assistant: Found pending auto-reactivation, will reactivate in ${Math.ceil(remainingTime / 1000)} seconds`,
+              );
               autoReactivateTimeoutId = setTimeout(() => {
                 autoReactivateTimeoutId = null;
                 if (!isF10Clicked && featuresInitialized) {
                   enableAutoReload();
-                  console.log("Fiverr Assistant: Auto-reload auto-reactivated after 1 minute");
+                  console.log(
+                    "Fiverr Assistant: Auto-reload auto-reactivated after 1 minute",
+                  );
                 }
                 // Remove the timestamp from storage
                 if (extensionStorage) {
-                  extensionStorage.remove(AUTO_REACTIVATE_TIMESTAMP_KEY).catch(() => {});
+                  extensionStorage
+                    .remove(AUTO_REACTIVATE_TIMESTAMP_KEY)
+                    .catch(() => {});
                 }
               }, remainingTime);
             } else {
               // The timeout has already passed, reactivate immediately
-              console.log("Fiverr Assistant: Auto-reactivation timeout has passed, reactivating now");
+              console.log(
+                "Fiverr Assistant: Auto-reactivation timeout has passed, reactivating now",
+              );
               if (featuresInitialized) {
                 enableAutoReload();
               } else {
@@ -3937,15 +4967,23 @@ const phoneCall = () => {
                 // It will be properly initialized when features are ready
                 autoReload = true;
                 if (extensionStorage) {
-                  extensionStorage.set({ autoReloadEnabled: true }).then(() => {
-                    return extensionStorage.remove(AUTO_REACTIVATE_TIMESTAMP_KEY);
-                  }).catch(() => {});
+                  extensionStorage
+                    .set({ autoReloadEnabled: true })
+                    .then(() => {
+                      return extensionStorage.remove(
+                        AUTO_REACTIVATE_TIMESTAMP_KEY,
+                      );
+                    })
+                    .catch(() => {});
                 }
               }
             }
           }
         } catch (error) {
-          console.warn("Fiverr Assistant: Failed to check for pending auto-reactivation", error);
+          console.warn(
+            "Fiverr Assistant: Failed to check for pending auto-reactivation",
+            error,
+          );
         }
       }
 
@@ -3961,1147 +4999,1632 @@ const phoneCall = () => {
       }
 
       try {
-      const isNewClient = !!findNewClientFlag();
+        const isNewClient = !!findNewClientFlag();
 
-      function isWithinLastTenMinutes(givenTime) {
-        if (givenTime == null) return null;
-        const now = new Date();
-        const tenMinutesAgo = new Date(now);
-        tenMinutesAgo.setMinutes(now.getMinutes() - 10);
+        function isWithinLastTenMinutes(givenTime) {
+          if (givenTime == null) return null;
+          const now = new Date();
+          const tenMinutesAgo = new Date(now);
+          tenMinutesAgo.setMinutes(now.getMinutes() - 10);
 
-        return givenTime >= tenMinutesAgo && givenTime <= now;
-      }
-
-      let isMailSent = (username) => {
-        if (mailData.length < 1) return null;
-        const index = mailData.findIndex((item) => item.username === username);
-        let lastMailTime = mailData[index] ? mailData[index].time : null;
-        return isWithinLastTenMinutes(lastMailTime);
-      };
-
-      function scrollAllToBottom() {
-        const messageContentSelector = settings.selectorMessageContent || defaultSettings.selectorMessageContent;
-        const elements = document.querySelectorAll(messageContentSelector);
-
-        elements.forEach((element) => {
-          element.scrollTop = element.scrollHeight;
-        });
-      }
-
-      function getFormattedTime() {
-        const now = new Date();
-        const day = String(now.getDate()).padStart(2, "0");
-        const month = String(now.getMonth() + 1).padStart(2, "0");
-        const year = String(now.getFullYear()).slice(-2);
-        const hours = String(now.getHours()).padStart(2, "0");
-        const minutes = String(now.getMinutes()).padStart(2, "0");
-
-        return `${day}/${month}/${year} ${hours}:${minutes}`;
-      }
-
-      const getRandomMiliSecond = (min, max) => {
-        if (typeof min !== "number" || typeof max !== "number") {
-          throw new Error("Both arguments must be numbers.");
-        }
-        if (min > max) {
-          throw new Error("The first parameter must be less than or equal to the second parameter.");
+          return givenTime >= tenMinutesAgo && givenTime <= now;
         }
 
-        return (Math.floor(Math.random() * (max - min + 1)) + min) * 1000;
-      };
+        let isMailSent = (username) => {
+          if (mailData.length < 1) return null;
+          const index = mailData.findIndex(
+            (item) => item.username === username,
+          );
+          let lastMailTime = mailData[index] ? mailData[index].time : null;
+          return isWithinLastTenMinutes(lastMailTime);
+        };
 
-      const applyStyles = (element, styleObject) => {
-        for (let item in styleObject) {
-          element.style[item] = styleObject[item];
-        }
-      };
+        function scrollAllToBottom() {
+          const messageContentSelector =
+            settings.selectorMessageContent ||
+            defaultSettings.selectorMessageContent;
+          const elements = document.querySelectorAll(messageContentSelector);
 
-      const statusContainerCss = {
-        position: "fixed",
-        bottom: "20px",
-        right: "100px",
-        backgroundColor: "rgba(0, 0, 0, 0.75)",
-        color: "#ffffff",
-        padding: "12px 16px",
-        borderRadius: "8px",
-        fontSize: "14px",
-        lineHeight: "1.4",
-        zIndex: "1001",
-        fontFamily: "Arial, sans-serif",
-        boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)",
-        minWidth: "220px",
-        textAlign: "left",
-      };
-
-      const ensureStatusDisplayElement = () => {
-        // Don't create or show status display if fabs reloader is active
-        if (!shouldContinueExecution()) {
-          return null;
-        }
-        
-        if (statusDisplayElement && document.body.contains(statusDisplayElement)) {
-          return statusDisplayElement;
-        }
-
-        statusDisplayElement = document.createElement("div");
-        statusDisplayElement.id = "farReloadStatus";
-        applyStyles(statusDisplayElement, statusContainerCss);
-        document.body.appendChild(statusDisplayElement);
-
-        if (!statusUpdateIntervalId) {
-          statusUpdateIntervalId = setInterval(() => {
-            // Don't update if fabs reloader is active
-            if (!shouldContinueExecution()) {
-              return;
-            }
-            // Only update if page is visible to save CPU when tab is in background
-            if (!document.hidden) {
-              updateStatusDisplay();
-            }
-          }, 1000);
-        }
-
-        return statusDisplayElement;
-      };
-
-      const formatCountdown = (milliseconds) => {
-        if (milliseconds <= 0) {
-          return "Imminent";
-        }
-        const totalSeconds = Math.ceil(milliseconds / 1000);
-        const minutes = Math.floor(totalSeconds / 60);
-        const seconds = totalSeconds % 60;
-        const minutePart = minutes > 0 ? `${minutes}m ` : "";
-        const secondPart = `${seconds}s`;
-        return `${minutePart}${secondPart}`.trim();
-      };
-
-      const formatClockTime = (timestamp) => {
-        return new Date(timestamp).toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        });
-      };
-
-      const deriveNextReloadLabel = () => {
-        if (!autoReload) {
-          return "Paused";
-        }
-        if (!isOnline) {
-          return "Offline";
-        }
-        if (siteDomain !== "www.fiverr.com") {
-          return "Unavailable";
-        }
-        if (!Array.isArray(pageLinks) || pageLinks.length === 0) {
-          return "No pages configured";
-        }
-        if (!nextReloadTimestamp) {
-          return "Scheduling...";
-        }
-        const remaining = nextReloadTimestamp - Date.now();
-        const countdown = formatCountdown(remaining);
-        const clockTime = formatClockTime(nextReloadTimestamp);
-        return `${countdown} (${clockTime})`;
-      };
-
-      updateStatusDisplay = () => {
-        // Don't update status display if fabs reloader is active
-        if (!shouldContinueExecution()) {
-          removeStatusDisplay();
-          return;
-        }
-        
-        if (!document.body) {
-          return;
-        }
-
-        if (!autoReload) {
-          removeStatusDisplay();
-          return;
-        }
-
-        if (siteDomain !== "www.fiverr.com") {
-          removeStatusDisplay();
-          return;
-        }
-
-        const container = ensureStatusDisplayElement();
-        // If container is null (fabs detected), don't proceed
-        if (!container) {
-          return;
-        }
-        const nextReloadLabel = deriveNextReloadLabel();
-
-        container.textContent = "";
-
-        const reloadWrapper = document.createElement("div");
-        const reloadStrong = document.createElement("strong");
-        reloadStrong.textContent = "Reloads today:";
-        reloadWrapper.appendChild(reloadStrong);
-        reloadWrapper.appendChild(document.createTextNode(` ${reloadCount}`));
-
-        const nextWrapper = document.createElement("div");
-        const nextStrong = document.createElement("strong");
-        nextStrong.textContent = "Next reload:";
-        nextWrapper.appendChild(nextStrong);
-        nextWrapper.appendChild(document.createTextNode(` ${nextReloadLabel}`));
-
-        container.appendChild(reloadWrapper);
-        container.appendChild(nextWrapper);
-      };
-
-      pauseAutoReload = () => {
-        autoReload = false;
-        stopMonitoringTracking();
-        clearScheduledReload();
-        clearMessageCheckInterval();
-        stopMessageObserver();
-        removeStatusDisplay();
-        stopOfflineErrorChecking();
-        // Clear notification pause timeout if auto-reload is manually paused
-        if (notificationPauseTimeoutId) {
-          clearTimeout(notificationPauseTimeoutId);
-          notificationPauseTimeoutId = null;
-        }
-        // Clear any existing auto-reactivation timeout
-        if (autoReactivateTimeoutId) {
-          clearTimeout(autoReactivateTimeoutId);
-          autoReactivateTimeoutId = null;
-        }
-        // Save the stopped state to chrome.storage.local so it persists after page reload
-        if (extensionStorage) {
-          const reactivateTimestamp = Date.now() + AUTO_REACTIVATE_DELAY_MS;
-          extensionStorage.set({ 
-            autoReloadEnabled: false,
-            [AUTO_REACTIVATE_TIMESTAMP_KEY]: reactivateTimestamp
-          }).catch((error) => {
-            console.warn("Fiverr Assistant: Failed to save auto-reload stopped state", error);
+          elements.forEach((element) => {
+            element.scrollTop = element.scrollHeight;
           });
-          
-          // Set timeout to auto-reactivate after 1 minute
-          autoReactivateTimeoutId = setTimeout(() => {
-            autoReactivateTimeoutId = null;
-            if (!isF10Clicked && featuresInitialized) {
-              enableAutoReload();
-              console.log("Fiverr Assistant: Auto-reload auto-reactivated after 1 minute");
-            }
-            // Remove the timestamp from storage
-            if (extensionStorage) {
-              extensionStorage.remove(AUTO_REACTIVATE_TIMESTAMP_KEY).catch(() => {});
-            }
-          }, AUTO_REACTIVATE_DELAY_MS);
-          
-          console.log("Fiverr Assistant: Auto-reload paused, will auto-reactivate in 1 minute");
         }
-      };
 
-      // Redefine pauseAutoReloadForNotification to use local pauseAutoReload and enableAutoReload
-      pauseAutoReloadForNotification = () => {
-        // Clear any existing notification pause timeout
-        if (notificationPauseTimeoutId) {
-          clearTimeout(notificationPauseTimeoutId);
-          notificationPauseTimeoutId = null;
+        function getFormattedTime() {
+          const now = new Date();
+          const day = String(now.getDate()).padStart(2, "0");
+          const month = String(now.getMonth() + 1).padStart(2, "0");
+          const year = String(now.getFullYear()).slice(-2);
+          const hours = String(now.getHours()).padStart(2, "0");
+          const minutes = String(now.getMinutes()).padStart(2, "0");
+
+          return `${day}/${month}/${year} ${hours}:${minutes}`;
         }
-        
-        // Pause auto-reload
-        pauseAutoReload();
-        
-        // Resume after 5 minutes (300000 milliseconds)
-        notificationPauseTimeoutId = setTimeout(() => {
-          notificationPauseTimeoutId = null;
-          if (!isF10Clicked && featuresInitialized) {
-            enableAutoReload();
-            console.log("Fiverr Assistant: Auto-reload resumed after 5-minute notification pause");
+
+        const getRandomMiliSecond = (min, max) => {
+          if (typeof min !== "number" || typeof max !== "number") {
+            throw new Error("Both arguments must be numbers.");
           }
-        }, 300000); // 5 minutes
-        
-        console.log("Fiverr Assistant: Auto-reload paused for 5 minutes due to notification");
-      };
+          if (min > max) {
+            throw new Error(
+              "The first parameter must be less than or equal to the second parameter.",
+            );
+          }
 
-      enableAutoReload = () => {
-        // Check if fabs reloader is active - exit if detected
-        if (!shouldContinueExecution()) {
-          console.log('Fiverr Assistant: Cannot enable auto-reload - fabs fiverr reloader assistant is active');
-          return;
-        }
-        
-        autoReload = true;
-        isF10Clicked = false;
-        startMonitoringTracking();
-        ensureMessageCheckInterval();
-        scheduleNextReload();
-        updateStatusDisplay();
-        startOfflineErrorChecking();
-        // Clear auto-reactivation timeout if manually enabled before timeout
-        if (autoReactivateTimeoutId) {
-          clearTimeout(autoReactivateTimeoutId);
-          autoReactivateTimeoutId = null;
-        }
-        // Save the enabled state to chrome.storage.local so it persists after page reload
-        if (extensionStorage) {
-          extensionStorage.set({ 
-            autoReloadEnabled: true
-          }).then(() => {
-            // Remove reactivation timestamp if it exists
-            return extensionStorage.remove(AUTO_REACTIVATE_TIMESTAMP_KEY);
-          }).catch((error) => {
-            console.warn("Fiverr Assistant: Failed to save auto-reload enabled state", error);
+          return (Math.floor(Math.random() * (max - min + 1)) + min) * 1000;
+        };
+
+        const applyStyles = (element, styleObject) => {
+          for (let item in styleObject) {
+            element.style[item] = styleObject[item];
+          }
+        };
+
+        const statusContainerCss = {
+          position: "fixed",
+          bottom: "20px",
+          right: "100px",
+          backgroundColor: "rgba(0, 0, 0, 0.75)",
+          color: "#ffffff",
+          padding: "12px 16px",
+          borderRadius: "8px",
+          fontSize: "14px",
+          lineHeight: "1.4",
+          zIndex: "1001",
+          fontFamily: "Arial, sans-serif",
+          boxShadow: "0 4px 12px rgba(0, 0, 0, 0.3)",
+          minWidth: "220px",
+          textAlign: "left",
+        };
+
+        const ensureStatusDisplayElement = () => {
+          // Don't create or show status display if fabs reloader is active
+          if (!shouldContinueExecution()) {
+            return null;
+          }
+
+          if (
+            statusDisplayElement &&
+            document.body.contains(statusDisplayElement)
+          ) {
+            return statusDisplayElement;
+          }
+
+          statusDisplayElement = document.createElement("div");
+          statusDisplayElement.id = "farReloadStatus";
+          applyStyles(statusDisplayElement, statusContainerCss);
+          document.body.appendChild(statusDisplayElement);
+
+          if (!statusUpdateIntervalId) {
+            statusUpdateIntervalId = setInterval(() => {
+              // Don't update if fabs reloader is active
+              if (!shouldContinueExecution()) {
+                return;
+              }
+              // Only update if page is visible to save CPU when tab is in background
+              if (!document.hidden) {
+                updateStatusDisplay();
+              }
+            }, 1000);
+          }
+
+          return statusDisplayElement;
+        };
+
+        const formatCountdown = (milliseconds) => {
+          if (milliseconds <= 0) {
+            return "Imminent";
+          }
+          const totalSeconds = Math.ceil(milliseconds / 1000);
+          const minutes = Math.floor(totalSeconds / 60);
+          const seconds = totalSeconds % 60;
+          const minutePart = minutes > 0 ? `${minutes}m ` : "";
+          const secondPart = `${seconds}s`;
+          return `${minutePart}${secondPart}`.trim();
+        };
+
+        const formatClockTime = (timestamp) => {
+          return new Date(timestamp).toLocaleTimeString([], {
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
           });
-        }
-      };
+        };
 
-      // Helper function to check if any tabs in the current window are loading
-      const checkForLoadingTabs = () => {
-        return new Promise((resolve) => {
-          if (!runtime || !runtime.sendMessage) {
-            resolve(false);
+        const deriveNextReloadLabel = () => {
+          if (!autoReload) {
+            return "Paused";
+          }
+          if (!isOnline) {
+            return "Offline";
+          }
+          if (siteDomain !== "www.fiverr.com") {
+            return "Unavailable";
+          }
+          if (!Array.isArray(pageLinks) || pageLinks.length === 0) {
+            return "No pages configured";
+          }
+          if (!nextReloadTimestamp) {
+            return "Scheduling...";
+          }
+          const remaining = nextReloadTimestamp - Date.now();
+          const countdown = formatCountdown(remaining);
+          const clockTime = formatClockTime(nextReloadTimestamp);
+          return `${countdown} (${clockTime})`;
+        };
+
+        updateStatusDisplay = () => {
+          // Don't update status display if fabs reloader is active
+          if (!shouldContinueExecution()) {
+            removeStatusDisplay();
             return;
           }
 
-          try {
-            if (hasBrowserAPI && typeof runtime.sendMessage === "function" && runtime.sendMessage.length <= 2) {
-              // Firefox API - Promise-based
-              runtime.sendMessage({ type: "checkLoadingTabs" })
-                .then((response) => {
-                  if (response && typeof response.hasLoadingTabs === "boolean") {
-                    resolve(response.hasLoadingTabs);
-                  } else {
-                    resolve(false);
-                  }
-                })
-                .catch((error) => {
-                  console.warn("Fiverr Assistant: Error checking for loading tabs", error);
-                  resolve(false);
-                });
-            } else {
-              // Chrome API - Callback-based
-              runtime.sendMessage({ type: "checkLoadingTabs" }, (response) => {
-                if (chrome.runtime && chrome.runtime.lastError) {
-                  console.warn("Fiverr Assistant: Error checking for loading tabs", chrome.runtime.lastError);
-                  resolve(false);
-                  return;
-                }
-                if (response && typeof response.hasLoadingTabs === "boolean") {
-                  resolve(response.hasLoadingTabs);
-                } else {
-                  resolve(false);
-                }
-              });
-            }
-          } catch (error) {
-            console.warn("Fiverr Assistant: Error checking for loading tabs", error);
-            resolve(false);
+          if (!document.body) {
+            return;
           }
-        });
-      };
 
-      scheduleNextReload = () => {
-        // Check if fabs reloader is active - exit if detected
-        if (!shouldContinueExecution()) {
-          console.log('Fiverr Assistant: Cannot schedule reload - fabs fiverr reloader assistant is active');
-          return;
-        }
-        
-        clearScheduledReload({ updateDisplay: false, persist: false });
-
-        const finalizeWithoutSchedule = () => {
-          persistReloadState();
-          updateStatusDisplay();
-        };
-
-        console.log("Fiverr Assistant Content: scheduleNextReload called", {
-          autoReload: autoReload,
-          isOnline: isOnline,
-          siteDomain: siteDomain,
-          pageLinks: pageLinks,
-          pageLinksLength: Array.isArray(pageLinks) ? pageLinks.length : "not an array"
-        });
-
-        if (!autoReload || !isOnline) {
-          console.log("Fiverr Assistant Content: Not scheduling reload - autoReload:", autoReload, "isOnline:", isOnline);
-          finalizeWithoutSchedule();
-          return;
-        }
-
-        if (siteDomain !== "www.fiverr.com") {
-          console.log("Fiverr Assistant Content: Not scheduling reload - wrong domain:", siteDomain);
-          finalizeWithoutSchedule();
-          return;
-        }
-
-        if (!Array.isArray(pageLinks) || pageLinks.length === 0) {
-          console.log("Fiverr Assistant Content: Not scheduling reload - pageLinks empty or invalid", pageLinks);
-          finalizeWithoutSchedule();
-          return;
-        }
-        
-        console.log("Fiverr Assistant Content: Scheduling next reload with pageLinks:", pageLinks);
-
-        // If a valid future timestamp exists (from storage), use it; otherwise generate new delay
-        let delay;
-        if (nextReloadTimestamp && nextReloadTimestamp > Date.now()) {
-          delay = nextReloadTimestamp - Date.now();
-          console.log("Fiverr Assistant Content: Using stored reload timestamp, delay:", delay);
-        } else {
-          delay = getRandomMiliSecond(minReloadingSecond, maxReloadingSecond);
-          nextReloadTimestamp = Date.now() + delay;
-          console.log("Fiverr Assistant Content: Generated new reload delay:", delay);
-        }
-        persistReloadState();
-        // Notify background immediately to schedule enforced reload (avoids missed storage.onChanged)
-        try {
-          if (runtime && typeof runtime.sendMessage === 'function') {
-            // Firefox returns a Promise for sendMessage; Chrome uses callback
-            try {
-              const result = runtime.sendMessage({ type: 'scheduleEnforcedReload', timestamp: nextReloadTimestamp });
-              if (result && typeof result.then === 'function') {
-                result.catch(() => {});
-              }
-            } catch (err) {
-              // Fallback for callback-style APIs
-              try {
-                runtime.sendMessage({ type: 'scheduleEnforcedReload', timestamp: nextReloadTimestamp }, () => {});
-              } catch (_) {}
-            }
-          }
-        } catch (_) {}
-        updateStatusDisplay();
-
-        nextReloadTimeoutId = setTimeout(() => {
-          nextReloadTimeoutId = null;
-
-          if (!autoReload || !isOnline) {
-            scheduleNextReload();
+          if (!autoReload) {
+            removeStatusDisplay();
             return;
           }
 
           if (siteDomain !== "www.fiverr.com") {
-            scheduleNextReload();
+            removeStatusDisplay();
+            return;
+          }
+
+          const container = ensureStatusDisplayElement();
+          // If container is null (fabs detected), don't proceed
+          if (!container) {
+            return;
+          }
+          const nextReloadLabel = deriveNextReloadLabel();
+
+          container.textContent = "";
+
+          const reloadWrapper = document.createElement("div");
+          const reloadStrong = document.createElement("strong");
+          reloadStrong.textContent = "Reloads today:";
+          reloadWrapper.appendChild(reloadStrong);
+          reloadWrapper.appendChild(document.createTextNode(` ${reloadCount}`));
+
+          const nextWrapper = document.createElement("div");
+          const nextStrong = document.createElement("strong");
+          nextStrong.textContent = "Next reload:";
+          nextWrapper.appendChild(nextStrong);
+          nextWrapper.appendChild(
+            document.createTextNode(` ${nextReloadLabel}`),
+          );
+
+          container.appendChild(reloadWrapper);
+          container.appendChild(nextWrapper);
+        };
+
+        pauseAutoReload = () => {
+          autoReload = false;
+          stopMonitoringTracking();
+          clearScheduledReload();
+          clearMessageCheckInterval();
+          stopMessageObserver();
+          removeStatusDisplay();
+          stopOfflineErrorChecking();
+          // Clear notification pause timeout if auto-reload is manually paused
+          if (notificationPauseTimeoutId) {
+            clearTimeout(notificationPauseTimeoutId);
+            notificationPauseTimeoutId = null;
+          }
+          // Clear any existing auto-reactivation timeout
+          if (autoReactivateTimeoutId) {
+            clearTimeout(autoReactivateTimeoutId);
+            autoReactivateTimeoutId = null;
+          }
+          // Save the stopped state to chrome.storage.local so it persists after page reload
+          if (extensionStorage) {
+            const reactivateTimestamp = Date.now() + AUTO_REACTIVATE_DELAY_MS;
+            extensionStorage
+              .set({
+                autoReloadEnabled: false,
+                [AUTO_REACTIVATE_TIMESTAMP_KEY]: reactivateTimestamp,
+              })
+              .catch((error) => {
+                console.warn(
+                  "Fiverr Assistant: Failed to save auto-reload stopped state",
+                  error,
+                );
+              });
+
+            // Set timeout to auto-reactivate after 1 minute
+            autoReactivateTimeoutId = setTimeout(() => {
+              autoReactivateTimeoutId = null;
+              if (!isF10Clicked && featuresInitialized) {
+                enableAutoReload();
+                console.log(
+                  "Fiverr Assistant: Auto-reload auto-reactivated after 1 minute",
+                );
+              }
+              // Remove the timestamp from storage
+              if (extensionStorage) {
+                extensionStorage
+                  .remove(AUTO_REACTIVATE_TIMESTAMP_KEY)
+                  .catch(() => {});
+              }
+            }, AUTO_REACTIVATE_DELAY_MS);
+
+            console.log(
+              "Fiverr Assistant: Auto-reload paused, will auto-reactivate in 1 minute",
+            );
+          }
+        };
+
+        // Redefine pauseAutoReloadForNotification to use local pauseAutoReload and enableAutoReload
+        pauseAutoReloadForNotification = () => {
+          // Clear any existing notification pause timeout
+          if (notificationPauseTimeoutId) {
+            clearTimeout(notificationPauseTimeoutId);
+            notificationPauseTimeoutId = null;
+          }
+
+          // Pause auto-reload
+          pauseAutoReload();
+
+          // Resume after 5 minutes (300000 milliseconds)
+          notificationPauseTimeoutId = setTimeout(() => {
+            notificationPauseTimeoutId = null;
+            if (!isF10Clicked && featuresInitialized) {
+              enableAutoReload();
+              console.log(
+                "Fiverr Assistant: Auto-reload resumed after 5-minute notification pause",
+              );
+            }
+          }, 300000); // 5 minutes
+
+          console.log(
+            "Fiverr Assistant: Auto-reload paused for 5 minutes due to notification",
+          );
+        };
+
+        enableAutoReload = () => {
+          // Check if fabs reloader is active - exit if detected
+          if (!shouldContinueExecution()) {
+            console.log(
+              "Fiverr Assistant: Cannot enable auto-reload - fabs fiverr reloader assistant is active",
+            );
+            return;
+          }
+
+          autoReload = true;
+          isF10Clicked = false;
+          startMonitoringTracking();
+          ensureMessageCheckInterval();
+          scheduleNextReload();
+          updateStatusDisplay();
+          startOfflineErrorChecking();
+          // Clear auto-reactivation timeout if manually enabled before timeout
+          if (autoReactivateTimeoutId) {
+            clearTimeout(autoReactivateTimeoutId);
+            autoReactivateTimeoutId = null;
+          }
+          // Save the enabled state to chrome.storage.local so it persists after page reload
+          if (extensionStorage) {
+            extensionStorage
+              .set({
+                autoReloadEnabled: true,
+              })
+              .then(() => {
+                // Remove reactivation timestamp if it exists
+                return extensionStorage.remove(AUTO_REACTIVATE_TIMESTAMP_KEY);
+              })
+              .catch((error) => {
+                console.warn(
+                  "Fiverr Assistant: Failed to save auto-reload enabled state",
+                  error,
+                );
+              });
+          }
+        };
+
+        // Helper function to check if any tabs in the current window are loading
+        const checkForLoadingTabs = () => {
+          return new Promise((resolve) => {
+            if (!runtime || !runtime.sendMessage) {
+              resolve(false);
+              return;
+            }
+
+            try {
+              if (
+                hasBrowserAPI &&
+                typeof runtime.sendMessage === "function" &&
+                runtime.sendMessage.length <= 2
+              ) {
+                // Firefox API - Promise-based
+                runtime
+                  .sendMessage({ type: "checkLoadingTabs" })
+                  .then((response) => {
+                    if (
+                      response &&
+                      typeof response.hasLoadingTabs === "boolean"
+                    ) {
+                      resolve(response.hasLoadingTabs);
+                    } else {
+                      resolve(false);
+                    }
+                  })
+                  .catch((error) => {
+                    console.warn(
+                      "Fiverr Assistant: Error checking for loading tabs",
+                      error,
+                    );
+                    resolve(false);
+                  });
+              } else {
+                // Chrome API - Callback-based
+                runtime.sendMessage(
+                  { type: "checkLoadingTabs" },
+                  (response) => {
+                    if (chrome.runtime && chrome.runtime.lastError) {
+                      console.warn(
+                        "Fiverr Assistant: Error checking for loading tabs",
+                        chrome.runtime.lastError,
+                      );
+                      resolve(false);
+                      return;
+                    }
+                    if (
+                      response &&
+                      typeof response.hasLoadingTabs === "boolean"
+                    ) {
+                      resolve(response.hasLoadingTabs);
+                    } else {
+                      resolve(false);
+                    }
+                  },
+                );
+              }
+            } catch (error) {
+              console.warn(
+                "Fiverr Assistant: Error checking for loading tabs",
+                error,
+              );
+              resolve(false);
+            }
+          });
+        };
+
+        scheduleNextReload = () => {
+          // Check if fabs reloader is active - exit if detected
+          if (!shouldContinueExecution()) {
+            console.log(
+              "Fiverr Assistant: Cannot schedule reload - fabs fiverr reloader assistant is active",
+            );
+            return;
+          }
+
+          clearScheduledReload({ updateDisplay: false, persist: false });
+
+          const finalizeWithoutSchedule = () => {
+            persistReloadState();
+            updateStatusDisplay();
+          };
+
+          console.log("Fiverr Assistant Content: scheduleNextReload called", {
+            autoReload: autoReload,
+            isOnline: isOnline,
+            siteDomain: siteDomain,
+            pageLinks: pageLinks,
+            pageLinksLength: Array.isArray(pageLinks)
+              ? pageLinks.length
+              : "not an array",
+          });
+
+          if (!autoReload || !isOnline) {
+            console.log(
+              "Fiverr Assistant Content: Not scheduling reload - autoReload:",
+              autoReload,
+              "isOnline:",
+              isOnline,
+            );
+            finalizeWithoutSchedule();
+            return;
+          }
+
+          if (siteDomain !== "www.fiverr.com") {
+            console.log(
+              "Fiverr Assistant Content: Not scheduling reload - wrong domain:",
+              siteDomain,
+            );
+            finalizeWithoutSchedule();
             return;
           }
 
           if (!Array.isArray(pageLinks) || pageLinks.length === 0) {
-            scheduleNextReload();
+            console.log(
+              "Fiverr Assistant Content: Not scheduling reload - pageLinks empty or invalid",
+              pageLinks,
+            );
+            finalizeWithoutSchedule();
             return;
           }
 
-          const diffInSecond = (Date.now() - lastAction) / 1000;
-          if (diffInSecond <= MIN_SECONDS_BETWEEN_ACTION_AND_RELOAD) {
-            scheduleNextReload();
-            return;
-          }
+          console.log(
+            "Fiverr Assistant Content: Scheduling next reload with pageLinks:",
+            pageLinks,
+          );
 
-          const nowTs = Date.now();
-          if (isFiverrInboxPage() && nowTs < inboxUserActivityReloadBlockedUntil) {
-            scheduleNextReload();
-            return;
+          // If a valid future timestamp exists (from storage), use it; otherwise generate new delay
+          let delay;
+          if (nextReloadTimestamp && nextReloadTimestamp > Date.now()) {
+            delay = nextReloadTimestamp - Date.now();
+            console.log(
+              "Fiverr Assistant Content: Using stored reload timestamp, delay:",
+              delay,
+            );
+          } else {
+            delay = getRandomMiliSecond(minReloadingSecond, maxReloadingSecond);
+            nextReloadTimestamp = Date.now() + delay;
+            console.log(
+              "Fiverr Assistant Content: Generated new reload delay:",
+              delay,
+            );
           }
+          persistReloadState();
+          // Notify background immediately to schedule enforced reload (avoids missed storage.onChanged)
+          try {
+            if (runtime && typeof runtime.sendMessage === "function") {
+              // Firefox returns a Promise for sendMessage; Chrome uses callback
+              try {
+                const result = runtime.sendMessage({
+                  type: "scheduleEnforcedReload",
+                  timestamp: nextReloadTimestamp,
+                });
+                if (result && typeof result.then === "function") {
+                  result.catch(() => {});
+                }
+              } catch (err) {
+                // Fallback for callback-style APIs
+                try {
+                  runtime.sendMessage(
+                    {
+                      type: "scheduleEnforcedReload",
+                      timestamp: nextReloadTimestamp,
+                    },
+                    () => {},
+                  );
+                } catch (_) {}
+              }
+            }
+          } catch (_) {}
+          updateStatusDisplay();
 
-          // Check if any other tabs in the current window are loading
-          checkForLoadingTabs().then((hasLoadingTabs) => {
-            if (hasLoadingTabs) {
-              console.log("Fiverr Assistant: Other tabs are loading, rescheduling reload instead of reloading now");
+          nextReloadTimeoutId = setTimeout(() => {
+            nextReloadTimeoutId = null;
+
+            if (!autoReload || !isOnline) {
               scheduleNextReload();
               return;
             }
 
-            // No tabs are loading, proceed with reload
-            // Pick a random target from pageLinks but prefer a different page than the current one
-            const fallbackLink = "/users/" + (getVal("profileUsername") || "") + "/seller_dashboard";
-            const candidates = Array.isArray(pageLinks) && pageLinks.length > 0 ? pageLinks.slice() : [fallbackLink];
-
-            const normalizeToAbsolute = (candidate) => {
-              if (!candidate || typeof candidate !== 'string') return null;
-              const trimmed = candidate.trim();
-              if (/^https?:\/\//i.test(trimmed)) {
-                return trimmed;
-              }
-              // ensure it starts with a single slash
-              if (!trimmed.startsWith('/')) {
-                return 'https://www.fiverr.com/' + trimmed.replace(/^\/+/, '');
-              }
-              return 'https://www.fiverr.com' + trimmed;
-            };
-
-            const currentNormalized = (window.location.href || '').replace(/#.*$/, '').replace(/\/?$/, '');
-
-            let newLink = null;
-            // Try to pick a different page up to N attempts
-            const maxAttempts = Math.max(3, candidates.length);
-            for (let attempt = 0; attempt < maxAttempts; attempt++) {
-              const idx = Math.floor(Math.random() * candidates.length);
-              const candidate = candidates[idx] || fallbackLink;
-              const abs = normalizeToAbsolute(candidate);
-              if (!abs) continue;
-              const absNormalized = abs.replace(/#.*$/, '').replace(/\/?$/, '');
-              if (absNormalized !== currentNormalized) {
-                newLink = abs;
-                break;
-              }
-              // If only one candidate equals current, try another; otherwise we'll accept it after attempts
+            if (siteDomain !== "www.fiverr.com") {
+              scheduleNextReload();
+              return;
             }
 
-            // If still null, fall back to the first candidate (may be same as current)
-            if (!newLink) {
-              newLink = normalizeToAbsolute(candidates[0] || fallbackLink);
+            if (!Array.isArray(pageLinks) || pageLinks.length === 0) {
+              scheduleNextReload();
+              return;
             }
 
-            // Check if we need to reset for a new day before incrementing
-            checkAndResetDailyCount();
-            reloadCount += 1;
-            nextReloadTimestamp = null;
-            persistReloadState();
-            updateStatusDisplay();
-            markPrimaryNavigation();
-            // Append reload log (timestamp + url) into extension storage (farReloadLogs)
-            try {
-              if (extensionStorage && typeof extensionStorage.get === 'function' && typeof extensionStorage.set === 'function') {
-                extensionStorage.get('farReloadLogs').then((res) => {
-                  const existing = (res && res.farReloadLogs) ? res.farReloadLogs : [];
-                  const entry = { ts: Date.now(), url: newLink };
-                  existing.push(entry);
-                  const MAX_LOGS = 500;
-                  const trimmed = existing.slice(-MAX_LOGS);
-                  extensionStorage.set({ farReloadLogs: trimmed }).catch(()=>{});
-                }).catch(()=>{});
-              }
-            } catch (err) {
-              // ignore storage errors
+            const diffInSecond = (Date.now() - lastAction) / 1000;
+            if (diffInSecond <= MIN_SECONDS_BETWEEN_ACTION_AND_RELOAD) {
+              scheduleNextReload();
+              return;
             }
-            try {
-              console.log('Fiverr Assistant Content: Navigating to', newLink);
-              // Ask background to enforce this navigation now as a backup
-              try {
-                if (runtime && typeof runtime.sendMessage === 'function') {
-                  try {
-                    const res = runtime.sendMessage({ type: 'performEnforcedReloadNow', url: newLink });
-                    if (res && typeof res.then === 'function') res.catch(() => {});
-                  } catch (err) {
-                    try { runtime.sendMessage({ type: 'performEnforcedReloadNow', url: newLink }, () => {}); } catch (_) {}
+
+            const nowTs = Date.now();
+            if (
+              isFiverrInboxPage() &&
+              nowTs < inboxUserActivityReloadBlockedUntil
+            ) {
+              scheduleNextReload();
+              return;
+            }
+
+            // Check if any other tabs in the current window are loading
+            checkForLoadingTabs()
+              .then((hasLoadingTabs) => {
+                if (hasLoadingTabs) {
+                  console.log(
+                    "Fiverr Assistant: Other tabs are loading, rescheduling reload instead of reloading now",
+                  );
+                  scheduleNextReload();
+                  return;
+                }
+
+                // No tabs are loading, proceed with reload
+                // Pick a random target from pageLinks but prefer a different page than the current one
+                const fallbackLink =
+                  "/users/" +
+                  (getVal("profileUsername") || "") +
+                  "/seller_dashboard";
+                const candidates =
+                  Array.isArray(pageLinks) && pageLinks.length > 0
+                    ? pageLinks.slice()
+                    : [fallbackLink];
+
+                const normalizeToAbsolute = (candidate) => {
+                  if (!candidate || typeof candidate !== "string") return null;
+                  const trimmed = candidate.trim();
+                  if (/^https?:\/\//i.test(trimmed)) {
+                    return trimmed;
                   }
-                }
-              } catch (_) {}
-              window.location.href = newLink;
-            } catch (e) {
-              console.warn('Fiverr Assistant: failed to navigate to newLink, falling back to reload', e, newLink);
-              try {
-                // Log the intended reload even when navigation fails
-                if (extensionStorage && typeof extensionStorage.get === 'function' && typeof extensionStorage.set === 'function') {
-                  extensionStorage.get('farReloadLogs').then((res) => {
-                    const existing = (res && res.farReloadLogs) ? res.farReloadLogs : [];
-                    const entry = { ts: Date.now(), url: newLink };
-                    existing.push(entry);
-                    const MAX_LOGS = 500;
-                    const trimmed = existing.slice(-MAX_LOGS);
-                    extensionStorage.set({ farReloadLogs: trimmed }).catch(()=>{});
-                  }).catch(()=>{});
-                }
-              } catch (_) {}
-              try {
-                if (runtime && typeof runtime.sendMessage === 'function') {
-                  try {
-                    const res2 = runtime.sendMessage({ type: 'performEnforcedReloadNow', url: newLink });
-                    if (res2 && typeof res2.then === 'function') res2.catch(() => {});
-                  } catch (_) {
-                    try { runtime.sendMessage({ type: 'performEnforcedReloadNow', url: newLink }, () => {}); } catch (_) {}
+                  // ensure it starts with a single slash
+                  if (!trimmed.startsWith("/")) {
+                    return (
+                      "https://www.fiverr.com/" + trimmed.replace(/^\/+/, "")
+                    );
                   }
+                  return "https://www.fiverr.com" + trimmed;
+                };
+
+                const currentNormalized = (window.location.href || "")
+                  .replace(/#.*$/, "")
+                  .replace(/\/?$/, "");
+
+                let newLink = null;
+                // Try to pick a different page up to N attempts
+                const maxAttempts = Math.max(3, candidates.length);
+                for (let attempt = 0; attempt < maxAttempts; attempt++) {
+                  const idx = Math.floor(Math.random() * candidates.length);
+                  const candidate = candidates[idx] || fallbackLink;
+                  const abs = normalizeToAbsolute(candidate);
+                  if (!abs) continue;
+                  const absNormalized = abs
+                    .replace(/#.*$/, "")
+                    .replace(/\/?$/, "");
+                  if (absNormalized !== currentNormalized) {
+                    newLink = abs;
+                    break;
+                  }
+                  // If only one candidate equals current, try another; otherwise we'll accept it after attempts
                 }
-              } catch (_) {}
-              try { window.location.reload(); } catch (_) {}
-            }
-          }).catch((error) => {
-            console.warn("Fiverr Assistant: Error checking for loading tabs, proceeding with reload", error);
-            // If check fails, proceed with reload to avoid blocking
-            const randomInt = Math.floor(Math.random() * pageLinks.length);
-            const fallbackLink = "/users/" + (getVal("profileUsername") || "") + "/seller_dashboard";
-            const goToLink = pageLinks[randomInt] || fallbackLink;
-            const newLink = new URL("https://www.fiverr.com" + goToLink).toString();
 
-            checkAndResetDailyCount();
-            reloadCount += 1;
-            nextReloadTimestamp = null;
-            persistReloadState();
-            updateStatusDisplay();
-            markPrimaryNavigation();
-            try {
-              if (extensionStorage && typeof extensionStorage.get === 'function' && typeof extensionStorage.set === 'function') {
-                extensionStorage.get('farReloadLogs').then((res) => {
-                  const existing = (res && res.farReloadLogs) ? res.farReloadLogs : [];
-                  const entry = { ts: Date.now(), url: newLink };
-                  existing.push(entry);
-                  const MAX_LOGS = 500;
-                  const trimmed = existing.slice(-MAX_LOGS);
-                  extensionStorage.set({ farReloadLogs: trimmed }).catch(()=>{});
-                }).catch(()=>{});
-              }
-            } catch (err) {
-              // ignore
-            }
-            window.location.href = newLink;
-          });
-        }, delay);
-      };
+                // If still null, fall back to the first candidate (may be same as current)
+                if (!newLink) {
+                  newLink = normalizeToAbsolute(candidates[0] || fallbackLink);
+                }
 
-      updateStatusDisplay();
+                // Check if we need to reset for a new day before incrementing
+                checkAndResetDailyCount();
+                reloadCount += 1;
+                nextReloadTimestamp = null;
+                persistReloadState();
+                updateStatusDisplay();
+                markPrimaryNavigation();
+                // Append reload log (timestamp + url) into extension storage (farReloadLogs)
+                try {
+                  if (
+                    extensionStorage &&
+                    typeof extensionStorage.get === "function" &&
+                    typeof extensionStorage.set === "function"
+                  ) {
+                    extensionStorage
+                      .get("farReloadLogs")
+                      .then((res) => {
+                        const existing =
+                          res && res.farReloadLogs ? res.farReloadLogs : [];
+                        const entry = { ts: Date.now(), url: newLink };
+                        existing.push(entry);
+                        const MAX_LOGS = 500;
+                        const trimmed = existing.slice(-MAX_LOGS);
+                        extensionStorage
+                          .set({ farReloadLogs: trimmed })
+                          .catch(() => {});
+                      })
+                      .catch(() => {});
+                  }
+                } catch (err) {
+                  // ignore storage errors
+                }
+                try {
+                  console.log(
+                    "Fiverr Assistant Content: Navigating to",
+                    newLink,
+                  );
+                  // Ask background to enforce this navigation now as a backup
+                  try {
+                    if (runtime && typeof runtime.sendMessage === "function") {
+                      try {
+                        const res = runtime.sendMessage({
+                          type: "performEnforcedReloadNow",
+                          url: newLink,
+                        });
+                        if (res && typeof res.then === "function")
+                          res.catch(() => {});
+                      } catch (err) {
+                        try {
+                          runtime.sendMessage(
+                            { type: "performEnforcedReloadNow", url: newLink },
+                            () => {},
+                          );
+                        } catch (_) {}
+                      }
+                    }
+                  } catch (_) {}
+                  window.location.href = newLink;
+                } catch (e) {
+                  console.warn(
+                    "Fiverr Assistant: failed to navigate to newLink, falling back to reload",
+                    e,
+                    newLink,
+                  );
+                  try {
+                    // Log the intended reload even when navigation fails
+                    if (
+                      extensionStorage &&
+                      typeof extensionStorage.get === "function" &&
+                      typeof extensionStorage.set === "function"
+                    ) {
+                      extensionStorage
+                        .get("farReloadLogs")
+                        .then((res) => {
+                          const existing =
+                            res && res.farReloadLogs ? res.farReloadLogs : [];
+                          const entry = { ts: Date.now(), url: newLink };
+                          existing.push(entry);
+                          const MAX_LOGS = 500;
+                          const trimmed = existing.slice(-MAX_LOGS);
+                          extensionStorage
+                            .set({ farReloadLogs: trimmed })
+                            .catch(() => {});
+                        })
+                        .catch(() => {});
+                    }
+                  } catch (_) {}
+                  try {
+                    if (runtime && typeof runtime.sendMessage === "function") {
+                      try {
+                        const res2 = runtime.sendMessage({
+                          type: "performEnforcedReloadNow",
+                          url: newLink,
+                        });
+                        if (res2 && typeof res2.then === "function")
+                          res2.catch(() => {});
+                      } catch (_) {
+                        try {
+                          runtime.sendMessage(
+                            { type: "performEnforcedReloadNow", url: newLink },
+                            () => {},
+                          );
+                        } catch (_) {}
+                      }
+                    }
+                  } catch (_) {}
+                  try {
+                    window.location.reload();
+                  } catch (_) {}
+                }
+              })
+              .catch((error) => {
+                console.warn(
+                  "Fiverr Assistant: Error checking for loading tabs, proceeding with reload",
+                  error,
+                );
+                // If check fails, proceed with reload to avoid blocking
+                const randomInt = Math.floor(Math.random() * pageLinks.length);
+                const fallbackLink =
+                  "/users/" +
+                  (getVal("profileUsername") || "") +
+                  "/seller_dashboard";
+                const goToLink = pageLinks[randomInt] || fallbackLink;
+                const newLink = new URL(
+                  "https://www.fiverr.com" + goToLink,
+                ).toString();
 
-
-      playAudio = async (type) => {
-        const settingKey = SOUND_TYPE_TO_SETTING_KEY[type] || SOUND_TYPE_TO_SETTING_KEY.default;
-        const configuredUrl = getVal(settingKey) || settings[settingKey] || defaultSettings[settingKey] || "";
-        const normalizedUrl = normalizeUrl(configuredUrl);
-        
-        console.log("Fiverr Assistant: playAudio called", {
-          type,
-          settingKey,
-          configuredUrl: configuredUrl ? configuredUrl.substring(0, 100) : "empty",
-          normalizedUrl: normalizedUrl ? normalizedUrl.substring(0, 100) : "empty",
-          fromLocalStorage: getVal(settingKey) || "not found",
-          fromSettings: settings[settingKey] || "not found",
-          fromDefaults: defaultSettings[settingKey] || "not found"
-        });
-        
-        // If targeted sound is requested but URL is empty, warn but still try to play
-        if (type === "targeted" && !normalizedUrl) {
-          console.warn("Fiverr Assistant: WARNING - Targeted client sound URL is not configured! Please set it in the Sounds tab.");
-        }
-
-        let audioSource = configuredUrl;
-        let objectUrl = null;
-        let blobFromCache = null;
-
-        // Always try to use IndexedDB cache first for notifications
-        if (supportsIndexedDB && normalizedUrl) {
-          try {
-            // First, try to get from cache
-            blobFromCache = await getCachedAudioBlobForUrl(settingKey, normalizedUrl);
-            
-            // If not in cache, fetch and save it to IndexedDB before playing
-            if (!blobFromCache) {
-              console.log("Fiverr Assistant: Audio not in IndexedDB cache, fetching and saving before playing", {
-                settingKey,
-                sourceUrl: normalizedUrl,
+                checkAndResetDailyCount();
+                reloadCount += 1;
+                nextReloadTimestamp = null;
+                persistReloadState();
+                updateStatusDisplay();
+                markPrimaryNavigation();
+                try {
+                  if (
+                    extensionStorage &&
+                    typeof extensionStorage.get === "function" &&
+                    typeof extensionStorage.set === "function"
+                  ) {
+                    extensionStorage
+                      .get("farReloadLogs")
+                      .then((res) => {
+                        const existing =
+                          res && res.farReloadLogs ? res.farReloadLogs : [];
+                        const entry = { ts: Date.now(), url: newLink };
+                        existing.push(entry);
+                        const MAX_LOGS = 500;
+                        const trimmed = existing.slice(-MAX_LOGS);
+                        extensionStorage
+                          .set({ farReloadLogs: trimmed })
+                          .catch(() => {});
+                      })
+                      .catch(() => {});
+                  }
+                } catch (err) {
+                  // ignore
+                }
+                window.location.href = newLink;
               });
-              blobFromCache = await ensureAudioBlob(settingKey, normalizedUrl);
-              
-              if (blobFromCache) {
-                console.info("Fiverr Assistant: Audio fetched and saved to IndexedDB, now playing from cache", {
+          }, delay);
+        };
+
+        updateStatusDisplay();
+
+        playAudio = async (type) => {
+          const settingKey =
+            SOUND_TYPE_TO_SETTING_KEY[type] ||
+            SOUND_TYPE_TO_SETTING_KEY.default;
+          const configuredUrl =
+            getVal(settingKey) ||
+            settings[settingKey] ||
+            defaultSettings[settingKey] ||
+            "";
+          const normalizedUrl = normalizeUrl(configuredUrl);
+
+          console.log("Fiverr Assistant: playAudio called", {
+            type,
+            settingKey,
+            configuredUrl: configuredUrl
+              ? configuredUrl.substring(0, 100)
+              : "empty",
+            normalizedUrl: normalizedUrl
+              ? normalizedUrl.substring(0, 100)
+              : "empty",
+            fromLocalStorage: getVal(settingKey) || "not found",
+            fromSettings: settings[settingKey] || "not found",
+            fromDefaults: defaultSettings[settingKey] || "not found",
+          });
+
+          // If targeted sound is requested but URL is empty, warn but still try to play
+          if (type === "targeted" && !normalizedUrl) {
+            console.warn(
+              "Fiverr Assistant: WARNING - Targeted client sound URL is not configured! Please set it in the Sounds tab.",
+            );
+          }
+
+          let audioSource = configuredUrl;
+          let objectUrl = null;
+          let blobFromCache = null;
+
+          // Always try to use IndexedDB cache first for notifications
+          if (supportsIndexedDB && normalizedUrl) {
+            try {
+              // First, try to get from cache
+              blobFromCache = await getCachedAudioBlobForUrl(
+                settingKey,
+                normalizedUrl,
+              );
+
+              // If not in cache, fetch and save it to IndexedDB before playing
+              if (!blobFromCache) {
+                console.log(
+                  "Fiverr Assistant: Audio not in IndexedDB cache, fetching and saving before playing",
+                  {
+                    settingKey,
+                    sourceUrl: normalizedUrl,
+                  },
+                );
+                blobFromCache = await ensureAudioBlob(
                   settingKey,
-                  sourceUrl: normalizedUrl,
-                  blobSize: blobFromCache.size,
-                });
+                  normalizedUrl,
+                );
+
+                if (blobFromCache) {
+                  console.info(
+                    "Fiverr Assistant: Audio fetched and saved to IndexedDB, now playing from cache",
+                    {
+                      settingKey,
+                      sourceUrl: normalizedUrl,
+                      blobSize: blobFromCache.size,
+                    },
+                  );
+                } else {
+                  console.warn(
+                    "Fiverr Assistant: Failed to fetch and cache audio, will play from URL",
+                    {
+                      settingKey,
+                      sourceUrl: normalizedUrl,
+                    },
+                  );
+                }
               } else {
-                console.warn("Fiverr Assistant: Failed to fetch and cache audio, will play from URL", {
+                console.info(
+                  "Fiverr Assistant: Playing notification sound from IndexedDB cache",
+                  {
+                    settingKey,
+                    sourceUrl: normalizedUrl,
+                    blobSize: blobFromCache.size,
+                  },
+                );
+              }
+            } catch (error) {
+              console.warn(
+                "Fiverr Assistant: Error loading audio from IndexedDB cache, falling back to URL",
+                {
                   settingKey,
                   sourceUrl: normalizedUrl,
-                });
-              }
-            } else {
-              console.info("Fiverr Assistant: Playing notification sound from IndexedDB cache", {
+                  error: error.message,
+                },
+              );
+            }
+          } else if (supportsIndexedDB && !normalizedUrl) {
+            try {
+              await deleteCachedAudioRecord(settingKey);
+            } catch (error) {
+              console.warn(
+                "Fiverr Auto Reloader: failed to clear cached audio",
+                error,
+              );
+            }
+          }
+
+          // Use cached blob if available, otherwise fall back to URL
+          if (blobFromCache instanceof Blob) {
+            objectUrl = URL.createObjectURL(blobFromCache);
+            audioSource = objectUrl;
+            console.info(
+              "Fiverr Assistant: Using IndexedDB cached audio for notification",
+              {
                 settingKey,
                 sourceUrl: normalizedUrl,
                 blobSize: blobFromCache.size,
-              });
-            }
-          } catch (error) {
-            console.warn("Fiverr Assistant: Error loading audio from IndexedDB cache, falling back to URL", {
-              settingKey,
-              sourceUrl: normalizedUrl,
-              error: error.message,
-            });
-          }
-        } else if (supportsIndexedDB && !normalizedUrl) {
-          try {
-            await deleteCachedAudioRecord(settingKey);
-          } catch (error) {
-            console.warn("Fiverr Auto Reloader: failed to clear cached audio", error);
-          }
-        }
-
-        // Use cached blob if available, otherwise fall back to URL
-        if (blobFromCache instanceof Blob) {
-          objectUrl = URL.createObjectURL(blobFromCache);
-          audioSource = objectUrl;
-          console.info("Fiverr Assistant: Using IndexedDB cached audio for notification", {
-            settingKey,
-            sourceUrl: normalizedUrl,
-            blobSize: blobFromCache.size,
-          });
-        } else if (supportsIndexedDB && normalizedUrl) {
-          // If we couldn't get from cache but have a URL, try to cache it in background for next time
-          ensureAudioBlob(settingKey, normalizedUrl).catch(() => {});
-          console.info("Fiverr Assistant: Playing notification sound from URL (cache unavailable)", {
-            settingKey,
-            sourceUrl: normalizedUrl,
-          });
-        }
-
-        if (!audioSource) {
-          console.warn(`Fiverr Auto Reloader: no audio source configured for ${settingKey}`);
-          return Promise.resolve();
-        }
-
-        const audio = new Audio(audioSource);
-
-        let cleanedUp = false;
-        const cleanup = () => {
-          if (cleanedUp) {
-            return;
-          }
-          cleanedUp = true;
-          // Remove from tracking set
-          playingAudioElements.delete(audio);
-          if (objectUrl) {
-            URL.revokeObjectURL(objectUrl);
-          }
-          audio.removeEventListener("ended", cleanup);
-          audio.removeEventListener("error", cleanup);
-          audio.removeEventListener("pause", cleanup);
-        };
-
-        // Add event listeners for cleanup
-        audio.addEventListener("ended", cleanup);
-        audio.addEventListener("error", cleanup);
-        audio.addEventListener("pause", () => {
-          // Remove from tracking set when paused (but don't cleanup objectUrl yet in case it resumes)
-          playingAudioElements.delete(audio);
-        });
-
-        try {
-          const playPromise = audio.play();
-          if (playPromise && typeof playPromise.then === "function") {
-            // Modern browsers - play() returns a promise
-            playPromise.then(() => {
-              // Audio started playing successfully, add to tracking set
-              playingAudioElements.add(audio);
-            }).catch((error) => {
-              cleanup();
-              console.warn("Audio playback blocked:", error, {
+              },
+            );
+          } else if (supportsIndexedDB && normalizedUrl) {
+            // If we couldn't get from cache but have a URL, try to cache it in background for next time
+            ensureAudioBlob(settingKey, normalizedUrl).catch(() => {});
+            console.info(
+              "Fiverr Assistant: Playing notification sound from URL (cache unavailable)",
+              {
                 settingKey,
-                sourceUrl: normalizedUrl || configuredUrl,
-              });
-            });
-          } else {
-            // Older browsers or immediate play - add to tracking set
-            playingAudioElements.add(audio);
+                sourceUrl: normalizedUrl,
+              },
+            );
           }
-          // Log whether playing from cache or URL
-          if (objectUrl) {
-            console.info("Fiverr Assistant: Notification sound playing from IndexedDB cache", {
-              settingKey,
-              sourceUrl: normalizedUrl || configuredUrl,
-            });
-          } else {
-            console.info("Fiverr Assistant: Notification sound playing from URL (cache not available)", {
-              settingKey,
-              sourceUrl: normalizedUrl || configuredUrl,
-            });
+
+          if (!audioSource) {
+            console.warn(
+              `Fiverr Auto Reloader: no audio source configured for ${settingKey}`,
+            );
+            return Promise.resolve();
           }
-          return playPromise;
-        } catch (error) {
-          cleanup();
-          console.warn("Audio playback blocked:", error, {
-            settingKey,
-            sourceUrl: normalizedUrl || configuredUrl,
-          });
-          return Promise.reject(error);
-        }
-      };
 
-      document.body.addEventListener("click", () => {
-        // Don't process clicks if fabs reloader is active
-        if (!shouldContinueExecution()) {
-          return;
-        }
-        
-        lastAction = Date.now();
-        // Stop any playing notification sounds when user clicks
-        stopAllNotificationSounds();
-        if (autoReload) {
-          scheduleNextReload();
-        } else {
-          updateStatusDisplay();
-        }
-      });
+          const audio = new Audio(audioSource);
 
-      window.addEventListener("keydown", (event) => {
-        // Don't process keyboard events if fabs reloader is active
-        if (!shouldContinueExecution()) {
-          return;
-        }
-        
-        lastAction = Date.now();
-        // Stop any playing notification sounds when user presses any key
-        stopAllNotificationSounds();
-
-        if (event.code === "F8") {
-          pauseAutoReload();
-          // Check again before showing alert
-          if (shouldContinueExecution()) {
-            alert("Fiverr Auto Reloader Disabled For 15 Minutes");
-          }
-          setTimeout(() => {
-            if (!isF10Clicked && shouldContinueExecution()) {
-              enableAutoReload();
-            }
-          }, 900000);
-        }
-
-        if (event.code === "F10") {
-          // Check again before showing alert
-          if (shouldContinueExecution()) {
-            alert("Fiverr Auto Reloader Turned Off");
-          }
-          isF10Clicked = true;
-          pauseAutoReload();
-        }
-
-        if (event.code === "F6") {
-          // F6 key functionality removed - sendMail requires a target parameter
-        }
-
-        if (event.code === "F4") {
-          event.preventDefault();
-          const attemptFallbackOpen = () => {
-            if (runtime && typeof runtime.getURL === "function") {
-              const url = runtime.getURL("options.html");
-              window.open(url, "_blank", "noopener,noreferrer");
-            } else if (typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.getURL === "function") {
-              const url = chrome.runtime.getURL("options.html");
-              window.open(url, "_blank", "noopener,noreferrer");
-            }
-          };
-
-          if (runtime && typeof runtime.openOptionsPage === "function") {
-            try {
-              const result = runtime.openOptionsPage();
-              if (result && typeof result.catch === "function") {
-                result.catch(attemptFallbackOpen);
-              }
-            } catch (error) {
-              attemptFallbackOpen();
-            }
-          } else if (typeof chrome !== "undefined" && chrome.runtime && typeof chrome.runtime.openOptionsPage === "function") {
-            chrome.runtime.openOptionsPage(() => {
-              if (chrome.runtime.lastError) {
-                attemptFallbackOpen();
-              }
-            });
-          } else {
-            attemptFallbackOpen();
-          }
-        }
-
-        if (autoReload) {
-          scheduleNextReload();
-        } else {
-          updateStatusDisplay();
-        }
-      });
-
-      sendNotification = (message, clientName = null) => {
-        // Don't send notifications if fabs reloader is active
-        if (!shouldContinueExecution()) {
-          return;
-        }
-        
-        if ("Notification" in window) {
-          Notification.requestPermission().then(function (permission) {
-            // Check again after async permission request
-            if (!shouldContinueExecution()) {
+          let cleanedUp = false;
+          const cleanup = () => {
+            if (cleanedUp) {
               return;
             }
-            
-            if (permission === "granted") {
-              // Include client name in notification if available
-              let notificationTitle = message;
-              let notificationBody = "";
-              
-              if (clientName) {
-                notificationTitle = message;
-                notificationBody = `From: ${clientName}`;
-              } else {
-                notificationBody = message;
-              }
-              
-              var options = {
-                body: notificationBody,
-                icon: "https://fiverr-res.cloudinary.com/npm-assets/layout-service/favicon-32x32.8f21439.png",
-                tag: "fiverr-notification",
-              };
-              new Notification(notificationTitle, options);
+            cleanedUp = true;
+            // Remove from tracking set
+            playingAudioElements.delete(audio);
+            if (objectUrl) {
+              URL.revokeObjectURL(objectUrl);
             }
+            audio.removeEventListener("ended", cleanup);
+            audio.removeEventListener("error", cleanup);
+            audio.removeEventListener("pause", cleanup);
+          };
+
+          // Add event listeners for cleanup
+          audio.addEventListener("ended", cleanup);
+          audio.addEventListener("error", cleanup);
+          audio.addEventListener("pause", () => {
+            // Remove from tracking set when paused (but don't cleanup objectUrl yet in case it resumes)
+            playingAudioElements.delete(audio);
           });
-        } else {
-          console.log("Your browser does not support notifications.");
-        }
-      };
 
-      if (window.location.href === inboxUrl) {
-        const unreadIconSelector = settings.selectorUnreadIcon || defaultSettings.selectorUnreadIcon;
-        let hasMessage = document.querySelector(unreadIconSelector);
-
-        if (hasMessage) {
-          let newClientFlag = findNewClientFlag(document, hasMessage);
-          if (newClientFlag) {
-            // Try to extract client name using comprehensive extraction function
-            let clientName = extractClientName(newClientFlag);
-            
-            // Check if client is in ignored list - skip audio and notification if ignored
-            const isIgnored = clientName ? isClientIgnored(clientName) : false;
-            
-            if (!isIgnored) {
-            // Show alert for new client message (respect sound & notification settings)
-            if (coerceBooleanSetting(settings.enable_new_client_sound, true)) {
-              playAudio("new");
-              phoneCall();
-            }
-            if (coerceBooleanSetting(settings.enable_new_client_notification, true)) {
-              sendNotification("New client Message", clientName);
-            }
-            // Pause auto-reload for 5 minutes when notification plays
-            pauseAutoReloadForNotification();
-            // Activate the tab when new client message is detected
-            activateFiverrTab();
-            const autoMsgId =
-              newClientFlag.textContent ||
-              newClientFlag.getAttribute("data-id") ||
-              (newClientFlag.parentElement
-                ? newClientFlag.parentElement.textContent.substring(0, 50)
-                : "") ||
-              "new-client-" + Date.now();
-            scheduleNewClientAutoReply(autoMsgId, newClientFlag, clientName);
-            } else {
-              console.log("Fiverr Assistant: Client is in ignored list, skipping audio, notification, and tab activation", { clientName });
-            }
-          } else {
-            // Try to extract client name for old client messages
-            // First try extracting from the unread icon element
-            let clientName = extractClientName(hasMessage);
-            
-            // If that fails, try to find the conversation list item and extract from there
-            if (!clientName && hasMessage) {
-              // Find the conversation container - try multiple selectors
-              let conversationItem = hasMessage.closest('[class*="contact"]');
-              if (!conversationItem) {
-                conversationItem = hasMessage.closest('li');
-              }
-              if (!conversationItem) {
-                conversationItem = hasMessage.closest('[class*="conversation"]');
-              }
-              if (!conversationItem) {
-                conversationItem = hasMessage.closest('[class*="inbox-item"]');
-              }
-              if (!conversationItem) {
-                conversationItem = hasMessage.closest('[class*="message-item"]');
-              }
-              if (!conversationItem) {
-                conversationItem = hasMessage.closest('a[href*="/inbox/"]');
-              }
-              if (!conversationItem) {
-                // Try parent elements up to 5 levels
-                let parent = hasMessage.parentElement;
-                for (let i = 0; i < 5 && parent; i++) {
-                  if (parent.classList?.toString().includes('contact') ||
-                      parent.tagName === 'LI' || 
-                      parent.classList?.toString().includes('conversation') ||
-                      parent.classList?.toString().includes('inbox') ||
-                      parent.querySelector?.('a[href*="/inbox/"]')) {
-                    conversationItem = parent;
-                    break;
-                  }
-                  parent = parent.parentElement;
-                }
-              }
-              
-              if (conversationItem) {
-                console.log("Fiverr Assistant: Found conversation item for extraction", {
-                  tagName: conversationItem.tagName,
-                  className: conversationItem.className
+          try {
+            const playPromise = audio.play();
+            if (playPromise && typeof playPromise.then === "function") {
+              // Modern browsers - play() returns a promise
+              playPromise
+                .then(() => {
+                  // Audio started playing successfully, add to tracking set
+                  playingAudioElements.add(audio);
+                })
+                .catch((error) => {
+                  cleanup();
+                  console.warn("Audio playback blocked:", error, {
+                    settingKey,
+                    sourceUrl: normalizedUrl || configuredUrl,
+                  });
                 });
-                
-                // Strategy 1: Use the specific selector provided by user: .first > div:nth-child(2) > div:nth-child(1) > p:nth-child(1)
-                // First, find the .first element (contact item)
-                const usernameParagraph = document.querySelector('.first > div:nth-child(2) > div:nth-child(1) > p:nth-child(1)')
-                if (usernameParagraph) {
-                  const text = usernameParagraph.textContent?.trim();
+            } else {
+              // Older browsers or immediate play - add to tracking set
+              playingAudioElements.add(audio);
+            }
+            // Log whether playing from cache or URL
+            if (objectUrl) {
+              console.info(
+                "Fiverr Assistant: Notification sound playing from IndexedDB cache",
+                {
+                  settingKey,
+                  sourceUrl: normalizedUrl || configuredUrl,
+                },
+              );
+            } else {
+              console.info(
+                "Fiverr Assistant: Notification sound playing from URL (cache not available)",
+                {
+                  settingKey,
+                  sourceUrl: normalizedUrl || configuredUrl,
+                },
+              );
+            }
+            return playPromise;
+          } catch (error) {
+            cleanup();
+            console.warn("Audio playback blocked:", error, {
+              settingKey,
+              sourceUrl: normalizedUrl || configuredUrl,
+            });
+            return Promise.reject(error);
+          }
+        };
+
+        document.body.addEventListener("click", () => {
+          // Don't process clicks if fabs reloader is active
+          if (!shouldContinueExecution()) {
+            return;
+          }
+
+          lastAction = Date.now();
+          // Stop any playing notification sounds when user clicks
+          stopAllNotificationSounds();
+          if (autoReload) {
+            scheduleNextReload();
+          } else {
+            updateStatusDisplay();
+          }
+        });
+
+        window.addEventListener("keydown", (event) => {
+          // Don't process keyboard events if fabs reloader is active
+          if (!shouldContinueExecution()) {
+            return;
+          }
+
+          lastAction = Date.now();
+          // Stop any playing notification sounds when user presses any key
+          stopAllNotificationSounds();
+
+          if (event.code === "F8") {
+            pauseAutoReload();
+            // Check again before showing alert
+            if (shouldContinueExecution()) {
+              alert("Fiverr Auto Reloader Disabled For 15 Minutes");
+            }
+            setTimeout(() => {
+              if (!isF10Clicked && shouldContinueExecution()) {
+                enableAutoReload();
+              }
+            }, 900000);
+          }
+
+          if (event.code === "F10") {
+            // Check again before showing alert
+            if (shouldContinueExecution()) {
+              alert("Fiverr Auto Reloader Turned Off");
+            }
+            isF10Clicked = true;
+            pauseAutoReload();
+          }
+
+          if (event.code === "F9") {
+            // F9 key: Show unread clients alert
+            event.preventDefault();
+            if (shouldContinueExecution()) {
+              showUnreadClientsAlert();
+            }
+          }
+
+          if (event.code === "F6") {
+            // F6 key functionality removed - sendMail requires a target parameter
+          }
+
+          if (event.code === "F4") {
+            event.preventDefault();
+            const attemptFallbackOpen = () => {
+              if (runtime && typeof runtime.getURL === "function") {
+                const url = runtime.getURL("options.html");
+                window.open(url, "_blank", "noopener,noreferrer");
+              } else if (
+                typeof chrome !== "undefined" &&
+                chrome.runtime &&
+                typeof chrome.runtime.getURL === "function"
+              ) {
+                const url = chrome.runtime.getURL("options.html");
+                window.open(url, "_blank", "noopener,noreferrer");
+              }
+            };
+
+            if (runtime && typeof runtime.openOptionsPage === "function") {
+              try {
+                const result = runtime.openOptionsPage();
+                if (result && typeof result.catch === "function") {
+                  result.catch(attemptFallbackOpen);
+                }
+              } catch (error) {
+                attemptFallbackOpen();
+              }
+            } else if (
+              typeof chrome !== "undefined" &&
+              chrome.runtime &&
+              typeof chrome.runtime.openOptionsPage === "function"
+            ) {
+              chrome.runtime.openOptionsPage(() => {
+                if (chrome.runtime.lastError) {
+                  attemptFallbackOpen();
+                }
+              });
+            } else {
+              attemptFallbackOpen();
+            }
+          }
+
+          if (autoReload) {
+            scheduleNextReload();
+          } else {
+            updateStatusDisplay();
+          }
+        });
+
+        sendNotification = (message, clientName = null) => {
+          // Don't send notifications if fabs reloader is active
+          if (!shouldContinueExecution()) {
+            return;
+          }
+
+          if ("Notification" in window) {
+            Notification.requestPermission().then(function (permission) {
+              // Check again after async permission request
+              if (!shouldContinueExecution()) {
+                return;
+              }
+
+              if (permission === "granted") {
+                // Include client name in notification if available
+                let notificationTitle = message;
+                let notificationBody = "";
+
+                if (clientName) {
+                  notificationTitle = message;
+                  notificationBody = `From: ${clientName}`;
+                } else {
+                  notificationBody = message;
+                }
+
+                var options = {
+                  body: notificationBody,
+                  icon: "https://fiverr-res.cloudinary.com/npm-assets/layout-service/favicon-32x32.8f21439.png",
+                  tag: "fiverr-notification",
+                };
+                new Notification(notificationTitle, options);
+              }
+            });
+          } else {
+            console.log("Your browser does not support notifications.");
+          }
+        };
+
+        if (window.location.href === inboxUrl) {
+          const unreadIconSelector =
+            settings.selectorUnreadIcon || defaultSettings.selectorUnreadIcon;
+          let hasMessage = document.querySelector(unreadIconSelector);
+
+          if (hasMessage) {
+            let newClientFlag = findNewClientFlag(document, hasMessage);
+            if (newClientFlag) {
+              // Try to extract client name using comprehensive extraction function
+              let clientName = extractClientName(newClientFlag);
+
+              // Check if client is in ignored list - skip audio and notification if ignored
+              const isIgnored = clientName
+                ? isClientIgnored(clientName)
+                : false;
+
+              if (!isIgnored) {
+                // Show alert for new client message (respect sound & notification settings)
+                if (
+                  coerceBooleanSetting(settings.enable_new_client_sound, true)
+                ) {
+                  playAudio("new");
+                  phoneCall();
+                }
+                if (
+                  coerceBooleanSetting(
+                    settings.enable_new_client_notification,
+                    true,
+                  )
+                ) {
+                  sendNotification("New client Message", clientName);
+                }
+                // Pause auto-reload for 5 minutes when notification plays
+                pauseAutoReloadForNotification();
+                // Activate the tab when new client message is detected
+                activateFiverrTab();
+                const autoMsgId =
+                  newClientFlag.textContent ||
+                  newClientFlag.getAttribute("data-id") ||
+                  (newClientFlag.parentElement
+                    ? newClientFlag.parentElement.textContent.substring(0, 50)
+                    : "") ||
+                  "new-client-" + Date.now();
+                scheduleNewClientAutoReply(
+                  autoMsgId,
+                  newClientFlag,
+                  clientName,
+                );
+              } else {
+                console.log(
+                  "Fiverr Assistant: Client is in ignored list, skipping audio, notification, and tab activation",
+                  { clientName },
+                );
+              }
+            } else {
+              // Try to extract client name for old client messages
+              // First try extracting from the unread icon element
+              let clientName = extractClientName(hasMessage);
+
+              // If that fails, try to find the conversation list item and extract from there
+              if (!clientName && hasMessage) {
+                // Find the conversation container - try multiple selectors
+                let conversationItem = hasMessage.closest('[class*="contact"]');
+                if (!conversationItem) {
+                  conversationItem = hasMessage.closest("li");
+                }
+                if (!conversationItem) {
+                  conversationItem = hasMessage.closest(
+                    '[class*="conversation"]',
+                  );
+                }
+                if (!conversationItem) {
+                  conversationItem = hasMessage.closest(
+                    '[class*="inbox-item"]',
+                  );
+                }
+                if (!conversationItem) {
+                  conversationItem = hasMessage.closest(
+                    '[class*="message-item"]',
+                  );
+                }
+                if (!conversationItem) {
+                  conversationItem = hasMessage.closest('a[href*="/inbox/"]');
+                }
+                if (!conversationItem) {
+                  // Try parent elements up to 5 levels
+                  let parent = hasMessage.parentElement;
+                  for (let i = 0; i < 5 && parent; i++) {
+                    if (
+                      parent.classList?.toString().includes("contact") ||
+                      parent.tagName === "LI" ||
+                      parent.classList?.toString().includes("conversation") ||
+                      parent.classList?.toString().includes("inbox") ||
+                      parent.querySelector?.('a[href*="/inbox/"]')
+                    ) {
+                      conversationItem = parent;
+                      break;
+                    }
+                    parent = parent.parentElement;
+                  }
+                }
+
+                if (conversationItem) {
+                  console.log(
+                    "Fiverr Assistant: Found conversation item for extraction",
+                    {
+                      tagName: conversationItem.tagName,
+                      className: conversationItem.className,
+                    },
+                  );
+
+                  // Strategy 1: Use the specific selector provided by user: .first > div:nth-child(2) > div:nth-child(1) > p:nth-child(1)
+                  // First, find the .first element (contact item)
+                  const usernameParagraph = document.querySelector(
+                    ".first > div:nth-child(2) > div:nth-child(1) > p:nth-child(1)",
+                  );
+                  if (usernameParagraph) {
+                    const text = usernameParagraph.textContent?.trim();
                     if (text && text.match(/^[a-zA-Z0-9_-]{2,50}$/)) {
                       clientName = text;
-                      console.log("Fiverr Assistant: Extracted client name using specific selector", { clientName });
+                      console.log(
+                        "Fiverr Assistant: Extracted client name using specific selector",
+                        { clientName },
+                      );
                     }
-                }
-                
-                // Strategy 2: Look for user-info div and extract from the <p> tag inside it
-                if (!clientName) {
-                  const userInfoDiv = conversationItem.querySelector('[class*="user-info"]');
-                  if (userInfoDiv) {
-                    // Look for <p> tag that contains the username (usually the first <p> in user-info)
-                    const usernameP = userInfoDiv.querySelector('p');
-                    if (usernameP) {
-                      const text = usernameP.textContent?.trim();
-                      if (text && text.match(/^[a-zA-Z0-9_-]{2,50}$/)) {
-                        clientName = text;
-                        console.log("Fiverr Assistant: Extracted client name from user-info <p> tag", { clientName });
+                  }
+
+                  // Strategy 2: Look for user-info div and extract from the <p> tag inside it
+                  if (!clientName) {
+                    const userInfoDiv = conversationItem.querySelector(
+                      '[class*="user-info"]',
+                    );
+                    if (userInfoDiv) {
+                      // Look for <p> tag that contains the username (usually the first <p> in user-info)
+                      const usernameP = userInfoDiv.querySelector("p");
+                      if (usernameP) {
+                        const text = usernameP.textContent?.trim();
+                        if (text && text.match(/^[a-zA-Z0-9_-]{2,50}$/)) {
+                          clientName = text;
+                          console.log(
+                            "Fiverr Assistant: Extracted client name from user-info <p> tag",
+                            { clientName },
+                          );
+                        }
                       }
                     }
                   }
-                }
-                
-                // Strategy 3: Look for title attribute on avatar/figure element
-                if (!clientName) {
-                  const figure = conversationItem.querySelector('figure[title]');
-                  if (figure) {
-                    const title = figure.getAttribute('title');
-                    if (title && title.match(/^[a-zA-Z0-9_-]{2,50}$/)) {
-                      clientName = title;
-                      console.log("Fiverr Assistant: Extracted client name from figure title attribute", { clientName });
+
+                  // Strategy 3: Look for title attribute on avatar/figure element
+                  if (!clientName) {
+                    const figure =
+                      conversationItem.querySelector("figure[title]");
+                    if (figure) {
+                      const title = figure.getAttribute("title");
+                      if (title && title.match(/^[a-zA-Z0-9_-]{2,50}$/)) {
+                        clientName = title;
+                        console.log(
+                          "Fiverr Assistant: Extracted client name from figure title attribute",
+                          { clientName },
+                        );
+                      }
                     }
                   }
-                }
-                
-                // Strategy 4: Try extracting from the conversation item using the general extractClientName function
-                if (!clientName) {
-                  clientName = extractClientName(conversationItem);
-                  if (clientName) {
-                    console.log("Fiverr Assistant: Extracted client name using extractClientName function", { clientName });
+
+                  // Strategy 4: Try extracting from the conversation item using the general extractClientName function
+                  if (!clientName) {
+                    clientName = extractClientName(conversationItem);
+                    if (clientName) {
+                      console.log(
+                        "Fiverr Assistant: Extracted client name using extractClientName function",
+                        { clientName },
+                      );
+                    }
                   }
-                }
-                
-                // Strategy 5: Try to find a link to the user profile or conversation
-                if (!clientName) {
-                  const userLink = conversationItem.querySelector('a[href*="/users/"], a[href*="/inbox/"]');
-                  if (userLink) {
-                    const href = userLink.getAttribute('href');
-                    if (href) {
-                      // Extract username from URL like /inbox/username or /users/username
-                      const urlMatch = href.match(/\/(?:inbox|users)\/([^\/\?]+)/);
-                      if (urlMatch && urlMatch[1]) {
-                        clientName = decodeURIComponent(urlMatch[1]);
-                        console.log("Fiverr Assistant: Extracted client name from URL", { clientName, href });
-                      } else {
-                        // Try text content of the link
-                        const linkText = userLink.textContent?.trim();
-                        if (linkText && linkText.length > 2 && linkText.length < 50) {
-                          // Check if it looks like a username
-                          if (linkText.match(/^[a-zA-Z0-9_-]{2,50}$/)) {
-                            clientName = linkText;
-                            console.log("Fiverr Assistant: Extracted client name from link text", { clientName });
+
+                  // Strategy 5: Try to find a link to the user profile or conversation
+                  if (!clientName) {
+                    const userLink = conversationItem.querySelector(
+                      'a[href*="/users/"], a[href*="/inbox/"]',
+                    );
+                    if (userLink) {
+                      const href = userLink.getAttribute("href");
+                      if (href) {
+                        // Extract username from URL like /inbox/username or /users/username
+                        const urlMatch = href.match(
+                          /\/(?:inbox|users)\/([^\/\?]+)/,
+                        );
+                        if (urlMatch && urlMatch[1]) {
+                          clientName = decodeURIComponent(urlMatch[1]);
+                          console.log(
+                            "Fiverr Assistant: Extracted client name from URL",
+                            { clientName, href },
+                          );
+                        } else {
+                          // Try text content of the link
+                          const linkText = userLink.textContent?.trim();
+                          if (
+                            linkText &&
+                            linkText.length > 2 &&
+                            linkText.length < 50
+                          ) {
+                            // Check if it looks like a username
+                            if (linkText.match(/^[a-zA-Z0-9_-]{2,50}$/)) {
+                              clientName = linkText;
+                              console.log(
+                                "Fiverr Assistant: Extracted client name from link text",
+                                { clientName },
+                              );
+                            }
                           }
                         }
                       }
                     }
                   }
-                }
-                
-                // Strategy 6: Get all text nodes and find one that looks like a username
-                if (!clientName) {
-                  // Get all text nodes and find one that looks like a username
-                  const walker = document.createTreeWalker(
-                    conversationItem,
-                    NodeFilter.SHOW_TEXT,
-                    null
-                  );
-                  
-                  const textNodes = [];
-                  let node;
-                  while ((node = walker.nextNode())) {
-                    const text = node.textContent?.trim();
-                    if (text && text.match(/^[a-zA-Z0-9_-]{3,30}$/)) {
-                      // Exclude common UI words and numbers
-                      if (!text.match(/^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|inbox|conversation|chat|fiverr|online|offline|me|okay|gute|nacht)$/i) &&
-                          !text.match(/^\d+$/)) {
-                        textNodes.push(text);
+
+                  // Strategy 6: Get all text nodes and find one that looks like a username
+                  if (!clientName) {
+                    // Get all text nodes and find one that looks like a username
+                    const walker = document.createTreeWalker(
+                      conversationItem,
+                      NodeFilter.SHOW_TEXT,
+                      null,
+                    );
+
+                    const textNodes = [];
+                    let node;
+                    while ((node = walker.nextNode())) {
+                      const text = node.textContent?.trim();
+                      if (text && text.match(/^[a-zA-Z0-9_-]{3,30}$/)) {
+                        // Exclude common UI words and numbers
+                        if (
+                          !text.match(
+                            /^(new|message|unread|read|sent|received|ago|min|hour|day|view|reply|delete|inbox|conversation|chat|fiverr|online|offline|me|okay|gute|nacht)$/i,
+                          ) &&
+                          !text.match(/^\d+$/)
+                        ) {
+                          textNodes.push(text);
+                        }
                       }
                     }
+
+                    if (textNodes.length > 0) {
+                      // Use the first one that looks like a username
+                      clientName = textNodes[0];
+                      console.log(
+                        "Fiverr Assistant: Extracted client name from text nodes",
+                        { clientName, textNodes },
+                      );
+                    }
                   }
-                  
-                  if (textNodes.length > 0) {
-                    // Use the first one that looks like a username
-                    clientName = textNodes[0];
-                    console.log("Fiverr Assistant: Extracted client name from text nodes", { clientName, textNodes });
+                } else {
+                  console.log(
+                    "Fiverr Assistant: Could not find conversation item for extraction",
+                  );
+                }
+              }
+
+              console.log(
+                "Fiverr Assistant: Extracted client name for old client message (inbox page)",
+                {
+                  clientName,
+                  hasMessageElement: !!hasMessage,
+                  conversationItemFound: hasMessage
+                    ? !!hasMessage.closest(
+                        'li, [class*="conversation"], [class*="inbox-item"]',
+                      )
+                    : false,
+                },
+              );
+
+              // Check if client is in ignored list - skip audio and notification if ignored
+              const isIgnored = clientName
+                ? isClientIgnored(clientName)
+                : false;
+
+              if (!isIgnored) {
+                // Check if client is targeted and play appropriate sound
+                const isTargeted = clientName
+                  ? isClientTargeted(clientName)
+                  : false;
+
+                console.log(
+                  "Fiverr Assistant: Sound decision for old client message (inbox page)",
+                  {
+                    clientName,
+                    isTargeted,
+                    isIgnored,
+                    enableOldClientSound: coerceBooleanSetting(
+                      settings.enable_old_client_sound,
+                      true,
+                    ),
+                  },
+                );
+
+                if (
+                  coerceBooleanSetting(settings.enable_old_client_sound, true)
+                ) {
+                  if (isTargeted) {
+                    const targetedSoundUrl =
+                      getVal("targeted_client_sound") ||
+                      settings.targeted_client_sound ||
+                      defaultSettings.targeted_client_sound ||
+                      "";
+                    console.log(
+                      "Fiverr Assistant: Playing targeted client sound for (inbox page)",
+                      {
+                        clientName,
+                        isTargeted: true,
+                        targetedSoundUrl: targetedSoundUrl
+                          ? targetedSoundUrl.substring(0, 100)
+                          : "NOT CONFIGURED - will use default",
+                      },
+                    );
+                    // Always play targeted sound, even if URL is not configured (will use default)
+                    playAudio("targeted");
+                  } else {
+                    console.log(
+                      "Fiverr Assistant: Playing old client sound for non-targeted client (inbox page)",
+                      {
+                        clientName,
+                        isTargeted: false,
+                      },
+                    );
+                    playAudio("old");
+                    phoneCall();
+                  }
+                }
+                if (
+                  coerceBooleanSetting(
+                    settings.enable_old_client_notification,
+                    true,
+                  )
+                ) {
+                  sendNotification("Old client Message", clientName);
+                }
+              } else {
+                console.log(
+                  "Fiverr Assistant: Client is in ignored list, skipping audio and notification",
+                  { clientName },
+                );
+              }
+            }
+          }
+
+          // Log ALL clients with unread messages
+          console.log(
+            "🔍 [DEBUG] Starting unread clients logging on inbox page...",
+            {
+              unreadIconSelector,
+              pageLocation: window.location.href,
+            },
+          );
+
+          const allUnreadMessages =
+            document.querySelectorAll(unreadIconSelector);
+          console.log(
+            `🔍 [DEBUG] Found ${allUnreadMessages.length} unread message icons with selector: ${unreadIconSelector}`,
+          );
+
+          if (allUnreadMessages.length > 0) {
+            const allClientsWithUnread = [];
+            allUnreadMessages.forEach((unreadIcon, index) => {
+              let clientName = null;
+              console.log(
+                `🔍 [DEBUG] Processing unread message #${index + 1}...`,
+              );
+
+              // Find the contact/conversation item for this unread message
+              let contactItem = unreadIcon.closest('[class*="contact"]');
+              if (!contactItem) {
+                contactItem = unreadIcon.closest("li");
+              }
+              if (!contactItem) {
+                contactItem = unreadIcon.closest('[class*="conversation"]');
+              }
+              if (!contactItem) {
+                contactItem = unreadIcon.closest('[class*="inbox-item"]');
+              }
+              if (!contactItem) {
+                let parent = unreadIcon.parentElement;
+                for (let i = 0; i < 5 && parent; i++) {
+                  if (
+                    parent.classList?.toString().includes("contact") ||
+                    parent.tagName === "LI" ||
+                    parent.classList?.toString().includes("conversation")
+                  ) {
+                    contactItem = parent;
+                    break;
+                  }
+                  parent = parent.parentElement;
+                }
+              }
+
+              if (contactItem) {
+                console.log(
+                  `🔍 [DEBUG] Found contact item for message #${index + 1}:`,
+                  {
+                    tagName: contactItem.tagName,
+                    className: contactItem.className,
+                  },
+                );
+
+                // Try to extract client name from user-info
+                const userInfoDiv = contactItem.querySelector(
+                  '[class*="user-info"]',
+                );
+                if (userInfoDiv) {
+                  console.log(
+                    `🔍 [DEBUG] Found user-info div for message #${index + 1}`,
+                  );
+                  const usernameP = userInfoDiv.querySelector("p");
+                  if (usernameP) {
+                    const text = usernameP.textContent?.trim();
+                    console.log(
+                      `🔍 [DEBUG] Extracted text from <p> tag: "${text}"`,
+                    );
+                    if (text && text.length > 1 && text.length < 50) {
+                      clientName = text;
+                      console.log(
+                        `✅ [DEBUG] Successfully extracted name: "${clientName}"`,
+                      );
+                    }
+                  } else {
+                    console.log(`🔍 [DEBUG] No <p> tag found in user-info`);
+                  }
+                } else {
+                  console.log(
+                    `🔍 [DEBUG] No user-info div found, trying fallback extraction...`,
+                  );
+                }
+
+                // Fallback: try extractClientName function
+                if (!clientName) {
+                  clientName = extractClientName(contactItem);
+                  if (clientName) {
+                    console.log(
+                      `✅ [DEBUG] Fallback extractClientName found: "${clientName}"`,
+                    );
+                  } else {
+                    console.log(`❌ [DEBUG] Fallback extraction also failed`);
                   }
                 }
               } else {
-                console.log("Fiverr Assistant: Could not find conversation item for extraction");
+                console.log(
+                  `❌ [DEBUG] Could not find contact item for message #${index + 1}`,
+                );
               }
-            }
-            
-            console.log("Fiverr Assistant: Extracted client name for old client message (inbox page)", {
-              clientName,
-              hasMessageElement: !!hasMessage,
-              conversationItemFound: hasMessage ? !!hasMessage.closest('li, [class*="conversation"], [class*="inbox-item"]') : false
+
+              if (clientName) {
+                allClientsWithUnread.push(clientName);
+                console.log(`✅ Added "${clientName}" to unread clients list`);
+              }
             });
-            
-            // Check if client is in ignored list - skip audio and notification if ignored
-            const isIgnored = clientName ? isClientIgnored(clientName) : false;
-            
-            if (!isIgnored) {
-            // Check if client is targeted and play appropriate sound
-            const isTargeted = clientName ? isClientTargeted(clientName) : false;
-            
-            console.log("Fiverr Assistant: Sound decision for old client message (inbox page)", {
-              clientName,
-              isTargeted,
-              isIgnored,
-              enableOldClientSound: coerceBooleanSetting(settings.enable_old_client_sound, true)
-            });
-            
-            if (coerceBooleanSetting(settings.enable_old_client_sound, true)) {
-              if (isTargeted) {
-                const targetedSoundUrl = getVal("targeted_client_sound") || settings.targeted_client_sound || defaultSettings.targeted_client_sound || "";
-                console.log("Fiverr Assistant: Playing targeted client sound for (inbox page)", {
-                  clientName,
-                  isTargeted: true,
-                  targetedSoundUrl: targetedSoundUrl ? targetedSoundUrl.substring(0, 100) : "NOT CONFIGURED - will use default"
-                });
-                // Always play targeted sound, even if URL is not configured (will use default)
-                playAudio("targeted");
-              } else {
-                console.log("Fiverr Assistant: Playing old client sound for non-targeted client (inbox page)", {
-                  clientName,
-                  isTargeted: false
-                });
-                playAudio("old");
-                phoneCall();
-              }
-            }
-            if (coerceBooleanSetting(settings.enable_old_client_notification, true)) {
-              sendNotification("Old client Message", clientName);
-              }
+
+            if (allClientsWithUnread.length > 0) {
+              console.log("=== 📧 FIVERR INBOX UNREAD CLIENTS ===");
+              console.log(
+                `Total unread messages: ${allClientsWithUnread.length}`,
+              );
+              console.log(
+                "Clients with unread messages:",
+                allClientsWithUnread,
+              );
+              allClientsWithUnread.forEach((client, idx) => {
+                const isTargeted = isClientTargeted(client);
+                const isIgnored = isClientIgnored(client);
+                console.log(
+                  `${idx + 1}. ${client} ${isTargeted ? "⭐ (TARGETED)" : ""} ${isIgnored ? "🚫 (IGNORED)" : ""}`,
+                );
+              });
+              console.log("=====================================");
             } else {
-              console.log("Fiverr Assistant: Client is in ignored list, skipping audio and notification", { clientName });
+              console.log(
+                "❌ [DEBUG] No clients were successfully extracted from unread messages",
+              );
             }
+          } else {
+            console.log(
+              "❌ [DEBUG] No unread messages found - either selector is wrong or inbox is empty",
+            );
           }
         }
-      }
 
-      if (siteDomain === "www.fiverr.com") {
-        ensureMessageCheckInterval();
+        if (siteDomain === "www.fiverr.com") {
+          ensureMessageCheckInterval();
 
-        if (autoReload) {
-          scheduleNextReload();
+          if (autoReload) {
+            scheduleNextReload();
+          } else {
+            updateStatusDisplay();
+          }
         } else {
-          updateStatusDisplay();
+          clearMessageCheckInterval();
         }
-      } else {
-        clearMessageCheckInterval();
-      }
-      featuresInitialized = true;
-      initializeTimeTracking();
-      if (autoReload && isPrimaryTab) {
-        startOfflineErrorChecking();
-      }
-    } catch (error) {
-      console.log(error);
-      setTimeout(() => {
-        if (isOnline) {
-          markPrimaryNavigation();
-          window.location.reload();
+        featuresInitialized = true;
+        initializeTimeTracking();
+        if (autoReload && isPrimaryTab) {
+          startOfflineErrorChecking();
         }
-      }, 3000);
-    }
-
+      } catch (error) {
+        console.log(error);
+        setTimeout(() => {
+          if (isOnline) {
+            markPrimaryNavigation();
+            window.location.reload();
+          }
+        }, 3000);
+      }
     })();
 
     try {
@@ -5115,14 +6638,14 @@ const phoneCall = () => {
   if (isOnline) {
     startConnectionTracking();
   }
-  
+
   // Check page load status only once when page fully loads
   // Use a single listener to avoid multiple checks
   const handlePageLoad = () => {
     if (pageLoadCheckDone) {
       return; // Already checked this page load
     }
-    
+
     lastReloadCheckTime = Date.now();
     if (siteDomain === "www.fiverr.com" && autoReload && isPrimaryTab) {
       // Wait for page to fully load before checking
@@ -5131,17 +6654,33 @@ const phoneCall = () => {
       }, RELOAD_CHECK_DELAY);
     }
   };
-  
+
+  // Show unread clients alert separately (independent of pageLoadCheckDone)
+  const handleInboxPageLoad = () => {
+    if (isFiverrInboxPage()) {
+      // Wait for DOM to fully render
+      setTimeout(() => {
+        showUnreadClientsAlert();
+      }, 1500);
+    }
+  };
+
   // Only check once when page is fully loaded
   if (document.readyState === "complete") {
     // Page already loaded
     handlePageLoad();
+    handleInboxPageLoad();
   } else {
     // Wait for page to fully load
-    window.addEventListener("load", handlePageLoad, { once: true });
+    window.addEventListener(
+      "load",
+      () => {
+        handlePageLoad();
+        handleInboxPageLoad();
+      },
+      { once: true },
+    );
   }
-  
+
   initialize();
 })();
-
-

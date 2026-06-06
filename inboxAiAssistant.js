@@ -11,7 +11,8 @@
 (function () {
   "use strict";
 
-  const GEMINI_CHAT_URL = "https://generativelanguage.googleapis.com/v1beta/models/";
+  const GEMINI_CHAT_URL =
+    "https://generativelanguage.googleapis.com/v1beta/models/";
   const MAX_TRANSCRIPT_CHARS = 12000;
   const CHAT_HISTORY_MAX_TURNS = 12;
   /** Max images sent per API call (buyer attachments + thread); avoids huge payloads */
@@ -30,7 +31,9 @@
    */
   async function isModalProtectionActive() {
     try {
-      const result = await browser.storage.local.get(MODAL_PROTECTION_STORAGE_KEY);
+      const result = await browser.storage.local.get(
+        MODAL_PROTECTION_STORAGE_KEY,
+      );
       const protectionTime = result && result[MODAL_PROTECTION_STORAGE_KEY];
       return protectionTime && Date.now() < parseInt(protectionTime, 10);
     } catch {
@@ -46,9 +49,11 @@
     try {
       const protectionUntil = Date.now() + MODAL_PROTECTION_DURATION;
       await browser.storage.local.set({
-        [MODAL_PROTECTION_STORAGE_KEY]: protectionUntil.toString()
+        [MODAL_PROTECTION_STORAGE_KEY]: protectionUntil.toString(),
       });
-      console.log(`Modal protection active for 5 minutes (until ${new Date(protectionUntil).toLocaleTimeString()})`);
+      console.log(
+        `Modal protection active for 5 minutes (until ${new Date(protectionUntil).toLocaleTimeString()})`,
+      );
     } catch (error) {
       console.warn("Failed to activate modal protection:", error);
     }
@@ -61,7 +66,7 @@
   async function deactivateModalProtection() {
     try {
       await browser.storage.local.remove(MODAL_PROTECTION_STORAGE_KEY);
-      console.log('Modal protection deactivated');
+      console.log("Modal protection deactivated");
     } catch (error) {
       console.warn("Failed to deactivate modal protection:", error);
     }
@@ -70,7 +75,7 @@
   // ============================================================================
   // OPENAI API KEY MANAGEMENT (Multiple Keys with Failover)
   // ============================================================================
-  
+
   /**
    * Get the list of API keys as an array
    * @param {object} settings - Settings object from getSettings()
@@ -81,15 +86,15 @@
     const key = settings.openaiApiKey;
     // Handle both array and string formats
     if (Array.isArray(key)) {
-      return key.filter(k => k && String(k).trim().length > 0);
+      return key.filter((k) => k && String(k).trim().length > 0);
     }
     const keyStr = String(key || "").trim();
     if (keyStr.length === 0) return [];
     // Parse comma or newline separated
     return keyStr
       .split(/[\n,]/)
-      .map(k => k.trim())
-      .filter(k => k.length > 0);
+      .map((k) => k.trim())
+      .filter((k) => k.length > 0);
   }
 
   /**
@@ -98,8 +103,12 @@
    */
   async function getCurrentKeyIndex() {
     try {
-      const result = await browser.storage.local.get(OPENAI_KEY_INDEX_STORAGE_KEY);
-      return result && result[OPENAI_KEY_INDEX_STORAGE_KEY] ? parseInt(result[OPENAI_KEY_INDEX_STORAGE_KEY], 10) : 0;
+      const result = await browser.storage.local.get(
+        OPENAI_KEY_INDEX_STORAGE_KEY,
+      );
+      return result && result[OPENAI_KEY_INDEX_STORAGE_KEY]
+        ? parseInt(result[OPENAI_KEY_INDEX_STORAGE_KEY], 10)
+        : 0;
     } catch (error) {
       console.warn("Failed to get key index:", error);
       return 0;
@@ -114,7 +123,7 @@
   async function setCurrentKeyIndex(index) {
     try {
       await browser.storage.local.set({
-        [OPENAI_KEY_INDEX_STORAGE_KEY]: index
+        [OPENAI_KEY_INDEX_STORAGE_KEY]: index,
       });
     } catch (error) {
       console.warn("Failed to set key index:", error);
@@ -127,7 +136,9 @@
    */
   async function getFailedKeys() {
     try {
-      const result = await browser.storage.local.get(OPENAI_FAILED_KEYS_STORAGE_KEY);
+      const result = await browser.storage.local.get(
+        OPENAI_FAILED_KEYS_STORAGE_KEY,
+      );
       const failed = result && result[OPENAI_FAILED_KEYS_STORAGE_KEY];
       return new Set(Array.isArray(failed) ? failed : []);
     } catch (error) {
@@ -146,7 +157,7 @@
       const failed = await getFailedKeys();
       failed.add(key);
       await browser.storage.local.set({
-        [OPENAI_FAILED_KEYS_STORAGE_KEY]: Array.from(failed)
+        [OPENAI_FAILED_KEYS_STORAGE_KEY]: Array.from(failed),
       });
       console.log("Marked API key as failed, will try next key");
     } catch (error) {
@@ -175,11 +186,14 @@
   async function trackOpenAICall(keyIndex) {
     try {
       const result = await browser.storage.local.get("farOpenAICallCounts");
-      const counts = result && result.farOpenAICallCounts ? result.farOpenAICallCounts : {};
+      const counts =
+        result && result.farOpenAICallCounts ? result.farOpenAICallCounts : {};
       const key = `key_${keyIndex}`;
       counts[key] = (counts[key] || 0) + 1;
       await browser.storage.local.set({ farOpenAICallCounts: counts });
-      console.log(`[FAR API Usage] OpenAI Key ${keyIndex + 1} call count: ${counts[key]}`);
+      console.log(
+        `[FAR API Usage] OpenAI Key ${keyIndex + 1} call count: ${counts[key]}`,
+      );
     } catch (error) {
       console.warn("Failed to track OpenAI call:", error);
     }
@@ -192,7 +206,7 @@
   async function trackGeminiCall() {
     try {
       const result = await browser.storage.local.get("farGeminiCallCount");
-      const count = (result && result.farGeminiCallCount || 0) + 1;
+      const count = ((result && result.farGeminiCallCount) || 0) + 1;
       await browser.storage.local.set({ farGeminiCallCount: count });
       console.log(`[FAR API Usage] Gemini call count: ${count}`);
     } catch (error) {
@@ -210,7 +224,9 @@
    */
   async function getSelectedMessages() {
     try {
-      const result = await browser.storage.local.get(SELECTED_MESSAGES_STORAGE_KEY);
+      const result = await browser.storage.local.get(
+        SELECTED_MESSAGES_STORAGE_KEY,
+      );
       const selected = result && result[SELECTED_MESSAGES_STORAGE_KEY];
       return Array.isArray(selected) ? selected : [];
     } catch (error) {
@@ -230,7 +246,7 @@
       if (!selected.includes(messageText)) {
         selected.push(messageText);
         await browser.storage.local.set({
-          [SELECTED_MESSAGES_STORAGE_KEY]: selected
+          [SELECTED_MESSAGES_STORAGE_KEY]: selected,
         });
       }
     } catch (error) {
@@ -246,9 +262,9 @@
   async function deselectMessage(messageText) {
     try {
       const selected = await getSelectedMessages();
-      const filtered = selected.filter(msg => msg !== messageText);
+      const filtered = selected.filter((msg) => msg !== messageText);
       await browser.storage.local.set({
-        [SELECTED_MESSAGES_STORAGE_KEY]: filtered
+        [SELECTED_MESSAGES_STORAGE_KEY]: filtered,
       });
     } catch (error) {
       console.warn("Failed to deselect message:", error);
@@ -277,9 +293,11 @@
     if (!selectedMessages || selectedMessages.length === 0) {
       return "";
     }
-    return "\n\nREFERENCE MESSAGES YOU SELECTED TO LEARN FROM:\n" + 
-           selectedMessages.map((msg, i) => `${i + 1}. "${msg}"`).join("\n") +
-           "\n\nUse these as examples to understand the tone, style, and what kinds of responses work for this buyer.";
+    return (
+      "\n\nREFERENCE MESSAGES YOU SELECTED TO LEARN FROM:\n" +
+      selectedMessages.map((msg, i) => `${i + 1}. "${msg}"`).join("\n") +
+      "\n\nUse these as examples to understand the tone, style, and what kinds of responses work for this buyer."
+    );
   }
 
   /**
@@ -288,11 +306,13 @@
    */
   async function toggleMessageSelectionMode() {
     try {
-      const result = await browser.storage.local.get(MESSAGE_SELECTION_MODE_KEY);
+      const result = await browser.storage.local.get(
+        MESSAGE_SELECTION_MODE_KEY,
+      );
       const currentMode = result && result[MESSAGE_SELECTION_MODE_KEY];
       const newMode = !currentMode;
       await browser.storage.local.set({
-        [MESSAGE_SELECTION_MODE_KEY]: newMode
+        [MESSAGE_SELECTION_MODE_KEY]: newMode,
       });
       return newMode;
     } catch (error) {
@@ -307,7 +327,9 @@
    */
   async function isMessageSelectionModeActive() {
     try {
-      const result = await browser.storage.local.get(MESSAGE_SELECTION_MODE_KEY);
+      const result = await browser.storage.local.get(
+        MESSAGE_SELECTION_MODE_KEY,
+      );
       return result && result[MESSAGE_SELECTION_MODE_KEY] === true;
     } catch (error) {
       console.warn("Failed to check message selection mode:", error);
@@ -326,7 +348,9 @@
    */
   async function getPinnedMessages() {
     try {
-      const result = await browser.storage.local.get(PINNED_MESSAGES_STORAGE_KEY);
+      const result = await browser.storage.local.get(
+        PINNED_MESSAGES_STORAGE_KEY,
+      );
       const pinned = result && result[PINNED_MESSAGES_STORAGE_KEY];
       return pinned ? JSON.parse(pinned) : [];
     } catch (error) {
@@ -344,11 +368,11 @@
   async function pinMessage(text, role) {
     try {
       const pinned = await getPinnedMessages();
-      const exists = pinned.some(m => m.text === text && m.role === role);
+      const exists = pinned.some((m) => m.text === text && m.role === role);
       if (!exists) {
         pinned.push({ text, role, timestamp: Date.now() });
         await browser.storage.local.set({
-          [PINNED_MESSAGES_STORAGE_KEY]: JSON.stringify(pinned.slice(-10)) // Keep max 10 pinned
+          [PINNED_MESSAGES_STORAGE_KEY]: JSON.stringify(pinned.slice(-10)), // Keep max 10 pinned
         });
         console.log(`Pinned message (${role}): ${text.substring(0, 50)}...`);
       }
@@ -366,9 +390,11 @@
   async function unpinMessage(text, role) {
     try {
       const pinned = await getPinnedMessages();
-      const filtered = pinned.filter(m => !(m.text === text && m.role === role));
+      const filtered = pinned.filter(
+        (m) => !(m.text === text && m.role === role),
+      );
       await browser.storage.local.set({
-        [PINNED_MESSAGES_STORAGE_KEY]: JSON.stringify(filtered)
+        [PINNED_MESSAGES_STORAGE_KEY]: JSON.stringify(filtered),
       });
       console.log(`Unpinned message (${role}): ${text.substring(0, 50)}...`);
     } catch (error) {
@@ -385,7 +411,7 @@
   async function isMessagePinned(text, role) {
     try {
       const pinned = await getPinnedMessages();
-      return pinned.some(m => m.text === text && m.role === role);
+      return pinned.some((m) => m.text === text && m.role === role);
     } catch {
       return false;
     }
@@ -418,7 +444,8 @@
   const INBOX_MESSAGE_ROW_SELECTOR = ".message-flow .message";
 
   /** Fiverr custom offer modal — paste from DevTools if `name` changes */
-  const CUSTOM_OFFER_DESCRIPTION_TEXTAREA_SELECTOR = 'textarea[name="custom_offer.description"]';
+  const CUSTOM_OFFER_DESCRIPTION_TEXTAREA_SELECTOR =
+    'textarea[name="custom_offer.description"]';
 
   const BASE_SYSTEM_PROMPT = [
     "You are an expert Fiverr seller crafting professional inbox replies that achieve 100% positive success scores.",
@@ -478,8 +505,16 @@
 
   function resolveSelectors(getSettings) {
     const s = getSettings();
-    const listSel = (s && s.inboxMessageListSelector && String(s.inboxMessageListSelector).trim()) || INBOX_MESSAGE_LIST_SELECTOR;
-    const rowSel = (s && s.inboxMessageRowSelector && String(s.inboxMessageRowSelector).trim()) || INBOX_MESSAGE_ROW_SELECTOR;
+    const listSel =
+      (s &&
+        s.inboxMessageListSelector &&
+        String(s.inboxMessageListSelector).trim()) ||
+      INBOX_MESSAGE_LIST_SELECTOR;
+    const rowSel =
+      (s &&
+        s.inboxMessageRowSelector &&
+        String(s.inboxMessageRowSelector).trim()) ||
+      INBOX_MESSAGE_ROW_SELECTOR;
     return { listSel, rowSel };
   }
 
@@ -487,11 +522,15 @@
     if (!url || typeof url !== "string") return false;
     const u = url.trim();
     if (!/^https?:\/\//i.test(u)) return false;
-    if (/favicon|emoji|gravatar|pixel|1x1|spacer|data:image/i.test(u)) return false;
+    if (/favicon|emoji|gravatar|pixel|1x1|spacer|data:image/i.test(u))
+      return false;
     return (
-      /secured-attachments|messaging_message\/attachment|\/attachment\//i.test(u) ||
+      /secured-attachments|messaging_message\/attachment|\/attachment\//i.test(
+        u,
+      ) ||
       /\.(jpg|jpeg|png|gif|webp)(\?|$)/i.test(u) ||
-      (/fiverr-res\.cloudinary\.com|cloudinary\.com/i.test(u) && /\/image\//i.test(u))
+      (/fiverr-res\.cloudinary\.com|cloudinary\.com/i.test(u) &&
+        /\/image\//i.test(u))
     );
   }
 
@@ -518,15 +557,25 @@
       add(img.getAttribute("src"));
     });
 
-    rowEl.querySelectorAll('.message-content img[src], [data-track-tag="box"] img[src]').forEach((img) => {
-      const av = rowEl.querySelector('[data-track-tag="avatar"]');
-      if (av && av.contains(img)) return;
-      const lc = img.closest('[data-track-tag="link_card"], .link_card, [data-testid="custom-offer"]');
-      if (lc) return;
-      if (img.closest(".attachments-list")) return;
-      const src = img.getAttribute("src");
-      if (src && /secured-attachments|messaging_message\/attachment/i.test(src)) add(src);
-    });
+    rowEl
+      .querySelectorAll(
+        '.message-content img[src], [data-track-tag="box"] img[src]',
+      )
+      .forEach((img) => {
+        const av = rowEl.querySelector('[data-track-tag="avatar"]');
+        if (av && av.contains(img)) return;
+        const lc = img.closest(
+          '[data-track-tag="link_card"], .link_card, [data-testid="custom-offer"]',
+        );
+        if (lc) return;
+        if (img.closest(".attachments-list")) return;
+        const src = img.getAttribute("src");
+        if (
+          src &&
+          /secured-attachments|messaging_message\/attachment/i.test(src)
+        )
+          add(src);
+      });
 
     return urls;
   }
@@ -535,7 +584,9 @@
    * Gemini models that support vision capabilities
    */
   function modelSupportsVision(modelName) {
-    const m = String(modelName || "").toLowerCase().trim();
+    const m = String(modelName || "")
+      .toLowerCase()
+      .trim();
     if (!m) return true;
     // Gemini 2.5 Flash and Pro models support vision
     if (/gemini-2\.5-(flash|pro)/.test(m)) return true;
@@ -559,20 +610,36 @@
     }
     if (!/^https?:\/\//i.test(u)) return false;
 
-    if (/\.(pdf|svgz?|bmp|tif|tiff|heic|heif|ico|avif|eps|psd|ai)(\?|#|$)/i.test(lower)) return false;
-    if (/\.(mp4|webm|mov|mkv|ogg|m4v|zip|rar|7z|doc|docx|xls|xlsx)(\?|#|$)/i.test(lower)) return false;
+    if (
+      /\.(pdf|svgz?|bmp|tif|tiff|heic|heif|ico|avif|eps|psd|ai)(\?|#|$)/i.test(
+        lower,
+      )
+    )
+      return false;
+    if (
+      /\.(mp4|webm|mov|mkv|ogg|m4v|zip|rar|7z|doc|docx|xls|xlsx)(\?|#|$)/i.test(
+        lower,
+      )
+    )
+      return false;
     if (/cloudinary\.com\/[^/]*\/(raw|video)\//i.test(lower)) return false;
-    if (/[/_]f_(pdf|svg|bmp|tiff|heif|heic|avif)([/_]|\.|$)/i.test(lower)) return false;
+    if (/[/_]f_(pdf|svg|bmp|tiff|heif|heic|avif)([/_]|\.|$)/i.test(lower))
+      return false;
 
     if (/\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(lower)) return true;
 
     if (/cloudinary\.com/i.test(lower) && /\/image\//i.test(lower)) {
       if (/f_(jpe?g|png|gif|webp|auto)(?:[,/_]|$)/i.test(lower)) return true;
-      if (/\/image\/upload\/[^?]*\.(png|jpe?g|gif|webp)(?:\?|$)/i.test(lower)) return true;
+      if (/\/image\/upload\/[^?]*\.(png|jpe?g|gif|webp)(?:\?|$)/i.test(lower))
+        return true;
       return false;
     }
 
-    if (/secured-attachments|messaging_message\/attachment|\/attachment\//i.test(lower)) {
+    if (
+      /secured-attachments|messaging_message\/attachment|\/attachment\//i.test(
+        lower,
+      )
+    ) {
       return /\.(png|jpe?g|gif|webp)(\?|#|$)/i.test(lower);
     }
 
@@ -604,9 +671,9 @@
    */
   async function imageUrlToBase64(url) {
     try {
-      const response = await fetch(url, { mode: 'cors' });
+      const response = await fetch(url, { mode: "cors" });
       if (!response.ok) return null;
-      
+
       const blob = await response.blob();
       return new Promise((resolve, reject) => {
         const reader = new FileReader();
@@ -615,7 +682,7 @@
         reader.readAsDataURL(blob);
       });
     } catch (error) {
-      console.warn('Failed to convert image URL to base64:', url, error);
+      console.warn("Failed to convert image URL to base64:", url, error);
       return null;
     }
   }
@@ -628,19 +695,27 @@
    */
   async function buildUserContentWithImages(text, imageUrls, getSettings) {
     const settings = getSettings();
-    const model = (settings.geminiModel && String(settings.geminiModel).trim()) || "gemini-2.5-flash";
-    const urls = Array.from(new Set((imageUrls || []).filter(Boolean))).slice(0, MAX_THREAD_IMAGES);
-    
+    const model =
+      (settings.geminiModel && String(settings.geminiModel).trim()) ||
+      "gemini-2.5-flash";
+    const urls = Array.from(new Set((imageUrls || []).filter(Boolean))).slice(
+      0,
+      MAX_THREAD_IMAGES,
+    );
+
     // Check if image processing is disabled
     if (settings.disableImageProcessing) {
       if (urls.length > 0) {
         return {
-          text: text + "\n\n[Image processing is currently disabled. Image URLs from the thread:]\n" + urls.map((u, i) => i + 1 + ". " + u).join("\n")
+          text:
+            text +
+            "\n\n[Image processing is currently disabled. Image URLs from the thread:]\n" +
+            urls.map((u, i) => i + 1 + ". " + u).join("\n"),
         };
       }
       return { text };
     }
-    
+
     if (urls.length === 0) {
       return { text };
     }
@@ -651,7 +726,11 @@
 
     if (!vision) {
       return {
-        text: text + note + "\n\n[Your model may not support vision. Image URLs from the thread:]\n" + urls.map((u, i) => i + 1 + ". " + u).join("\n")
+        text:
+          text +
+          note +
+          "\n\n[Your model may not support vision. Image URLs from the thread:]\n" +
+          urls.map((u, i) => i + 1 + ". " + u).join("\n"),
       };
     }
 
@@ -668,33 +747,33 @@
     }
 
     const parts = [{ text: baseText + note }];
-    
+
     // Convert image URLs to base64 for Gemini
     for (const url of visionUrls) {
       try {
         const base64Data = await imageUrlToBase64(url);
         if (base64Data) {
           // Extract mime type and base64 data
-          const [mimeType, base64] = base64Data.split(',');
+          const [mimeType, base64] = base64Data.split(",");
           const mimeMatch = mimeType.match(/data:([^;]+)/);
-          const mimeTypeStr = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-          
+          const mimeTypeStr = mimeMatch ? mimeMatch[1] : "image/jpeg";
+
           parts.push({
             inline_data: {
               mime_type: mimeTypeStr,
-              data: base64
-            }
+              data: base64,
+            },
           });
         } else {
           // Fallback to text if conversion fails
           parts.push({ text: `[Image: ${url}]` });
         }
       } catch (error) {
-        console.warn('Failed to process image:', url, error);
+        console.warn("Failed to process image:", url, error);
         parts.push({ text: `[Image: ${url}]` });
       }
     }
-    
+
     return { parts };
   }
 
@@ -708,9 +787,12 @@
     const sellerUser = getSellerUsername(getSettings);
     const scopeEl = document.querySelector(listSel);
     const rowSelParts = rowSel.trim().split(/\s+/);
-    const rowRelative = rowSelParts.length > 1 ? rowSelParts.slice(1).join(" ") : rowSel;
+    const rowRelative =
+      rowSelParts.length > 1 ? rowSelParts.slice(1).join(" ") : rowSel;
     const rows = Array.from(
-      scopeEl ? scopeEl.querySelectorAll(rowRelative) : document.querySelectorAll(rowSel)
+      scopeEl
+        ? scopeEl.querySelectorAll(rowRelative)
+        : document.querySelectorAll(rowSel),
     );
     const seen = new Set();
     let items = [];
@@ -752,7 +834,9 @@
         const tx = (p.textContent || "").replace(/\s+/g, " ").trim();
         if (
           !tx ||
-          /^(WE HAVE YOUR BACK|Learn more|This message relates to:|Translate to English)$/i.test(tx) ||
+          /^(WE HAVE YOUR BACK|Learn more|This message relates to:|Translate to English)$/i.test(
+            tx,
+          ) ||
           tx.length < 2
         ) {
           return;
@@ -769,12 +853,18 @@
       const images = extractImageUrlsFromMessageRow(el);
       if (!text && images.length === 0) return;
 
-      const displayText = text || "(image attachment(s) only — no text in this message)";
+      const displayText =
+        text || "(image attachment(s) only — no text in this message)";
       items.push({ role, timeStr, text: displayText, images });
     });
 
     let lines = items.map((it) => {
-      const label = it.role === "seller" ? "seller" : it.role === "buyer" ? "buyer" : "unknown";
+      const label =
+        it.role === "seller"
+          ? "seller"
+          : it.role === "buyer"
+            ? "buyer"
+            : "unknown";
       const ts = it.timeStr ? ` [${it.timeStr}]` : "";
       let line = `[${label}]${ts}\n${it.text}`;
       if (it.images && it.images.length) {
@@ -788,7 +878,12 @@
       const drop = Math.max(1, Math.floor(items.length / 5));
       items = items.slice(drop);
       lines = items.map((it) => {
-        const label = it.role === "seller" ? "seller" : it.role === "buyer" ? "buyer" : "unknown";
+        const label =
+          it.role === "seller"
+            ? "seller"
+            : it.role === "buyer"
+              ? "buyer"
+              : "unknown";
         const ts = it.timeStr ? ` [${it.timeStr}]` : "";
         let line = `[${label}]${ts}\n${it.text}`;
         if (it.images && it.images.length) {
@@ -824,9 +919,12 @@
     const sellerUser = getSellerUsername(getSettings);
     const scopeEl = document.querySelector(listSel);
     const rowSelParts = rowSel.trim().split(/\s+/);
-    const rowRelative = rowSelParts.length > 1 ? rowSelParts.slice(1).join(" ") : rowSel;
+    const rowRelative =
+      rowSelParts.length > 1 ? rowSelParts.slice(1).join(" ") : rowSel;
     const rows = Array.from(
-      scopeEl ? scopeEl.querySelectorAll(rowRelative) : document.querySelectorAll(rowSel)
+      scopeEl
+        ? scopeEl.querySelectorAll(rowRelative)
+        : document.querySelectorAll(rowSel),
     );
     const seen = new Set();
     let lastRole = null;
@@ -864,7 +962,9 @@
         const tx = (p.textContent || "").replace(/\s+/g, " ").trim();
         if (
           !tx ||
-          /^(WE HAVE YOUR BACK|Learn more|This message relates to:|Translate to English)$/i.test(tx) ||
+          /^(WE HAVE YOUR BACK|Learn more|This message relates to:|Translate to English)$/i.test(
+            tx,
+          ) ||
           tx.length < 2
         ) {
           return;
@@ -902,14 +1002,17 @@
     const sellerUser = getSellerUsername(getSettings);
     const scopeEl = document.querySelector(listSel);
     const rowSelParts = rowSel.trim().split(/\s+/);
-    const rowRelative = rowSelParts.length > 1 ? rowSelParts.slice(1).join(" ") : rowSel;
+    const rowRelative =
+      rowSelParts.length > 1 ? rowSelParts.slice(1).join(" ") : rowSel;
     const rows = Array.from(
-      scopeEl ? scopeEl.querySelectorAll(rowRelative) : document.querySelectorAll(rowSel)
+      scopeEl
+        ? scopeEl.querySelectorAll(rowRelative)
+        : document.querySelectorAll(rowSel),
     );
-    
+
     const sellerMessages = [];
     const seen = new Set();
-    
+
     // Extract all seller messages
     rows.forEach((el) => {
       const id = el.id || el.getAttribute("data-id") || "";
@@ -940,7 +1043,14 @@
       const textParts = [];
       body.querySelectorAll('p[data-track-tag="typography"]').forEach((p) => {
         const tx = (p.textContent || "").replace(/\s+/g, " ").trim();
-        if (!tx || /^(WE HAVE YOUR BACK|Learn more|This message relates to:|Translate to English)$/i.test(tx) || tx.length < 2) return;
+        if (
+          !tx ||
+          /^(WE HAVE YOUR BACK|Learn more|This message relates to:|Translate to English)$/i.test(
+            tx,
+          ) ||
+          tx.length < 2
+        )
+          return;
         textParts.push(tx);
       });
       if (textParts.length === 0) {
@@ -958,62 +1068,108 @@
     }
 
     // Analyze writing patterns
-    const avgLength = Math.round(sellerMessages.reduce((sum, msg) => sum + msg.length, 0) / sellerMessages.length);
-    const exclamationCount = sellerMessages.reduce((sum, msg) => sum + (msg.match(/!/g) || []).length, 0);
-    const questionCount = sellerMessages.reduce((sum, msg) => sum + (msg.match(/\?/g) || []).length, 0);
-    const ellipsisCount = sellerMessages.reduce((sum, msg) => sum + (msg.match(/\.\.\./g) || []).length, 0);
-    const hasShortMessages = sellerMessages.some(msg => msg.length < 100);
-    const hasLongMessages = sellerMessages.some(msg => msg.length > 400);
-    
+    const avgLength = Math.round(
+      sellerMessages.reduce((sum, msg) => sum + msg.length, 0) /
+        sellerMessages.length,
+    );
+    const exclamationCount = sellerMessages.reduce(
+      (sum, msg) => sum + (msg.match(/!/g) || []).length,
+      0,
+    );
+    const questionCount = sellerMessages.reduce(
+      (sum, msg) => sum + (msg.match(/\?/g) || []).length,
+      0,
+    );
+    const ellipsisCount = sellerMessages.reduce(
+      (sum, msg) => sum + (msg.match(/\.\.\./g) || []).length,
+      0,
+    );
+    const hasShortMessages = sellerMessages.some((msg) => msg.length < 100);
+    const hasLongMessages = sellerMessages.some((msg) => msg.length > 400);
+
     // Detect formality level
-    const formalWords = sellerMessages.join(' ').match(/\b(regarding|therefore|henceforth|furthermore|nonetheless|furthermore)\b/gi) || [];
-    const casualWords = sellerMessages.join(' ').match(/\b(gonna|wanna|kinda|sorta|yeah|cool|awesome|amazing)\b/gi) || [];
-    const contractionsCount = sellerMessages.join(' ').match(/\b(I'm|you're|it's|don't|won't|can't|isn't|that's|we're|they're)\b/gi) || [];
-    
+    const formalWords =
+      sellerMessages
+        .join(" ")
+        .match(
+          /\b(regarding|therefore|henceforth|furthermore|nonetheless|furthermore)\b/gi,
+        ) || [];
+    const casualWords =
+      sellerMessages
+        .join(" ")
+        .match(/\b(gonna|wanna|kinda|sorta|yeah|cool|awesome|amazing)\b/gi) ||
+      [];
+    const contractionsCount =
+      sellerMessages
+        .join(" ")
+        .match(
+          /\b(I'm|you're|it's|don't|won't|can't|isn't|that's|we're|they're)\b/gi,
+        ) || [];
+
     const isFormal = formalWords.length > casualWords.length;
     const isConversational = contractionsCount.length > 2;
-    
+
     // Extract greetings and closings
     const greetings = sellerMessages
-      .map(msg => {
-        const match = msg.match(/^(Hi|Hello|Hey|Thanks|Thank you|Thanks for|Hi there|Good morning|Good afternoon|Good evening)/i);
+      .map((msg) => {
+        const match = msg.match(
+          /^(Hi|Hello|Hey|Thanks|Thank you|Thanks for|Hi there|Good morning|Good afternoon|Good evening)/i,
+        );
         return match ? match[1] : null;
       })
       .filter(Boolean);
-    
+
     const closings = sellerMessages
-      .map(msg => {
-        const match = msg.match(/(Best|Cheers|Thanks|Thank you|Regards|Respectfully|Talk soon|Look forward|Let me know|Feel free to|Reach out|Get back to|Hope that helps)[,.]?$/i);
+      .map((msg) => {
+        const match = msg.match(
+          /(Best|Cheers|Thanks|Thank you|Regards|Respectfully|Talk soon|Look forward|Let me know|Feel free to|Reach out|Get back to|Hope that helps)[,.]?$/i,
+        );
         return match ? match[1] : null;
       })
       .filter(Boolean);
-    
+
     // Build style guide
-    let styleGuide = "SELLER'S WRITING STYLE (learn from their past messages):\n";
-    styleGuide += `- Message length: ${avgLength > 300 ? 'Detailed & thorough' : avgLength > 100 ? 'Moderate' : 'Brief & concise'}\n`;
-    styleGuide += `- Punctuation: ${exclamationCount > sellerMessages.length * 0.5 ? 'Uses exclamation marks frequently' : exclamationCount > 0 ? 'Uses exclamation marks occasionally' : 'Rarely uses exclamation marks'}\n`;
-    styleGuide += `- Questions: ${questionCount > sellerMessages.length * 0.3 ? 'Asks many questions' : questionCount > 0 ? 'Asks some questions' : 'Rarely asks questions'}\n`;
-    styleGuide += `- Formality: ${isFormal ? 'Formal & professional' : 'Conversational & friendly'}\n`;
-    styleGuide += `- Contractions: ${isConversational ? 'Uses natural contractions (I\'m, don\'t, etc.)' : 'Avoids contractions'}\n`;
-    styleGuide += `- Variety: ${hasShortMessages && hasLongMessages ? 'Mixes short and long messages' : hasLongMessages ? 'Writes longer messages' : 'Writes concise messages'}\n`;
-    
+    let styleGuide =
+      "SELLER'S WRITING STYLE (learn from their past messages):\n";
+    styleGuide += `- Message length: ${avgLength > 300 ? "Detailed & thorough" : avgLength > 100 ? "Moderate" : "Brief & concise"}\n`;
+    styleGuide += `- Punctuation: ${exclamationCount > sellerMessages.length * 0.5 ? "Uses exclamation marks frequently" : exclamationCount > 0 ? "Uses exclamation marks occasionally" : "Rarely uses exclamation marks"}\n`;
+    styleGuide += `- Questions: ${questionCount > sellerMessages.length * 0.3 ? "Asks many questions" : questionCount > 0 ? "Asks some questions" : "Rarely asks questions"}\n`;
+    styleGuide += `- Formality: ${isFormal ? "Formal & professional" : "Conversational & friendly"}\n`;
+    styleGuide += `- Contractions: ${isConversational ? "Uses natural contractions (I'm, don't, etc.)" : "Avoids contractions"}\n`;
+    styleGuide += `- Variety: ${hasShortMessages && hasLongMessages ? "Mixes short and long messages" : hasLongMessages ? "Writes longer messages" : "Writes concise messages"}\n`;
+
     if (greetings.length > 0) {
-      const mostCommonGreeting = greetings.sort((a, b) => greetings.filter(x => x === a).length - greetings.filter(x => x === b).length).pop();
+      const mostCommonGreeting = greetings
+        .sort(
+          (a, b) =>
+            greetings.filter((x) => x === a).length -
+            greetings.filter((x) => x === b).length,
+        )
+        .pop();
       styleGuide += `- Greeting preference: "${mostCommonGreeting}"\n`;
     }
-    
+
     if (closings.length > 0) {
-      const mostCommonClosing = closings.sort((a, b) => closings.filter(x => x === a).length - closings.filter(x => x === b).length).pop();
+      const mostCommonClosing = closings
+        .sort(
+          (a, b) =>
+            closings.filter((x) => x === a).length -
+            closings.filter((x) => x === b).length,
+        )
+        .pop();
       styleGuide += `- Closing preference: "${mostCommonClosing}"\n`;
     }
-    
+
     styleGuide += "\nREPLY GUIDELINES:\n";
-    styleGuide += "- Match this exact writing style, tone, and patterns above\n";
+    styleGuide +=
+      "- Match this exact writing style, tone, and patterns above\n";
     styleGuide += "- Don't add extra explanations or unnecessary text\n";
-    styleGuide += "- Write as if you (the seller) are replying - authentic and direct\n";
-    styleGuide += "- NO preamble, NO placeholder text, NO '[Your message here]'\n";
+    styleGuide +=
+      "- Write as if you (the seller) are replying - authentic and direct\n";
+    styleGuide +=
+      "- NO preamble, NO placeholder text, NO '[Your message here]'\n";
     styleGuide += "- Output ONLY the reply message ready to paste as-is\n";
-    
+
     return styleGuide;
   }
 
@@ -1024,95 +1180,141 @@
    */
   function analyzeTaskAndEstimateCost(transcript) {
     const lowerText = transcript.toLowerCase();
-    
+
     // Define complexity indicators and their weight
     const complexityIndicators = {
       // High complexity (advanced/technical)
       high: [
-        'api', 'integration', 'database', 'backend', 'architecture', 'custom code',
-        'ecommerce', 'mobile app', 'machine learning', 'ai model', 'deep learning',
-        'scalability', 'performance optimization', 'security audit', 'complex design',
-        'wordpress plugin', 'custom theme', 'seo optimization', 'marketing strategy'
+        "api",
+        "integration",
+        "database",
+        "backend",
+        "architecture",
+        "custom code",
+        "ecommerce",
+        "mobile app",
+        "machine learning",
+        "ai model",
+        "deep learning",
+        "scalability",
+        "performance optimization",
+        "security audit",
+        "complex design",
+        "wordpress plugin",
+        "custom theme",
+        "seo optimization",
+        "marketing strategy",
       ],
       // Medium complexity
       medium: [
-        'web design', 'logo', 'branding', 'copywriting', 'content', 'social media',
-        'video editing', 'photography', 'graphic design', 'ui design', 'ux design',
-        'translation', 'proofreading', 'email marketing', 'seo'
+        "web design",
+        "logo",
+        "branding",
+        "copywriting",
+        "content",
+        "social media",
+        "video editing",
+        "photography",
+        "graphic design",
+        "ui design",
+        "ux design",
+        "translation",
+        "proofreading",
+        "email marketing",
+        "seo",
       ],
       // Low complexity (simple tasks)
       low: [
-        'small task', 'quick fix', 'simple', 'basic', 'quick turnaround',
-        'one page', 'simple edit', 'minor', 'short article'
-      ]
+        "small task",
+        "quick fix",
+        "simple",
+        "basic",
+        "quick turnaround",
+        "one page",
+        "simple edit",
+        "minor",
+        "short article",
+      ],
     };
-    
+
     // Count complexity indicators
-    let highCount = 0, mediumCount = 0, lowCount = 0;
-    
-    complexityIndicators.high.forEach(indicator => {
+    let highCount = 0,
+      mediumCount = 0,
+      lowCount = 0;
+
+    complexityIndicators.high.forEach((indicator) => {
       if (lowerText.includes(indicator)) highCount++;
     });
-    
-    complexityIndicators.medium.forEach(indicator => {
+
+    complexityIndicators.medium.forEach((indicator) => {
       if (lowerText.includes(indicator)) mediumCount++;
     });
-    
-    complexityIndicators.low.forEach(indicator => {
+
+    complexityIndicators.low.forEach((indicator) => {
       if (lowerText.includes(indicator)) lowCount++;
     });
-    
+
     // Check for urgency/timeline
-    const hasUrgency = /urgent|asap|today|tomorrow|within (hours|day)|rush/.test(lowerText);
-    const hasRevisions = /unlimited revisions|multiple revisions|revision|changes|adjustments/.test(lowerText);
-    const hasTimeline = /weeks|months|days|deadline|timeline|schedule/.test(lowerText);
-    
+    const hasUrgency =
+      /urgent|asap|today|tomorrow|within (hours|day)|rush/.test(lowerText);
+    const hasRevisions =
+      /unlimited revisions|multiple revisions|revision|changes|adjustments/.test(
+        lowerText,
+      );
+    const hasTimeline = /weeks|months|days|deadline|timeline|schedule/.test(
+      lowerText,
+    );
+
     // Estimate complexity level
-    let complexityLevel = 'medium';
-    let estimateRange = '$100-300';
-    
+    let complexityLevel = "medium";
+    let estimateRange = "$100-300";
+
     if (highCount >= 2) {
-      complexityLevel = 'high';
-      estimateRange = hasUrgency ? '$300-1000+' : '$200-800';
+      complexityLevel = "high";
+      estimateRange = hasUrgency ? "$300-1000+" : "$200-800";
     } else if (mediumCount >= 2) {
-      complexityLevel = 'medium';
-      estimateRange = hasUrgency ? '$150-500' : '$100-400';
+      complexityLevel = "medium";
+      estimateRange = hasUrgency ? "$150-500" : "$100-400";
     } else if (lowCount >= 2) {
-      complexityLevel = 'low';
-      estimateRange = hasUrgency ? '$50-150' : '$25-100';
+      complexityLevel = "low";
+      estimateRange = hasUrgency ? "$50-150" : "$25-100";
     }
-    
+
     // Adjust for revisions and urgency
     if (hasRevisions) {
-      estimateRange += ' (+revisions)';
+      estimateRange += " (+revisions)";
     }
     if (hasUrgency) {
-      estimateRange += ' (rush)';
+      estimateRange += " (rush)";
     }
-    
+
     // Create estimation context for the AI
-    return `\n\nTask Complexity Analysis (for your reference, don't mention in message):\n- Complexity: ${complexityLevel}\n- Estimated range: ${estimateRange}\n- Has timeline: ${hasTimeline ? 'yes' : 'no'}\n- Mentions revisions: ${hasRevisions ? 'yes' : 'no'}\n- Seems urgent: ${hasUrgency ? 'yes' : 'no'}\n\nProvide a pricing message that fits this scope. Be specific with numbers if possible, and explain what's included.`;
+    return `\n\nTask Complexity Analysis (for your reference, don't mention in message):\n- Complexity: ${complexityLevel}\n- Estimated range: ${estimateRange}\n- Has timeline: ${hasTimeline ? "yes" : "no"}\n- Mentions revisions: ${hasRevisions ? "yes" : "no"}\n- Seems urgent: ${hasUrgency ? "yes" : "no"}\n\nProvide a pricing message that fits this scope. Be specific with numbers if possible, and explain what's included.`;
   }
 
   function buildPresetUserText(kind, transcript, getSettings, opts) {
-    const costPrice = (opts && opts.costPrice && String(opts.costPrice).trim()) || "";
+    const costPrice =
+      (opts && opts.costPrice && String(opts.costPrice).trim()) || "";
     const sellerName = getSellerDisplayName(getSettings);
-    
+
     switch (kind) {
       case "first":
         const selectedMessages = (opts && opts.selectedMessages) || [];
-        const selectedContext = selectedMessages.length > 0 ? 
-          "\n\nREFERENCE EXAMPLES FROM YOUR SELECTED MESSAGES:\n" + 
-          selectedMessages.map((msg, i) => `${i + 1}. "${msg}"`).join("\n") +
-          "\n\nStudy these messages to understand the tone, communication style, and what resonates with this specific buyer. Match this energy and style." 
-          : "";
-        
+        const selectedContext =
+          selectedMessages.length > 0
+            ? "\n\nREFERENCE EXAMPLES FROM YOUR SELECTED MESSAGES:\n" +
+              selectedMessages
+                .map((msg, i) => `${i + 1}. "${msg}"`)
+                .join("\n") +
+              "\n\nStudy these messages to understand the tone, communication style, and what resonates with this specific buyer. Match this energy and style."
+            : "";
+
         return (
           "Buyer's first message in this thread:\n" +
           transcript +
           selectedContext +
           "\n\n" +
-          "Write an authentic, professional first response that:"+
+          "Write an authentic, professional first response that:" +
           "\n1. Shows genuine interest in their specific project (reference details they mentioned)\n" +
           "2. Demonstrates expertise without sounding arrogant\n" +
           "3. Addresses a key concern or question they have\n" +
@@ -1139,10 +1341,10 @@
         );
       case "cost":
         // Use manual price if provided, otherwise analyze task for estimate
-        const costContext = costPrice ? 
-          "\n\nSeller's specific price to mention: " + costPrice : 
-          analyzeTaskAndEstimateCost(transcript);
-        
+        const costContext = costPrice
+          ? "\n\nSeller's specific price to mention: " + costPrice
+          : analyzeTaskAndEstimateCost(transcript);
+
         return (
           "Conversation:\n" +
           transcript +
@@ -1162,35 +1364,46 @@
     const { listSel, rowSel } = resolveSelectors();
     const scopeEl = document.querySelector(listSel);
     const rowSelParts = rowSel.trim().split(/\s+/);
-    const rowRelative = rowSelParts.length > 1 ? rowSelParts.slice(1).join(" ") : rowSel;
+    const rowRelative =
+      rowSelParts.length > 1 ? rowSelParts.slice(1).join(" ") : rowSel;
     const messageRows = Array.from(
-      scopeEl ? scopeEl.querySelectorAll(rowRelative) : document.querySelectorAll(rowSel)
+      scopeEl
+        ? scopeEl.querySelectorAll(rowRelative)
+        : document.querySelectorAll(rowSel),
     );
-    
+
     if (enable) {
       console.log("Message selection mode ENABLED");
       // Add hover handlers and select buttons to each message
       messageRows.forEach((row) => {
         if (row.dataset.farSelectionEnabled) return; // Already enabled
-        
+
         row.style.position = "relative";
-        
+
         // Extract message text
         const textParts = [];
         const header = row.querySelector(".header") || row;
-        header.querySelectorAll('p[data-track-tag="typography"]').forEach((p) => {
-          const tx = (p.textContent || "").replace(/\s+/g, " ").trim();
-          if (tx && !(/^(WE HAVE YOUR BACK|Learn more|This message relates to:|Translate to English|Me)$/i.test(tx)) && tx.length > 2) {
-            textParts.push(tx);
-          }
-        });
+        header
+          .querySelectorAll('p[data-track-tag="typography"]')
+          .forEach((p) => {
+            const tx = (p.textContent || "").replace(/\s+/g, " ").trim();
+            if (
+              tx &&
+              !/^(WE HAVE YOUR BACK|Learn more|This message relates to:|Translate to English|Me)$/i.test(
+                tx,
+              ) &&
+              tx.length > 2
+            ) {
+              textParts.push(tx);
+            }
+          });
         const messageText = textParts.join("\n").trim();
-        
+
         if (!messageText) return; // Skip empty messages
-        
+
         row.dataset.farSelectionEnabled = "true";
         row.dataset.messageText = messageText;
-        
+
         // Create select button that appears on hover
         const selectBtn = document.createElement("button");
         selectBtn.type = "button";
@@ -1212,7 +1425,7 @@
           white-space: nowrap;
         `;
         row.appendChild(selectBtn);
-        
+
         // Show/hide button on hover
         row.addEventListener("mouseenter", () => {
           selectBtn.style.display = "block";
@@ -1220,12 +1433,12 @@
         row.addEventListener("mouseleave", () => {
           selectBtn.style.display = "none";
         });
-        
+
         // Handle select button click
         selectBtn.addEventListener("click", async (e) => {
           e.stopPropagation();
           const isSelected = row.dataset.farSelected === "true";
-          
+
           if (isSelected) {
             // Deselect
             row.dataset.farSelected = "false";
@@ -1266,12 +1479,18 @@
     // Use default selectors directly to avoid needing getSettings
     const listSel = INBOX_MESSAGE_LIST_SELECTOR; // ".message-flow"
     const rowSel = INBOX_MESSAGE_ROW_SELECTOR; // ".message-flow .message"
-    
+
     const scopeEl = document.querySelector(listSel);
     if (!scopeEl) {
-      console.log("[FAR] Message flow container not found - trying alternate selectors");
+      console.log(
+        "[FAR] Message flow container not found - trying alternate selectors",
+      );
       // Try alternate selector
-      const alternates = [".message-list", ".messages", "[data-track-tag='message_list']"];
+      const alternates = [
+        ".message-list",
+        ".messages",
+        "[data-track-tag='message_list']",
+      ];
       for (const alt of alternates) {
         const alt_el = document.querySelector(alt);
         if (alt_el) {
@@ -1281,61 +1500,73 @@
       }
       return;
     }
-    
+
     const rowSelParts = rowSel.trim().split(/\s+/);
-    const rowRelative = rowSelParts.length > 1 ? rowSelParts.slice(1).join(" ") : rowSel;
+    const rowRelative =
+      rowSelParts.length > 1 ? rowSelParts.slice(1).join(" ") : rowSel;
     const messageRows = Array.from(
-      scopeEl ? scopeEl.querySelectorAll(rowRelative) : document.querySelectorAll(rowSel)
+      scopeEl
+        ? scopeEl.querySelectorAll(rowRelative)
+        : document.querySelectorAll(rowSel),
     );
-    
+
     console.log(`[FAR] Found ${messageRows.length} messages to initialize`);
-    
+
     // Get already selected messages
     const selectedMessages = await getSelectedMessages();
     const selectedSet = new Set(selectedMessages);
-    
+
     let initializedCount = 0;
     messageRows.forEach((row, idx) => {
       if (row.dataset.farInitialized) return; // Already initialized
-      
+
       // Extract message text
       const textParts = [];
       const header = row.querySelector(".header") || row;
       header.querySelectorAll('p[data-track-tag="typography"]').forEach((p) => {
         const tx = (p.textContent || "").replace(/\s+/g, " ").trim();
-        if (tx && !(/^(WE HAVE YOUR BACK|Learn more|This message relates to:|Translate to English|Me)$/i.test(tx)) && tx.length > 2) {
+        if (
+          tx &&
+          !/^(WE HAVE YOUR BACK|Learn more|This message relates to:|Translate to English|Me)$/i.test(
+            tx,
+          ) &&
+          tx.length > 2
+        ) {
           textParts.push(tx);
         }
       });
       const messageText = textParts.join("\n").trim();
-      
+
       if (!messageText) {
         console.log(`[FAR] Message ${idx} has no text content, skipping`);
         return; // Skip empty messages
       }
-      
+
       row.dataset.farInitialized = "true";
       row.dataset.messageText = messageText;
-      
+
       // Check if this message was previously selected
       if (selectedSet.has(messageText)) {
         row.dataset.farSelected = "true";
         row.style.background = "#e6f9f0";
       }
-      
+
       // Find the actions button container (the one with the three dots menu)
-      const actionsBtnContainer = row.querySelector('[data-track-tag="popover_anchor"]');
+      const actionsBtnContainer = row.querySelector(
+        '[data-track-tag="popover_anchor"]',
+      );
       if (!actionsBtnContainer) {
         console.log(`[FAR] Message ${idx} has no actions button, skipping`);
         return;
       }
-      
+
       // Create select button that appears on hover
       const selectBtn = document.createElement("button");
       selectBtn.type = "button";
       selectBtn.className = "far-ia-select-msg-btn";
       selectBtn.setAttribute("data-track-tag", "icon_button");
-      selectBtn.textContent = row.dataset.farSelected === "true" ? "✓ Selected" : "📌 Select";
+      selectBtn.textContent =
+        row.dataset.farSelected === "true" ? "✓ Selected" : "📌 Select";
       selectBtn.style.cssText = `
         padding: 6px 10px;
         background: ${row.dataset.farSelected === "true" ? "#1dbf73" : "white"};
@@ -1349,12 +1580,17 @@
         white-space: nowrap;
         margin-right: 8px;
       `;
-      
+
       // Insert button before the actions button container
-      actionsBtnContainer.parentNode.insertBefore(selectBtn, actionsBtnContainer);
-      console.log(`[FAR] Created select button for message ${idx}: "${messageText.substring(0, 30)}..."`);
+      actionsBtnContainer.parentNode.insertBefore(
+        selectBtn,
+        actionsBtnContainer,
+      );
+      console.log(
+        `[FAR] Created select button for message ${idx}: "${messageText.substring(0, 30)}..."`,
+      );
       initializedCount++;
-      
+
       // Show/hide button on hover (hover on message row)
       row.addEventListener("mouseenter", () => {
         selectBtn.style.display = "block";
@@ -1362,12 +1598,12 @@
       row.addEventListener("mouseleave", () => {
         selectBtn.style.display = "none";
       });
-      
+
       // Handle select button click
       selectBtn.addEventListener("click", async (e) => {
         e.stopPropagation();
         const isSelected = row.dataset.farSelected === "true";
-        
+
         if (isSelected) {
           // Deselect
           row.dataset.farSelected = "false";
@@ -1389,9 +1625,11 @@
         }
       });
     });
-    
-    console.log(`[FAR] Successfully initialized ${initializedCount} messages with select buttons`);
-    
+
+    console.log(
+      `[FAR] Successfully initialized ${initializedCount} messages with select buttons`,
+    );
+
     // Set up MutationObserver to reinitialize when new messages are added
     const messageFlow = document.querySelector(INBOX_MESSAGE_LIST_SELECTOR);
     if (messageFlow && !messageFlow.dataset.farMutationObserverActive) {
@@ -1400,15 +1638,19 @@
         // Debounce: wait 500ms after last mutation before reinitializing
         clearTimeout(window.farInitTimeout);
         window.farInitTimeout = setTimeout(() => {
-          console.log("[FAR] New messages detected, reinitializing selection UI");
-          initializeMessageSelection().catch(err => console.warn("Failed to reinitialize message selection:", err));
+          console.log(
+            "[FAR] New messages detected, reinitializing selection UI",
+          );
+          initializeMessageSelection().catch((err) =>
+            console.warn("Failed to reinitialize message selection:", err),
+          );
         }, 500);
       });
-      
+
       observer.observe(messageFlow, {
         childList: true,
         subtree: true,
-        attributes: false
+        attributes: false,
       });
       console.log("[FAR] MutationObserver set up to watch for new messages");
     }
@@ -1448,42 +1690,56 @@
     const sellerName = getSellerDisplayName(getSettings);
     const sellerStyle = extractSellerWritingStyle(getSettings);
     const pinnedMessages = await getPinnedMessages();
-    
+
     let sys = BASE_SYSTEM_PROMPT;
-    
+
     // Add pinned messages as examples for reference
     if (pinnedMessages && pinnedMessages.length > 0) {
       sys += formatPinnedMessagesAsExamples(pinnedMessages);
     }
-    
+
     if (sellerStyle) {
       sys += "\n\n" + sellerStyle;
     }
     sys += "\nSeller display name (use when natural): " + sellerName;
-    
+
     // Enhance first message with special instructions
     if (kind === "first") {
       sys += "\n\nFIRST MESSAGE SPECIAL INSTRUCTIONS:\n";
-      sys += "- This is your FIRST response to this buyer - make a strong professional impression\n";
-      sys += "- Show enthusiasm about their project WITHOUT sounding fake or desperate\n";
-      sys += "- Demonstrate you understand their requirements by referencing specific details they mentioned\n";
-      sys += "- Keep it concise (2-3 short paragraphs max) - respect their time\n";
-      sys += "- End with 1-2 specific, relevant questions that show you've thought about their project\n";
-      sys += "- DO NOT include pricing, packages, or generic service info in first message\n";
-      sys += "- Sound like a skilled professional who is selective about projects, not desperate for work\n";
-      sys += "- If they mentioned timeline/budget, acknowledge it to show you're listening\n";
+      sys +=
+        "- This is your FIRST response to this buyer - make a strong professional impression\n";
+      sys +=
+        "- Show enthusiasm about their project WITHOUT sounding fake or desperate\n";
+      sys +=
+        "- Demonstrate you understand their requirements by referencing specific details they mentioned\n";
+      sys +=
+        "- Keep it concise (2-3 short paragraphs max) - respect their time\n";
+      sys +=
+        "- End with 1-2 specific, relevant questions that show you've thought about their project\n";
+      sys +=
+        "- DO NOT include pricing, packages, or generic service info in first message\n";
+      sys +=
+        "- Sound like a skilled professional who is selective about projects, not desperate for work\n";
+      sys +=
+        "- If they mentioned timeline/budget, acknowledge it to show you're listening\n";
     }
-    
+
     const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
-    const userText = buildPresetUserText(kind, transcript, getSettings, { costPrice: "" });
-    const userContent = await buildUserContentWithImages(userText, imageUrls, getSettings);
+    const userText = buildPresetUserText(kind, transcript, getSettings, {
+      costPrice: "",
+    });
+    const userContent = await buildUserContentWithImages(
+      userText,
+      imageUrls,
+      getSettings,
+    );
     return generateWithAI(
       getSettings,
       [
         { role: "system", content: sys },
         { role: "user", content: userContent },
       ],
-      { temperature: kind === "first" ? 0.5 : 0.45 }
+      { temperature: kind === "first" ? 0.5 : 0.45 },
     );
   }
 
@@ -1496,14 +1752,21 @@
 
   function mapGeminiError(status, bodySnippet) {
     if (status === 400) {
-      if (bodySnippet && /location.*not.*supported|not.*available.*location|geographic|region.*not.*support/i.test(bodySnippet)) {
-        return "Geographic restriction (400). Your location/country is not supported for Gemini API access.\n\n" +
-               "SOLUTIONS:\n" +
-               "1. Use a VPN to connect from a supported country (US, UK, Canada, etc.)\n" +
-               "2. If using VPN, make sure it's working properly and not exposing your real IP\n" +
-               "3. Try a different Gemini model or use a different API (Claude, ChatGPT, etc.)\n" +
-               "4. Check if your ISP blocks the API - try with mobile hotspot\n\n" +
-               "Visit: https://cloud.google.com/generative-ai/docs/availability for supported regions.";
+      if (
+        bodySnippet &&
+        /location.*not.*supported|not.*available.*location|geographic|region.*not.*support/i.test(
+          bodySnippet,
+        )
+      ) {
+        return (
+          "Geographic restriction (400). Your location/country is not supported for Gemini API access.\n\n" +
+          "SOLUTIONS:\n" +
+          "1. Use a VPN to connect from a supported country (US, UK, Canada, etc.)\n" +
+          "2. If using VPN, make sure it's working properly and not exposing your real IP\n" +
+          "3. Try a different Gemini model or use a different API (Claude, ChatGPT, etc.)\n" +
+          "4. Check if your ISP blocks the API - try with mobile hotspot\n\n" +
+          "Visit: https://cloud.google.com/generative-ai/docs/availability for supported regions."
+        );
       }
       if (bodySnippet && /api.key.invalid/i.test(bodySnippet)) {
         return "Invalid API key (400). The API key doesn't exist or was revoked. Get a new key from https://aistudio.google.com/app/apikey";
@@ -1523,13 +1786,20 @@
       return "Unauthorized (401). Invalid API key. Get a new key from https://aistudio.google.com/app/apikey";
     }
     if (status === 403) {
-      if (bodySnippet && /location.*not.*supported|not.*available.*location|geographic|region.*not.*support/i.test(bodySnippet)) {
-        return "Geographic restriction (403). Your location/country is not supported for Gemini API access.\n\n" +
-               "SOLUTIONS:\n" +
-               "1. Use a VPN to connect from a supported country (US, UK, Canada, etc.)\n" +
-               "2. If using VPN, make sure it's working properly and not exposing your real IP\n" +
-               "3. Try a different API (Claude, ChatGPT)\n\n" +
-               "Visit: https://cloud.google.com/generative-ai/docs/availability for supported regions.";
+      if (
+        bodySnippet &&
+        /location.*not.*supported|not.*available.*location|geographic|region.*not.*support/i.test(
+          bodySnippet,
+        )
+      ) {
+        return (
+          "Geographic restriction (403). Your location/country is not supported for Gemini API access.\n\n" +
+          "SOLUTIONS:\n" +
+          "1. Use a VPN to connect from a supported country (US, UK, Canada, etc.)\n" +
+          "2. If using VPN, make sure it's working properly and not exposing your real IP\n" +
+          "3. Try a different API (Claude, ChatGPT)\n\n" +
+          "Visit: https://cloud.google.com/generative-ai/docs/availability for supported regions."
+        );
       }
       if (bodySnippet && /billing|quota/i.test(bodySnippet)) {
         return "Billing required (403). This API key requires billing setup. Check your Google Cloud billing.";
@@ -1542,9 +1812,13 @@
       }
       return "Rate limited (429). Gemini API is experiencing high demand. Try enabling 'Disable image processing' in settings to reduce API load, or wait a few moments and try again.";
     }
-    if (status === 503) return "Service unavailable (503). Gemini API is currently experiencing high demand. Please try again later.";
+    if (status === 503)
+      return "Service unavailable (503). Gemini API is currently experiencing high demand. Please try again later.";
     if (status === 0 || status >= 500) {
-      if (bodySnippet && /high demand|currently experiencing/i.test(bodySnippet)) {
+      if (
+        bodySnippet &&
+        /high demand|currently experiencing/i.test(bodySnippet)
+      ) {
         return "Gemini API is experiencing high demand. This is temporary - please try again in a few moments. Consider enabling 'Disable image processing' in settings to reduce API load.";
       }
       return "Gemini API or network error. Check your internet connection and try again.";
@@ -1558,45 +1832,45 @@
    * @returns {Array} Gemini format [{role, parts}]
    */
   function convertMessagesToGeminiFormat(messages) {
-    return messages.map(msg => {
-      if (typeof msg.content === 'string') {
+    return messages.map((msg) => {
+      if (typeof msg.content === "string") {
         return {
-          role: msg.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: msg.content }]
+          role: msg.role === "assistant" ? "model" : "user",
+          parts: [{ text: msg.content }],
         };
       } else if (Array.isArray(msg.content)) {
         // Handle multimodal content
-        const parts = msg.content.map(part => {
-          if (part.type === 'text') {
+        const parts = msg.content.map((part) => {
+          if (part.type === "text") {
             return { text: part.text };
-          } else if (part.type === 'image_url') {
+          } else if (part.type === "image_url") {
             // For now, we'll handle images as URLs in text
             // In a full implementation, we'd need to fetch and convert to base64
             return { text: `[Image: ${part.image_url.url}]` };
           }
-          return { text: '' };
+          return { text: "" };
         });
         return {
-          role: msg.role === 'assistant' ? 'model' : 'user',
-          parts: parts.filter(p => p.text)
+          role: msg.role === "assistant" ? "model" : "user",
+          parts: parts.filter((p) => p.text),
         };
       } else if (msg.content && msg.content.parts) {
         // Already in Gemini format
         return {
-          role: msg.role === 'assistant' ? 'model' : 'user',
-          parts: msg.content.parts
+          role: msg.role === "assistant" ? "model" : "user",
+          parts: msg.content.parts,
         };
       } else if (msg.content && msg.content.text) {
         // Gemini format with single text part
         return {
-          role: msg.role === 'assistant' ? 'model' : 'user',
-          parts: [{ text: msg.content.text }]
+          role: msg.role === "assistant" ? "model" : "user",
+          parts: [{ text: msg.content.text }],
         };
       }
       // Fallback
       return {
-        role: msg.role === 'assistant' ? 'model' : 'user',
-        parts: [{ text: String(msg.content || '') }]
+        role: msg.role === "assistant" ? "model" : "user",
+        parts: [{ text: String(msg.content || "") }],
       };
     });
   }
@@ -1606,22 +1880,22 @@
    */
   function showRetryStatus(message) {
     // Try to find active modal and update loading text
-    const activeModal = document.querySelector('.far-ia-task-modal');
+    const activeModal = document.querySelector(".far-ia-task-modal");
     if (activeModal) {
-      const loadingText = activeModal.querySelector('.far-ia-loading-text');
+      const loadingText = activeModal.querySelector(".far-ia-loading-text");
       if (loadingText) {
         loadingText.textContent = message;
-        loadingText.style.display = 'block';
+        loadingText.style.display = "block";
       }
     }
-    
+
     // Also try to find custom offer button
-    const customOfferBtn = document.querySelector('.far-custom-offer-ai-btn');
+    const customOfferBtn = document.querySelector(".far-custom-offer-ai-btn");
     if (customOfferBtn) {
       const originalText = customOfferBtn.textContent;
       customOfferBtn.textContent = message;
       customOfferBtn.disabled = true;
-      
+
       // Restore original text after delay
       setTimeout(() => {
         customOfferBtn.textContent = originalText;
@@ -1634,7 +1908,7 @@
    * Sleep function for retry delays
    */
   function sleep(ms) {
-    return new Promise(resolve => setTimeout(resolve, ms));
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
@@ -1643,64 +1917,76 @@
   async function geminiGenerateContent(getSettings, messages, options) {
     const s = getSettings();
     const apiKey = (s && s.geminiApiKey && String(s.geminiApiKey).trim()) || "";
-    
+
     // Debug logging
-    console.log('=== Gemini API Request Debug ===');
-    console.log('1. Settings check:', {
+    console.log("=== Gemini API Request Debug ===");
+    console.log("1. Settings check:", {
       hasApiKey: !!apiKey,
       apiKeyLength: apiKey ? apiKey.length : 0,
-      apiKeyPrefix: apiKey ? apiKey.substring(0, 10) + '...' : 'none',
-      model: s && s.geminiModel && String(s.geminiModel).trim()
+      apiKeyPrefix: apiKey ? apiKey.substring(0, 10) + "..." : "none",
+      model: s && s.geminiModel && String(s.geminiModel).trim(),
     });
-    
+
     if (!apiKey) {
-      console.error('ERROR: No API key found');
+      console.error("ERROR: No API key found");
       throw new Error("Add your Gemini API key in Fiverr Assistant settings.");
     }
-    
+
     // Validate API key format
-    console.log('2. API key validation:', {
+    console.log("2. API key validation:", {
       startsWithAIza: apiKey.startsWith("AIza"),
       length: apiKey.length,
-      minLength: apiKey.length >= 30
+      minLength: apiKey.length >= 30,
     });
-    
+
     if (!apiKey.startsWith("AIza")) {
-      console.error('ERROR: Invalid API key format');
-      throw new Error("Invalid API key format. Gemini API keys should start with 'AIza'. Get a new key from https://aistudio.google.com/app/apikey");
+      console.error("ERROR: Invalid API key format");
+      throw new Error(
+        "Invalid API key format. Gemini API keys should start with 'AIza'. Get a new key from https://aistudio.google.com/app/apikey",
+      );
     }
-    
+
     if (apiKey.length < 30) {
-      console.error('ERROR: API key too short');
-      throw new Error("API key appears too short. Please check you copied the full key from https://aistudio.google.com/app/apikey");
+      console.error("ERROR: API key too short");
+      throw new Error(
+        "API key appears too short. Please check you copied the full key from https://aistudio.google.com/app/apikey",
+      );
     }
-    
-    const model = (s && s.geminiModel && String(s.geminiModel).trim()) || "gemini-2.5-flash";
-    console.log('3. Using model:', model);
-    
+
+    const model =
+      (s && s.geminiModel && String(s.geminiModel).trim()) ||
+      "gemini-2.5-flash";
+    console.log("3. Using model:", model);
+
     const geminiMessages = convertMessagesToGeminiFormat(messages);
-    console.log('4. Converted messages:', geminiMessages);
-    
+    console.log("4. Converted messages:", geminiMessages);
+
     const body = {
       contents: geminiMessages,
       generationConfig: {
-        temperature: options && typeof options.temperature === "number" ? options.temperature : 0.7,
+        temperature:
+          options && typeof options.temperature === "number"
+            ? options.temperature
+            : 0.7,
         maxOutputTokens: 8192,
       },
     };
-    
-    console.log('5. Request body:', JSON.stringify(body, null, 2));
+
+    console.log("5. Request body:", JSON.stringify(body, null, 2));
 
     const url = `${GEMINI_CHAT_URL}${model}:generateContent`;
-    console.log('6. Request URL:', url.replace(/key=[^&]*/, 'key=***REDACTED***'));
-    
+    console.log(
+      "6. Request URL:",
+      url.replace(/key=[^&]*/, "key=***REDACTED***"),
+    );
+
     // Retry mechanism for rate limiting and high demand errors
     const maxRetries = 3;
     const baseDelay = 2000; // 2 seconds for better user experience
-    
+
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       console.log(`7. Attempt ${attempt + 1}/${maxRetries}`);
-      
+
       try {
         const fetchOptions = {
           method: "POST",
@@ -1709,71 +1995,76 @@
           },
           body: JSON.stringify(body),
         };
-        
-        console.log('8. Fetch options:', {
+
+        console.log("8. Fetch options:", {
           method: fetchOptions.method,
           headers: fetchOptions.headers,
-          bodyLength: fetchOptions.body.length
+          bodyLength: fetchOptions.body.length,
         });
-        
+
         const res = await fetch(`${url}?key=${apiKey}`, fetchOptions);
-        
-        console.log('9. Response received:', {
+
+        console.log("9. Response received:", {
           status: res.status,
           statusText: res.statusText,
           headers: Object.fromEntries(res.headers.entries()),
-          ok: res.ok
+          ok: res.ok,
         });
 
         const rawText = await res.text();
-        console.log('10. Raw response text:', rawText);
-        
+        console.log("10. Raw response text:", rawText);
+
         let data;
         try {
           data = JSON.parse(rawText);
-          console.log('11. Parsed JSON data:', data);
+          console.log("11. Parsed JSON data:", data);
         } catch (error) {
-          console.error('11. JSON parse error:', error);
+          console.error("11. JSON parse error:", error);
           data = null;
         }
 
         if (!res.ok) {
-          const apiErr = data && data.error && typeof data.error.message === "string" ? data.error.message : "";
-          
-          console.log('12. API Error details:', {
+          const apiErr =
+            data && data.error && typeof data.error.message === "string"
+              ? data.error.message
+              : "";
+
+          console.log("12. API Error details:", {
             status: res.status,
             apiError: apiErr,
-            errorData: data && data.error
+            errorData: data && data.error,
           });
-          
+
           // Check if this is a retryable error
-          const isRetryable = (
+          const isRetryable =
             res.status === 429 || // Rate limited
             res.status === 503 || // Service unavailable
-            (res.status >= 500 && /high demand|currently experiencing/i.test(apiErr)) || // High demand message
-            (res.status === 0 && attempt < maxRetries - 1) // Network error (but not on last attempt)
-          );
-          
-          console.log('13. Is retryable error:', {
+            (res.status >= 500 &&
+              /high demand|currently experiencing/i.test(apiErr)) || // High demand message
+            (res.status === 0 && attempt < maxRetries - 1); // Network error (but not on last attempt)
+
+          console.log("13. Is retryable error:", {
             isRetryable,
             currentAttempt: attempt,
-            maxRetries: maxRetries - 1
+            maxRetries: maxRetries - 1,
           });
-          
+
           if (isRetryable && attempt < maxRetries - 1) {
-            const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000; // Exponential backoff with jitter
-            const retryMsg = attempt === 0 
-              ? `Gemini API busy. Retrying ${attempt + 1}/${maxRetries} in ${Math.round(delay/1000)}s...`
-              : `Still busy. Retrying ${attempt + 1}/${maxRetries} in ${Math.round(delay/1000)}s...`;
-            console.log('14. Retrying:', retryMsg);
+            const delay =
+              baseDelay * Math.pow(2, attempt) + Math.random() * 1000; // Exponential backoff with jitter
+            const retryMsg =
+              attempt === 0
+                ? `Gemini API busy. Retrying ${attempt + 1}/${maxRetries} in ${Math.round(delay / 1000)}s...`
+                : `Still busy. Retrying ${attempt + 1}/${maxRetries} in ${Math.round(delay / 1000)}s...`;
+            console.log("14. Retrying:", retryMsg);
             // Show user-friendly retry message in UI
             showRetryStatus(retryMsg);
             await sleep(delay);
             continue;
           }
-          
+
           // Not retryable or last attempt - throw error
-          console.log('15. Final error - throwing exception');
+          console.log("15. Final error - throwing exception");
           let msg = mapGeminiError(res.status, apiErr);
           if (apiErr && !/api[_-]?key/i.test(apiErr)) {
             if (!(res.status === 400 && /unsupported.image/i.test(apiErr))) {
@@ -1782,74 +2073,76 @@
           }
           throw new Error(msg.trim());
         }
-        
+
         // Success - parse response
-        console.log('16. Parsing successful response');
+        console.log("16. Parsing successful response");
         const candidate = data && data.candidates && data.candidates[0];
-        console.log('17. Candidate data:', candidate);
-        
+        console.log("17. Candidate data:", candidate);
+
         const content = candidate && candidate.content;
-        console.log('18. Content data:', content);
-        
+        console.log("18. Content data:", content);
+
         const parts = content && content.parts;
-        console.log('19. Parts data:', parts);
-        
+        console.log("19. Parts data:", parts);
+
         if (parts && parts.length > 0) {
-          const textParts = parts
-            .filter((p) => p && p.text)
-            .map((p) => p.text);
-          console.log('20. Text parts:', textParts);
-          
+          const textParts = parts.filter((p) => p && p.text).map((p) => p.text);
+          console.log("20. Text parts:", textParts);
+
           // Track successful Gemini call
           await trackGeminiCall();
-          
+
           const finalText = stripFencesAndPreamble(textParts.join("\n"));
-          console.log('21. Final text to return:', finalText);
-          console.log('=== Gemini API Request Complete ===\n');
-          
+          console.log("21. Final text to return:", finalText);
+          console.log("=== Gemini API Request Complete ===\n");
+
           return finalText;
         }
-        
-        console.log('20. No text parts found, returning empty string');
-        
+
+        console.log("20. No text parts found, returning empty string");
+
         // Track successful Gemini call (even if empty response)
         await trackGeminiCall();
-        
-        console.log('=== Gemini API Request Complete (Empty) ===\n');
+
+        console.log("=== Gemini API Request Complete (Empty) ===\n");
         return "";
-        
       } catch (error) {
-        console.log('22. Exception caught:', {
+        console.log("22. Exception caught:", {
           error: error,
           message: error.message,
-          stack: error.stack ? error.stack.substring(0, 500) : 'no stack',
+          stack: error.stack ? error.stack.substring(0, 500) : "no stack",
           attempt: attempt,
-          isLastAttempt: attempt === maxRetries - 1
+          isLastAttempt: attempt === maxRetries - 1,
         });
-        
+
         // If this is the last attempt, re-throw the error
         if (attempt === maxRetries - 1) {
-          console.log('23. Last attempt failed, throwing error');
-          console.log('=== Gemini API Request Failed ===\n');
+          console.log("23. Last attempt failed, throwing error");
+          console.log("=== Gemini API Request Failed ===\n");
           throw error;
         }
-        
+
         // For network errors, retry with exponential backoff
-        if (error.message.includes("network") || error.message.includes("fetch")) {
+        if (
+          error.message.includes("network") ||
+          error.message.includes("fetch")
+        ) {
           const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
-          console.log(`24. Network error - retry ${attempt + 1}/${maxRetries} after ${delay}ms`);
+          console.log(
+            `24. Network error - retry ${attempt + 1}/${maxRetries} after ${delay}ms`,
+          );
           await sleep(delay);
           continue;
         }
-        
+
         // For other errors, don't retry
-        console.log('25. Non-retryable error, throwing immediately');
-        console.log('=== Gemini API Request Failed ===\n');
+        console.log("25. Non-retryable error, throwing immediately");
+        console.log("=== Gemini API Request Failed ===\n");
         throw error;
       }
     }
-    
-    console.log('26. All retries exhausted');
+
+    console.log("26. All retries exhausted");
     throw new Error("Gemini API request failed after all retries.");
   }
 
@@ -1940,12 +2233,17 @@
     };
 
     const observer = new MutationObserver(schedule);
-    observer.observe(document.documentElement, { childList: true, subtree: true });
+    observer.observe(document.documentElement, {
+      childList: true,
+      subtree: true,
+    });
     schedule();
   }
 
   function injectCustomOfferDescriptionButton(getSettings) {
-    const ta = document.querySelector(CUSTOM_OFFER_DESCRIPTION_TEXTAREA_SELECTOR);
+    const ta = document.querySelector(
+      CUSTOM_OFFER_DESCRIPTION_TEXTAREA_SELECTOR,
+    );
     if (!ta || ta.tagName !== "TEXTAREA" || !document.body.contains(ta)) return;
 
     const inner = ta.parentElement;
@@ -1969,13 +2267,18 @@
       err.textContent = "";
       btn.disabled = true;
       const originalBtnText = btn.textContent;
-      
+
       try {
-        const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
+        const { text: transcript, imageUrls } =
+          buildInboxTranscript(getSettings);
         const form = ta.closest("form");
         const gigHeading =
           form && form.querySelector('h6[data-track-tag="heading"]');
-        const titleText = gigHeading ? String(gigHeading.textContent || "").replace(/\s+/g, " ").trim() : "";
+        const titleText = gigHeading
+          ? String(gigHeading.textContent || "")
+              .replace(/\s+/g, " ")
+              .trim()
+          : "";
 
         const sellerName = getSellerDisplayName(getSettings);
         const sys =
@@ -1991,7 +2294,11 @@
           transcript +
           "\n\nProduce the offer description text only. If the thread is empty or uninformative, write a short professional scope summary and invite the buyer to confirm details—do not invent a specific project.";
 
-        const userContent = await buildUserContentWithImages(userText, imageUrls, getSettings);
+        const userContent = await buildUserContentWithImages(
+          userText,
+          imageUrls,
+          getSettings,
+        );
 
         const text = await generateWithAI(
           getSettings,
@@ -1999,11 +2306,12 @@
             { role: "system", content: sys },
             { role: "user", content: userContent },
           ],
-          { temperature: 0.45 }
+          { temperature: 0.45 },
         );
-        
+
         let out = (text || "").trim();
-        const maxLen = parseInt(ta.getAttribute("maxlength") || "1500", 10) || 1500;
+        const maxLen =
+          parseInt(ta.getAttribute("maxlength") || "1500", 10) || 1500;
         if (out.length > maxLen) out = out.slice(0, maxLen);
         ta.value = out;
         ta.dispatchEvent(new Event("input", { bubbles: true }));
@@ -2012,8 +2320,13 @@
       } catch (e) {
         // Enhance error message with suggestions for rate limiting
         let errorMsg = e.message || "Could not generate description.";
-        if (errorMsg.includes("Rate limited") || errorMsg.includes("high demand") || errorMsg.includes("quota")) {
-          errorMsg += " Tip: Enable 'Disable image processing' in extension settings to reduce API load during busy periods.";
+        if (
+          errorMsg.includes("Rate limited") ||
+          errorMsg.includes("high demand") ||
+          errorMsg.includes("quota")
+        ) {
+          errorMsg +=
+            " Tip: Enable 'Disable image processing' in extension settings to reduce API load during busy periods.";
         }
         err.textContent = errorMsg;
         err.style.display = "block";
@@ -2029,8 +2342,12 @@
   }
 
   function trapFocus(dialog) {
-    const sel = 'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
-    const nodes = () => Array.from(dialog.querySelectorAll(sel)).filter((el) => !el.disabled && el.offsetParent !== null);
+    const sel =
+      'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])';
+    const nodes = () =>
+      Array.from(dialog.querySelectorAll(sel)).filter(
+        (el) => !el.disabled && el.offsetParent !== null,
+      );
     const first = () => nodes()[0];
     const last = () => nodes()[nodes().length - 1];
     dialog.addEventListener("keydown", (e) => {
@@ -2061,25 +2378,32 @@
   async function openaiGenerateContent(getSettings, messages, options) {
     const s = getSettings();
     const apiKeys = getApiKeyList(s);
-    
+
     if (!apiKeys || apiKeys.length === 0) {
-      throw new Error("Add your OpenAI API key(s) in Fiverr Assistant settings. Get one at https://platform.openai.com/api-keys. You can add multiple keys separated by newlines or commas for automatic failover.");
+      throw new Error(
+        "Add your OpenAI API key(s) in Fiverr Assistant settings. Get one at https://platform.openai.com/api-keys. You can add multiple keys separated by newlines or commas for automatic failover.",
+      );
     }
-    
+
     // Validate all keys have correct format
     for (const key of apiKeys) {
       if (!key.startsWith("sk-")) {
-        throw new Error("Invalid OpenAI API key format. Should start with 'sk-'. Get a key at https://platform.openai.com/api-keys");
+        throw new Error(
+          "Invalid OpenAI API key format. Should start with 'sk-'. Get a key at https://platform.openai.com/api-keys",
+        );
       }
     }
-    
-    const model = (s && s.openaiModel && String(s.openaiModel).trim()) || "gpt-4o-mini";
-    console.log(`Using OpenAI model: ${model} with ${apiKeys.length} API key(s)`);
-    
+
+    const model =
+      (s && s.openaiModel && String(s.openaiModel).trim()) || "gpt-4o-mini";
+    console.log(
+      `Using OpenAI model: ${model} with ${apiKeys.length} API key(s)`,
+    );
+
     // Get current key index and failed keys
     let currentIndex = await getCurrentKeyIndex();
     const failedKeys = await getFailedKeys();
-    
+
     // Find first non-failed key starting from current index
     let keyToUse = null;
     let startIndex = currentIndex;
@@ -2091,84 +2415,100 @@
         break;
       }
     }
-    
+
     // If all keys are marked as failed, try them anyway but reset failed list
     if (!keyToUse) {
-      console.log("All API keys marked as failed, resetting and trying again...");
+      console.log(
+        "All API keys marked as failed, resetting and trying again...",
+      );
       await clearFailedKeys();
       keyToUse = apiKeys[0];
       currentIndex = 0;
     }
-    
-    const openaiMessages = messages.map(msg => {
-      if (typeof msg.content === 'string') {
+
+    const openaiMessages = messages.map((msg) => {
+      if (typeof msg.content === "string") {
         return { role: msg.role, content: msg.content };
       } else if (msg.content && msg.content.text) {
         return { role: msg.role, content: msg.content.text };
       } else if (msg.content && msg.content.parts) {
         // Convert from Gemini format
-        const textParts = msg.content.parts.filter(p => p && p.text).map(p => p.text);
-        return { role: msg.role, content: textParts.join('\n') };
+        const textParts = msg.content.parts
+          .filter((p) => p && p.text)
+          .map((p) => p.text);
+        return { role: msg.role, content: textParts.join("\n") };
       }
-      return { role: msg.role, content: String(msg.content || '') };
+      return { role: msg.role, content: String(msg.content || "") };
     });
-    
+
     const body = {
       model: model,
       messages: openaiMessages,
-      temperature: options && typeof options.temperature === "number" ? options.temperature : 0.7,
+      temperature:
+        options && typeof options.temperature === "number"
+          ? options.temperature
+          : 0.7,
       max_tokens: 8192,
     };
-    
+
     const url = "https://api.openai.com/v1/chat/completions";
     const maxRetries = 3;
     const baseDelay = 2000;
-    
+
     // Try current key, then rotate through other keys if this one fails
     for (let keyAttempt = 0; keyAttempt < apiKeys.length; keyAttempt++) {
       if (keyAttempt > 0) {
         // Move to next key
         currentIndex = (currentIndex + 1) % apiKeys.length;
         keyToUse = apiKeys[currentIndex];
-        console.log(`Switching to API key ${currentIndex + 1}/${apiKeys.length}`);
+        console.log(
+          `Switching to API key ${currentIndex + 1}/${apiKeys.length}`,
+        );
         await setCurrentKeyIndex(currentIndex);
       }
-      
+
       console.log(`Using OpenAI API key ${currentIndex + 1}/${apiKeys.length}`);
-      
+
       for (let attempt = 0; attempt < maxRetries; attempt++) {
         console.log(`Attempt ${attempt + 1}/${maxRetries}`);
-        
+
         try {
           const fetchOptions = {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
-              "Authorization": `Bearer ${keyToUse}`,
+              Authorization: `Bearer ${keyToUse}`,
             },
             body: JSON.stringify(body),
           };
-          
+
           const res = await fetch(url, fetchOptions);
-          console.log('Response status:', res.status);
-          
+          console.log("Response status:", res.status);
+
           const rawText = await res.text();
           let data;
           try {
             data = JSON.parse(rawText);
           } catch (error) {
-            console.error('JSON parse error:', error);
+            console.error("JSON parse error:", error);
             data = null;
           }
-          
+
           if (!res.ok) {
-            const errMsg = (data && data.error && data.error.message) || rawText || `HTTP ${res.status}`;
-            console.log('API Error:', errMsg);
-            
+            const errMsg =
+              (data && data.error && data.error.message) ||
+              rawText ||
+              `HTTP ${res.status}`;
+            console.log("API Error:", errMsg);
+
             // Check if retryable with same key
-            const isRetryable = res.status === 429 || res.status === 503 || (res.status >= 500);
-            
-            if (res.status === 401 || (res.status === 429 && keyAttempt < apiKeys.length - 1)) {
+            const isRetryable =
+              res.status === 429 || res.status === 503 || res.status >= 500;
+
+            if (
+              res.status === 401 ||
+              (res.status === 429 && keyAttempt < apiKeys.length - 1)
+            ) {
               // Invalid key or rate limited - mark as failed and try next key
               await markKeyAsFailed(keyToUse);
               if (res.status === 401) {
@@ -2179,51 +2519,59 @@
                 break;
               }
             }
-            
+
             if (isRetryable && attempt < maxRetries - 1) {
-              const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+              const delay =
+                baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
               console.log(`Retrying after ${delay}ms`);
-              showRetryStatus(`OpenAI API busy. Retrying ${attempt + 1}/${maxRetries} in ${Math.round(delay/1000)}s...`);
+              showRetryStatus(
+                `OpenAI API busy. Retrying ${attempt + 1}/${maxRetries} in ${Math.round(delay / 1000)}s...`,
+              );
               await sleep(delay);
               continue;
             }
-            
+
             let msg = mapOpenAIError(res.status, errMsg);
             if (keyAttempt < apiKeys.length - 1) {
               msg += ` (trying next API key...)`;
             }
-            
+
             if (res.status === 401) {
               throw new Error(msg);
             }
-            
-            if (attempt === maxRetries - 1 && keyAttempt === apiKeys.length - 1) {
+
+            if (
+              attempt === maxRetries - 1 &&
+              keyAttempt === apiKeys.length - 1
+            ) {
               throw new Error(msg);
             }
-            
+
             continue;
           }
-          
+
           // Success
           const choice = data && data.choices && data.choices[0];
           const content = choice && choice.message && choice.message.content;
-          console.log('Generated content:', content ? content.substring(0, 100) + '...' : 'empty');
-          
+          console.log(
+            "Generated content:",
+            content ? content.substring(0, 100) + "..." : "empty",
+          );
+
           // Track successful call
           await trackOpenAICall(currentIndex);
-          
+
           // Reset current index on success
           await setCurrentKeyIndex(0);
-          
+
           if (content) {
             return stripFencesAndPreamble(content);
           }
-          
+
           return "";
-          
         } catch (error) {
-          console.log('Exception:', error.message);
-          
+          console.log("Exception:", error.message);
+
           if (attempt === maxRetries - 1) {
             if (keyAttempt < apiKeys.length - 1) {
               console.log("Trying next API key...");
@@ -2231,19 +2579,25 @@
             }
             throw error;
           }
-          
-          if (error.message.includes("network") || error.message.includes("fetch")) {
-            const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+
+          if (
+            error.message.includes("network") ||
+            error.message.includes("fetch")
+          ) {
+            const delay =
+              baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
             await sleep(delay);
             continue;
           }
-          
+
           throw error;
         }
       }
     }
-    
-    throw new Error("OpenAI API request failed with all available API keys. Check your keys and account status at https://platform.openai.com/account/billing");
+
+    throw new Error(
+      "OpenAI API request failed with all available API keys. Check your keys and account status at https://platform.openai.com/account/billing",
+    );
   }
 
   /**
@@ -2279,17 +2633,21 @@
    */
   async function generateWithAI(getSettings, messages, options) {
     const s = getSettings();
-    const hasGemini = s && s.geminiApiKey && String(s.geminiApiKey).trim().length > 0;
-    const hasOpenAI = s && s.openaiApiKey && String(s.openaiApiKey).trim().length > 0;
-    
+    const hasGemini =
+      s && s.geminiApiKey && String(s.geminiApiKey).trim().length > 0;
+    const hasOpenAI =
+      s && s.openaiApiKey && String(s.openaiApiKey).trim().length > 0;
+
     if (hasOpenAI) {
-      console.log('Using OpenAI API...');
+      console.log("Using OpenAI API...");
       return openaiGenerateContent(getSettings, messages, options);
     } else if (hasGemini) {
-      console.log('Using Gemini API...');
+      console.log("Using Gemini API...");
       return geminiGenerateContent(getSettings, messages, options);
     } else {
-      throw new Error("No AI API key configured. Add an OpenAI or Gemini API key in Fiverr Assistant settings.");
+      throw new Error(
+        "No AI API key configured. Add an OpenAI or Gemini API key in Fiverr Assistant settings.",
+      );
     }
   }
 
@@ -2310,11 +2668,14 @@
     function closeModal() {
       const tasks = document.querySelectorAll(".far-ia-task-modal");
       tasks.forEach((n) => n.remove());
-      if (backdrop && backdrop.parentNode) backdrop.parentNode.removeChild(backdrop);
+      if (backdrop && backdrop.parentNode)
+        backdrop.parentNode.removeChild(backdrop);
       backdrop = null;
       btn.classList.remove("far-ia-ai-toggle--on");
       document.removeEventListener("keydown", onEsc);
-      deactivateModalProtection().catch(err => console.warn("Error deactivating modal protection:", err));
+      deactivateModalProtection().catch((err) =>
+        console.warn("Error deactivating modal protection:", err),
+      );
     }
 
     function onEsc(e) {
@@ -2348,7 +2709,9 @@
       const outBn = dlg.querySelector("[data-out-bn]");
       const outEn = dlg.querySelector("[data-out-en]");
       const errEl = dlg.querySelector("[data-err]");
-      dlg.querySelector("[data-close]").addEventListener("click", () => wrap.remove());
+      dlg
+        .querySelector("[data-close]")
+        .addEventListener("click", () => wrap.remove());
       wrap.addEventListener("click", (e) => {
         if (e.target === wrap) wrap.remove();
       });
@@ -2356,13 +2719,25 @@
       const sellerName = getSellerDisplayName(getSettings);
       const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
       const sys =
-        TASK_SUMMARY_SYSTEM_PROMPT + "Base the summary only on the thread and any attached images.";
-      let userText = "Seller display name: " + sellerName + "\n\nConversation:\n" + transcript;
-      const noteExtra = (sellerPrivateNote && String(sellerPrivateNote).trim()) || "";
+        TASK_SUMMARY_SYSTEM_PROMPT +
+        "Base the summary only on the thread and any attached images.";
+      let userText =
+        "Seller display name: " +
+        sellerName +
+        "\n\nConversation:\n" +
+        transcript;
+      const noteExtra =
+        (sellerPrivateNote && String(sellerPrivateNote).trim()) || "";
       if (noteExtra) {
-        userText += "\n\nSeller focus for this summary (optional nuance only; stay faithful to the thread):\n" + noteExtra;
+        userText +=
+          "\n\nSeller focus for this summary (optional nuance only; stay faithful to the thread):\n" +
+          noteExtra;
       }
-      const userContent = await buildUserContentWithImages(userText, imageUrls, getSettings);
+      const userContent = await buildUserContentWithImages(
+        userText,
+        imageUrls,
+        getSettings,
+      );
 
       errEl.style.display = "none";
       outBn.textContent = "Loading…";
@@ -2374,7 +2749,7 @@
           { role: "system", content: sys },
           { role: "user", content: userContent },
         ],
-        { temperature: 0.3 }
+        { temperature: 0.3 },
       )
         .then((raw) => {
           const parts = raw.split(/\bEN:\s*/i);
@@ -2384,7 +2759,8 @@
           outBn.textContent = bn || raw.trim();
           outEn.textContent = en || "";
           if (!outEn.textContent) {
-            outEn.textContent = "(If English is missing above, copy from the BN block or run again.)";
+            outEn.textContent =
+              "(If English is missing above, copy from the BN block or run again.)";
           }
         })
         .catch((e) => {
@@ -2400,10 +2776,14 @@
       closeModal();
       document.addEventListener("keydown", onEsc);
       btn.classList.add("far-ia-ai-toggle--on");
-      activateModalProtection().catch(err => console.warn("Error activating modal protection:", err));
+      activateModalProtection().catch((err) =>
+        console.warn("Error activating modal protection:", err),
+      );
 
       // Initialize or refresh message selection UI for any new messages
-      initializeMessageSelection().catch(err => console.warn("Failed to initialize message selection:", err));
+      initializeMessageSelection().catch((err) =>
+        console.warn("Failed to initialize message selection:", err),
+      );
 
       /** @type {{role:string,content:string}[]} */
       let chatPanelHistory = [];
@@ -2442,7 +2822,7 @@
         '<div class="far-ia-chat-input-row">' +
         '<textarea class="far-ia-chat-input" data-chat-in placeholder="Ask for a rewrite, shorter text, tone change…" rows="2"></textarea>' +
         '<button type="button" class="far-ia-btn" data-chat-send style="max-width:88px">Send</button>' +
-        '</div>' +
+        "</div>" +
         '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
         '<button type="button" class="far-ia-btn" data-copy style="max-width:120px">Copy output</button>' +
         '<button type="button" class="far-ia-btn" data-insert style="max-width:180px;display:none">Insert into message box</button>' +
@@ -2455,11 +2835,11 @@
       // Restructure modal into tabs - convert old flat layout to new tabbed layout
       (function restructureModalToTabs() {
         // Create tab structure if not already present
-        if (!dlg.querySelector('.far-ia-tab-content')) {
+        if (!dlg.querySelector(".far-ia-tab-content")) {
           // Move content into tabs
-          const body = dlg.querySelector('.far-ia-body');
+          const body = dlg.querySelector(".far-ia-body");
           if (body) {
-            body.innerHTML = 
+            body.innerHTML =
               '<div class="far-ia-tab-content active" data-tab-content="generate">' +
               '<p class="far-ia-small">✓ Context: Uses visible conversation and attachments as reference.</p>' +
               '<label class="far-ia-small" style="font-weight:600;color:#475569;margin-top:6px;display:block;">Your private note (optional)</label>' +
@@ -2469,33 +2849,33 @@
               '<button type="button" class="far-ia-btn" data-a="first">📌 First message — short welcome; invite requirements</button>' +
               '<button type="button" class="far-ia-btn" data-a="reply">💬 Reply — professional response to buyer\'s last message</button>' +
               '<button type="button" class="far-ia-btn" data-a="clarify">❓ Clarify — ask focused questions from the thread</button>' +
-              '</div>' +
+              "</div>" +
               '<div class="far-ia-preset-group">' +
               '<div class="far-ia-preset-group-title">Management</div>' +
               '<button type="button" class="far-ia-btn" data-a="cool">😊 Cool-Down — de-escalation, empathy</button>' +
               '<button type="button" class="far-ia-btn" data-a="postdelivery">✅ After Delivery — set expectations (revisions vs new work)</button>' +
-              '</div>' +
+              "</div>" +
               '<div class="far-ia-preset-group">' +
               '<div class="far-ia-preset-group-title">Advanced</div>' +
               '<div class="far-ia-cost-row">' +
               '<input type="text" class="far-ia-cost-input" data-cost-input placeholder="Optional: your price (e.g., $50, $25-50)" title="Optional: Enter your price or let AI estimate from task scope" aria-label="Your cost or price (optional)" />' +
               '<button type="button" class="far-ia-btn far-ia-cost-btn" data-a="cost">💰 Cost</button>' +
-              '</div>' +
+              "</div>" +
               '<button type="button" class="far-ia-btn" data-a="quote">📋 Quote — structured quote; no invented specifics</button>' +
               '<button type="button" class="far-ia-btn" data-a="task">🔍 Task Explain — Bangla + English summary (new window)</button>' +
               '<button type="button" class="far-ia-btn" data-a="analysis">📊 Analyze — communication improvement score</button>' +
-              '</div>' +
+              "</div>" +
               '<div class="far-ia-loading-text" style="color:#1dbf73;font-size:12px;margin-bottom:8px;display:none;font-weight:500;"></div>' +
               '<textarea class="far-ia-out" readonly placeholder="✓ Generated message..." data-out></textarea>' +
               '<p class="far-ia-err" data-err style="display:none"></p>' +
               '<div class="far-ia-actions" style="display:flex;gap:8px;"><button type="button" class="far-ia-btn" data-copy style="flex:1;">📋 Copy</button><button type="button" class="far-ia-btn" data-insert style="flex:1;display:none;">→ Insert</button></div>' +
-              '</div>' +
+              "</div>" +
               '<div class="far-ia-tab-content" data-tab-content="chat">' +
               '<p class="far-ia-small">Ask AI for rewrites, tone changes, refinements.</p>' +
               '<div class="far-ia-chat-log" data-chat-log style="flex:1;min-height:120px;margin-bottom:8px;"></div>' +
               '<textarea class="far-ia-chat-input" data-chat-in placeholder="Ask: shorter, formal, friendly..." rows="3" style="width:100%;margin-bottom:8px;"></textarea>' +
               '<button type="button" class="far-ia-btn" data-chat-send style="width:100%;text-align:center;">→ Send Message</button>' +
-              '</div>';
+              "</div>";
           }
         }
       })();
@@ -2503,12 +2883,12 @@
       // Tab switching functionality
       const tabButtons = dlg.querySelectorAll(".far-ia-tab-btn");
       const tabContents = dlg.querySelectorAll(".far-ia-tab-content");
-      
-      tabButtons.forEach(btn => {
+
+      tabButtons.forEach((btn) => {
         btn.addEventListener("click", () => {
           const tabName = btn.getAttribute("data-tab");
-          tabButtons.forEach(b => b.classList.remove("active"));
-          tabContents.forEach(c => c.classList.remove("active"));
+          tabButtons.forEach((b) => b.classList.remove("active"));
+          tabContents.forEach((c) => c.classList.remove("active"));
           btn.classList.add("active");
           const content = dlg.querySelector(`[data-tab-content="${tabName}"]`);
           if (content) content.classList.add("active");
@@ -2545,13 +2925,15 @@
       }
 
       function setLoading(isLoading, retryInfo = null) {
-        dlg.querySelectorAll(".far-ia-btn[data-a], [data-chat-send]").forEach((b) => {
-          b.disabled = isLoading;
-        });
-        
+        dlg
+          .querySelectorAll(".far-ia-btn[data-a], [data-chat-send]")
+          .forEach((b) => {
+            b.disabled = isLoading;
+          });
+
         // Update loading text to show retry information
         if (retryInfo) {
-          const loadingText = dlg.querySelector('.far-ia-loading-text');
+          const loadingText = dlg.querySelector(".far-ia-loading-text");
           if (loadingText) {
             loadingText.textContent = `Gemini API is busy... Retrying ${retryInfo.current}/${retryInfo.max} (${retryInfo.delay}s)`;
           }
@@ -2563,32 +2945,47 @@
         const isUser = role === "user";
         const isAI = role === "assistant" || role === "ai";
         const isError = !isUser && !isAI;
-        
-        row.className = "far-ia-chat-row " + (isUser ? "seller" : isAI ? "buyer" : "error");
-        
+
+        row.className =
+          "far-ia-chat-row " + (isUser ? "seller" : isAI ? "buyer" : "error");
+
         // Create message content container
         const msgContent = document.createElement("div");
-        msgContent.style.cssText = "white-space:pre-wrap;overflow-wrap:break-word;";
-        msgContent.innerHTML = (isUser ? "<strong>You:</strong> " : isAI ? "<strong>AI:</strong> " : "<strong>Error:</strong> ") + (typeof text === "string" ? text.replace(/</g, "&lt;").replace(/>/g, "&gt;") : text);
+        msgContent.style.cssText =
+          "white-space:pre-wrap;overflow-wrap:break-word;";
+        msgContent.innerHTML =
+          (isUser
+            ? "<strong>You:</strong> "
+            : isAI
+              ? "<strong>AI:</strong> "
+              : "<strong>Error:</strong> ") +
+          (typeof text === "string"
+            ? text.replace(/</g, "&lt;").replace(/>/g, "&gt;")
+            : text);
         row.appendChild(msgContent);
-        
+
         // Create action buttons (except for errors)
         if (!isError) {
           const actions = document.createElement("div");
           actions.className = "far-ia-chat-actions";
-          
+
           const copyBtn = document.createElement("button");
           copyBtn.className = "far-ia-chat-btn";
           copyBtn.type = "button";
           copyBtn.textContent = "📋 Copy";
           copyBtn.addEventListener("click", () => {
-            navigator.clipboard.writeText(text).then(() => {
-              const orig = copyBtn.textContent;
-              copyBtn.textContent = "✓ Copied";
-              setTimeout(() => { copyBtn.textContent = orig; }, 2000);
-            }).catch(err => console.warn("Copy failed:", err));
+            navigator.clipboard
+              .writeText(text)
+              .then(() => {
+                const orig = copyBtn.textContent;
+                copyBtn.textContent = "✓ Copied";
+                setTimeout(() => {
+                  copyBtn.textContent = orig;
+                }, 2000);
+              })
+              .catch((err) => console.warn("Copy failed:", err));
           });
-          
+
           const insertBtn = document.createElement("button");
           insertBtn.className = "far-ia-chat-btn";
           insertBtn.type = "button";
@@ -2600,22 +2997,28 @@
               outField.focus();
               outField.scrollTop = outField.scrollHeight;
               insertBtn.textContent = "✓ Inserted";
-              setTimeout(() => { insertBtn.textContent = "📌 Insert"; }, 2000);
+              setTimeout(() => {
+                insertBtn.textContent = "📌 Insert";
+              }, 2000);
             }
           });
-          
+
           actions.appendChild(copyBtn);
           actions.appendChild(insertBtn);
           row.appendChild(actions);
         }
-        
+
         chatLog.appendChild(row);
         chatLog.scrollTop = chatLog.scrollHeight;
       }
 
       function presetInstruction(kind, transcript, selectedMessages = []) {
-        const myCost = (costInput && String(costInput.value || "").trim()) || "";
-        return buildPresetUserText(kind, transcript, getSettings, { costPrice: myCost, selectedMessages });
+        const myCost =
+          (costInput && String(costInput.value || "").trim()) || "";
+        return buildPresetUserText(kind, transcript, getSettings, {
+          costPrice: myCost,
+          selectedMessages,
+        });
       }
 
       async function runCommunicationAnalysis() {
@@ -2624,11 +3027,11 @@
         err.style.display = "none";
         out.value = "";
         setLoading(true);
-        
+
         // Show loading text
-        const loadingText = dlg.querySelector('.far-ia-loading-text');
-        if (loadingText) loadingText.style.display = 'block';
-        
+        const loadingText = dlg.querySelector(".far-ia-loading-text");
+        if (loadingText) loadingText.style.display = "block";
+
         try {
           const analysis = await generateCommunicationAnalysis(getSettings);
           out.value = analysis;
@@ -2637,8 +3040,8 @@
           err.style.display = "block";
         } finally {
           setLoading(false);
-          const loadingText = dlg.querySelector('.far-ia-loading-text');
-          if (loadingText) loadingText.style.display = 'none';
+          const loadingText = dlg.querySelector(".far-ia-loading-text");
+          if (loadingText) loadingText.style.display = "none";
         }
       }
 
@@ -2648,26 +3051,33 @@
         err.style.display = "none";
         out.value = "";
         setLoading(true);
-        
+
         // Show loading text
-        const loadingText = dlg.querySelector('.far-ia-loading-text');
-        if (loadingText) loadingText.style.display = 'block';
+        const loadingText = dlg.querySelector(".far-ia-loading-text");
+        if (loadingText) loadingText.style.display = "block";
         const sellerName = getSellerDisplayName(getSettings);
         const sys =
           BASE_SYSTEM_PROMPT +
           " Seller display name (use when natural): " +
           sellerName +
           ". Aim for a reply that leaves the buyer confident this seller is reliable and the right fit—without pressure or empty claims.";
-        const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
-        
+        const { text: transcript, imageUrls } =
+          buildInboxTranscript(getSettings);
+
         // Get selected messages for the first message type
         let selectedMessages = [];
         if (kind === "first") {
           selectedMessages = await getSelectedMessages();
         }
-        
-        const userText = appendSellerNoteForApi(presetInstruction(kind, transcript, selectedMessages));
-        const userContent = await buildUserContentWithImages(userText, imageUrls, getSettings);
+
+        const userText = appendSellerNoteForApi(
+          presetInstruction(kind, transcript, selectedMessages),
+        );
+        const userContent = await buildUserContentWithImages(
+          userText,
+          imageUrls,
+          getSettings,
+        );
         generateWithAI(getSettings, [
           { role: "system", content: sys },
           { role: "user", content: userContent },
@@ -2681,8 +3091,8 @@
           })
           .finally(() => {
             setLoading(false);
-            const loadingText = dlg.querySelector('.far-ia-loading-text');
-            if (loadingText) loadingText.style.display = 'none';
+            const loadingText = dlg.querySelector(".far-ia-loading-text");
+            if (loadingText) loadingText.style.display = "none";
           });
       }
 
@@ -2712,79 +3122,96 @@
         document.execCommand("copy");
       });
 
-      dlg.querySelector("[data-chat-send]").addEventListener("click", async () => {
-        let q = (chatIn.value || "").trim();
-        if (!q) return;
-        const noteBlock = noteTa ? String(noteTa.value || "").trim() : "";
-        err.style.display = "none";
-        logChat("user", q);
-        chatIn.value = "";
-        setLoading(true);
-        
-        // Show loading text
-        const loadingText = dlg.querySelector('.far-ia-loading-text');
-        if (loadingText) loadingText.style.display = 'block';
+      dlg
+        .querySelector("[data-chat-send]")
+        .addEventListener("click", async () => {
+          let q = (chatIn.value || "").trim();
+          if (!q) return;
+          const noteBlock = noteTa ? String(noteTa.value || "").trim() : "";
+          err.style.display = "none";
+          logChat("user", q);
+          chatIn.value = "";
+          setLoading(true);
 
-        const sellerName = getSellerDisplayName(getSettings);
-        const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
-        const sys =
-          BASE_SYSTEM_PROMPT +
-          " Seller: " +
-          sellerName +
-          ". Default: paste-ready single message only, same professional standard—trust-building and clear, not salesy. If the user asks for analysis, you may use short bullets without filler phrases.";
+          // Show loading text
+          const loadingText = dlg.querySelector(".far-ia-loading-text");
+          if (loadingText) loadingText.style.display = "block";
 
-        const messages = [{ role: "system", content: sys }];
-        let firstUserContentForHistory = null;
-        if (chatPanelHistory.length === 0) {
-          let firstText = "Fiverr thread (context):\n" + transcript + "\n\nUser request:\n" + q;
-          if (noteBlock) {
-            firstText +=
-              "\n\n---\nSeller private note (internal—do not paste verbatim to the buyer):\n" + noteBlock;
-          }
-          firstUserContentForHistory = await buildUserContentWithImages(firstText, imageUrls, getSettings);
-          messages.push({ role: "user", content: firstUserContentForHistory });
-        } else {
-          const cap = chatPanelHistory.slice(-CHAT_HISTORY_MAX_TURNS);
-          messages.push(...cap);
-          const followText =
-            noteBlock
-              ? q + "\n\n---\nSeller private note (internal—do not paste verbatim):\n" + noteBlock
-              : q;
-          messages.push({ role: "user", content: followText });
-        }
+          const sellerName = getSellerDisplayName(getSettings);
+          const { text: transcript, imageUrls } =
+            buildInboxTranscript(getSettings);
+          const sys =
+            BASE_SYSTEM_PROMPT +
+            " Seller: " +
+            sellerName +
+            ". Default: paste-ready single message only, same professional standard—trust-building and clear, not salesy. If the user asks for analysis, you may use short bullets without filler phrases.";
 
-        generateWithAI(getSettings, messages)
-          .then((t) => {
-            out.value = t;
-            logChat("assistant", t);
-            if (chatPanelHistory.length === 0) {
-              chatPanelHistory.push(
-                { role: "user", content: firstUserContentForHistory },
-                { role: "assistant", content: t }
-              );
-            } else {
-              chatPanelHistory.push(
-                {
-                  role: "user",
-                  content:
-                    noteBlock
-                      ? q + "\n\n---\nSeller private note (internal):\n" + noteBlock
-                      : q,
-                },
-                { role: "assistant", content: t }
-              );
+          const messages = [{ role: "system", content: sys }];
+          let firstUserContentForHistory = null;
+          if (chatPanelHistory.length === 0) {
+            let firstText =
+              "Fiverr thread (context):\n" +
+              transcript +
+              "\n\nUser request:\n" +
+              q;
+            if (noteBlock) {
+              firstText +=
+                "\n\n---\nSeller private note (internal—do not paste verbatim to the buyer):\n" +
+                noteBlock;
             }
-          })
-          .catch((e) => {
-            err.textContent = e.message || "Error";
-            err.style.display = "block";
-          })
-          .finally(() => {
-            setLoading(false);
-            const loadingText = dlg.querySelector('.far-ia-loading-text');
-            if (loadingText) loadingText.style.display = 'none';
-          });
-      });
+            firstUserContentForHistory = await buildUserContentWithImages(
+              firstText,
+              imageUrls,
+              getSettings,
+            );
+            messages.push({
+              role: "user",
+              content: firstUserContentForHistory,
+            });
+          } else {
+            const cap = chatPanelHistory.slice(-CHAT_HISTORY_MAX_TURNS);
+            messages.push(...cap);
+            const followText = noteBlock
+              ? q +
+                "\n\n---\nSeller private note (internal—do not paste verbatim):\n" +
+                noteBlock
+              : q;
+            messages.push({ role: "user", content: followText });
+          }
+
+          generateWithAI(getSettings, messages)
+            .then((t) => {
+              out.value = t;
+              logChat("assistant", t);
+              if (chatPanelHistory.length === 0) {
+                chatPanelHistory.push(
+                  { role: "user", content: firstUserContentForHistory },
+                  { role: "assistant", content: t },
+                );
+              } else {
+                chatPanelHistory.push(
+                  {
+                    role: "user",
+                    content: noteBlock
+                      ? q +
+                        "\n\n---\nSeller private note (internal):\n" +
+                        noteBlock
+                      : q,
+                  },
+                  { role: "assistant", content: t },
+                );
+              }
+            })
+            .catch((e) => {
+              err.textContent = e.message || "Error";
+              err.style.display = "block";
+            })
+            .finally(() => {
+              setLoading(false);
+              const loadingText = dlg.querySelector(".far-ia-loading-text");
+              if (loadingText) loadingText.style.display = "none";
+            });
+        });
 
       trapFocus(dlg);
       dlg.querySelector("[data-x]").focus();
@@ -2795,7 +3222,9 @@
     });
 
     // Initialize message selection UI on page load
-    initializeMessageSelection().catch(err => console.warn("Failed to initialize message selection:", err));
+    initializeMessageSelection().catch((err) =>
+      console.warn("Failed to initialize message selection:", err),
+    );
   }
 
   window.FarInboxAi = {

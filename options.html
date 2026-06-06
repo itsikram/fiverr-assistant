@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
@@ -8,27 +8,53 @@
   <body>
     <main class="container">
       <h1>Fiverr Assistant & Reloader Settings</h1>
-      
+
       <div class="tabs">
-        <button type="button" class="tab-button active" data-tab="general">General</button>
-        <button type="button" class="tab-button" data-tab="sounds">Sounds</button>
-        <button type="button" class="tab-button" data-tab="selectors">Selectors</button>
-        <button type="button" class="tab-button" data-tab="statistics">Statistics</button>
-        <button type="button" class="tab-button" data-tab="apiUsage">API Usage</button>
-        <button type="button" class="tab-button" data-tab="reloadLogs">Logs</button>
-        <button type="button" class="tab-button" data-tab="settings">Settings</button>
+        <button type="button" class="tab-button active" data-tab="general">
+          General
+        </button>
+        <button type="button" class="tab-button" data-tab="sounds">
+          Sounds
+        </button>
+        <button type="button" class="tab-button" data-tab="selectors">
+          Selectors
+        </button>
+        <button type="button" class="tab-button" data-tab="statistics">
+          Statistics
+        </button>
+        <button type="button" class="tab-button" data-tab="apiUsage">
+          API Usage
+        </button>
+        <button type="button" class="tab-button" data-tab="reloadLogs">
+          Logs
+        </button>
+        <button type="button" class="tab-button" data-tab="settings">
+          Settings
+        </button>
       </div>
 
       <form id="settings-form">
         <!-- General Tab -->
         <div class="tab-content active" id="tab-general">
-          <section class="primary-tab-section" style="text-align: center;">
-            <button type="button" id="activatePrimaryTab" class="primary">Activate Current Tab</button>
+          <section class="primary-tab-section" style="text-align: center">
+            <button type="button" id="activatePrimaryTab" class="primary">
+              Activate Current Tab
+            </button>
             <span id="primaryTabInfo" role="status" aria-live="polite"></span>
           </section>
-          <section class="primary-tab-section" style="text-align: center; margin-top: 16px;">
-            <button type="button" id="pauseAutoReload15Min" class="secondary">Stop Auto Reloader for 15 Minutes</button>
-            <span id="pauseStatus" role="status" aria-live="polite" style="display: block; margin-top: 8px; color: #64748b;"></span>
+          <section
+            class="primary-tab-section"
+            style="text-align: center; margin-top: 16px"
+          >
+            <button type="button" id="pauseAutoReload15Min" class="secondary">
+              Stop Auto Reloader for 15 Minutes
+            </button>
+            <span
+              id="pauseStatus"
+              role="status"
+              aria-live="polite"
+              style="display: block; margin-top: 8px; color: #64748b"
+            ></span>
           </section>
           <section>
             <label>
@@ -46,18 +72,32 @@
             <label>
               <span>Ignore Clients (comma separated usernames)</span>
               <input type="text" id="ignoreClients" name="ignoreClients" />
-              <small style="color: #64748b; font-weight: 400;">Notifications will be filtered for these usernames</small>
+              <small style="color: #64748b; font-weight: 400"
+                >Notifications will be filtered for these usernames</small
+              >
             </label>
             <label class="toggle-row">
               <div class="toggle-text">
                 <span>Inbox: English composer with auto-translate</span>
-                <small>Show an EN toggle next to the message box on Fiverr inbox; type English above, translated text fills “Type a message…”</small>
+                <small
+                  >Show an EN toggle next to the message box on Fiverr inbox;
+                  type English above, translated text fills “Type a
+                  message…”</small
+                >
               </div>
-              <input type="checkbox" id="inboxTranslateEnabled" name="inboxTranslateEnabled" />
+              <input
+                type="checkbox"
+                id="inboxTranslateEnabled"
+                name="inboxTranslateEnabled"
+              />
             </label>
             <label>
               <span>Translate to language</span>
-              <select id="inboxTranslateLangPreset" class="inbox-translate-lang-select" aria-describedby="inboxTranslateLangHint">
+              <select
+                id="inboxTranslateLangPreset"
+                class="inbox-translate-lang-select"
+                aria-describedby="inboxTranslateLangHint"
+              >
                 <option value="">Auto — detect from chat</option>
                 <option value="en">English</option>
                 <option value="es">Spanish</option>
@@ -91,51 +131,132 @@
                 <option value="tl">Filipino (Tagalog)</option>
                 <option value="custom">Other — type language code…</option>
               </select>
-              <div id="inboxTranslateLangCustomWrap" style="display: none; margin-top: 10px;">
-                <span style="display: block; margin-bottom: 6px; font-weight: 600;">Custom code (ISO, e.g. bn, sw)</span>
-                <input type="text" id="inboxTranslateLangCustom" autocomplete="off" placeholder="e.g. bn" />
+              <div
+                id="inboxTranslateLangCustomWrap"
+                style="display: none; margin-top: 10px"
+              >
+                <span
+                  style="display: block; margin-bottom: 6px; font-weight: 600"
+                  >Custom code (ISO, e.g. bn, sw)</span
+                >
+                <input
+                  type="text"
+                  id="inboxTranslateLangCustom"
+                  autocomplete="off"
+                  placeholder="e.g. bn"
+                />
               </div>
-              <small id="inboxTranslateLangHint" style="color: #64748b; font-weight: 400; display: block; margin-top: 8px;">
-                Default when a conversation has no saved choice yet. In the inbox, open the translation control (icon button), then use <strong>Translate to</strong> beside the English field — your choice is remembered per client username. <strong>Auto</strong> guesses from the chat; if that fails, Spanish is used. MyMemory free limits may apply.
+              <small
+                id="inboxTranslateLangHint"
+                style="
+                  color: #64748b;
+                  font-weight: 400;
+                  display: block;
+                  margin-top: 8px;
+                "
+              >
+                Default when a conversation has no saved choice yet. In the
+                inbox, open the translation control (icon button), then use
+                <strong>Translate to</strong> beside the English field — your
+                choice is remembered per client username.
+                <strong>Auto</strong> guesses from the chat; if that fails,
+                Spanish is used. MyMemory free limits may apply.
               </small>
             </label>
             <label>
               <span>Translate debounce (milliseconds)</span>
-              <input type="number" id="inboxTranslateDebounceMs" name="inboxTranslateDebounceMs" min="200" max="5000" step="50" />
+              <input
+                type="number"
+                id="inboxTranslateDebounceMs"
+                name="inboxTranslateDebounceMs"
+                min="200"
+                max="5000"
+                step="50"
+              />
             </label>
           </section>
 
           <section>
             <h3>AI inbox assistant (OpenAI ChatGPT)</h3>
-            <p class="hint">Uses your OpenAI API key only in this browser; it is not logged. Seller name comes from "Fiverr Profile Name" above. Works globally in most countries. Get a free trial key at https://platform.openai.com/api-keys</p>
+            <p class="hint">
+              Uses your OpenAI API key only in this browser; it is not logged.
+              Seller name comes from "Fiverr Profile Name" above. Works globally
+              in most countries. Get a free trial key at
+              https://platform.openai.com/api-keys
+            </p>
             <label>
               <span>OpenAI API keys (one per line or comma-separated)</span>
-              <textarea id="openaiApiKey" name="openaiApiKey" rows="4" spellcheck="false" placeholder="sk-...&#10;sk-..."></textarea>
-              <small style="color: #64748b; font-weight: 400; display: block; margin-top: 6px;">Add multiple keys to enable automatic failover when one key runs out of tokens or hits rate limits. Keys are tried in order.</small>
+              <textarea
+                id="openaiApiKey"
+                name="openaiApiKey"
+                rows="4"
+                spellcheck="false"
+                placeholder="sk-...&#10;sk-..."
+              ></textarea>
+              <small
+                style="
+                  color: #64748b;
+                  font-weight: 400;
+                  display: block;
+                  margin-top: 6px;
+                "
+                >Add multiple keys to enable automatic failover when one key
+                runs out of tokens or hits rate limits. Keys are tried in
+                order.</small
+              >
             </label>
             <label>
               <span>Chat model</span>
               <select id="openaiModel" name="openaiModel">
-                <option value="gpt-4o-mini">gpt-4o-mini (Recommended - Fast & Free tier compatible)</option>
+                <option value="gpt-4o-mini">
+                  gpt-4o-mini (Recommended - Fast & Free tier compatible)
+                </option>
                 <option value="gpt-4o">gpt-4o (High quality)</option>
                 <option value="gpt-4-turbo">gpt-4-turbo (Advanced)</option>
-                <option value="gpt-3.5-turbo">gpt-3.5-turbo (Budget friendly)</option>
+                <option value="gpt-3.5-turbo">
+                  gpt-3.5-turbo (Budget friendly)
+                </option>
               </select>
             </label>
             <label>
               <span>Inbox message list selector (optional override)</span>
-              <input type="text" id="inboxMessageListSelector" name="inboxMessageListSelector" placeholder=".message-flow" />
+              <input
+                type="text"
+                id="inboxMessageListSelector"
+                name="inboxMessageListSelector"
+                placeholder=".message-flow"
+              />
             </label>
             <label>
               <span>Inbox message row selector (optional override)</span>
-              <input type="text" id="inboxMessageRowSelector" name="inboxMessageRowSelector" placeholder=".message-flow .message" />
+              <input
+                type="text"
+                id="inboxMessageRowSelector"
+                name="inboxMessageRowSelector"
+                placeholder=".message-flow .message"
+              />
             </label>
             <label class="toggle-row">
               <div class="toggle-text">
                 <span>Auto-reply to new clients after 30 minutes</span>
-                <small>If enabled: when a <strong>new client</strong> is detected, the extension waits 30 minutes. If you still have not replied (last message in that thread is from the buyer), it plays the <strong>new client notification sound</strong> as an alarm, generates the same “first message” as the AI assistant, fills the composer, and clicks Send. Only runs on the <strong>primary</strong> tab, only when you are open on that client’s <code>/inbox/username</code> thread. Requires OpenAI key and profile settings above. Ignored clients are excluded.</small>
+                <small
+                  >If enabled: when a <strong>new client</strong> is detected,
+                  the extension waits 30 minutes. If you still have not replied
+                  (last message in that thread is from the buyer), it plays the
+                  <strong>new client notification sound</strong> as an alarm,
+                  generates the same “first message” as the AI assistant, fills
+                  the composer, and clicks Send. Only runs on the
+                  <strong>primary</strong> tab, only when you are open on that
+                  client’s <code>/inbox/username</code> thread. Requires OpenAI
+                  key and profile settings above. Ignored clients are
+                  excluded.</small
+                >
               </div>
-              <input type="checkbox" id="autoReplyNewClientAfter30Min" name="autoReplyNewClientAfter30Min" />
+              <input
+                type="checkbox"
+                id="autoReplyNewClientAfter30Min"
+                name="autoReplyNewClientAfter30Min"
+              />
             </label>
           </section>
 
@@ -161,84 +282,321 @@
         <!-- API Usage Tab -->
         <div class="tab-content" id="tab-apiUsage">
           <section>
-            <h2 style="margin-top: 0; color: #1dbf73; font-size: 18px;">API Usage & Key Details</h2>
-            <p class="hint">Monitor your API key usage, status, and call counts. This helps track which keys are active and which need attention.</p>
-            
+            <h2 style="margin-top: 0; color: #1dbf73; font-size: 18px">
+              API Usage & Key Details
+            </h2>
+            <p class="hint">
+              Monitor your API key usage, status, and call counts. This helps
+              track which keys are active and which need attention.
+            </p>
+
             <!-- OpenAI API Keys Section -->
-            <div style="margin-top: 20px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc;">
-              <h3 style="color: #1dbf73; margin-top: 0; margin-bottom: 12px; font-size: 16px;">OpenAI API Keys</h3>
-              <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-                <button type="button" id="refreshOpenAIStatus" class="secondary" style="padding: 6px 12px; font-size: 12px;">🔄 Refresh Status</button>
-                <button type="button" id="resetOpenAIStats" class="secondary" style="padding: 6px 12px; font-size: 12px;">↻ Reset Stats</button>
+            <div
+              style="
+                margin-top: 20px;
+                padding: 12px;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                background: #f8fafc;
+              "
+            >
+              <h3
+                style="
+                  color: #1dbf73;
+                  margin-top: 0;
+                  margin-bottom: 12px;
+                  font-size: 16px;
+                "
+              >
+                OpenAI API Keys
+              </h3>
+              <div style="display: flex; gap: 8px; margin-bottom: 12px">
+                <button
+                  type="button"
+                  id="refreshOpenAIStatus"
+                  class="secondary"
+                  style="padding: 6px 12px; font-size: 12px"
+                >
+                  🔄 Refresh Status
+                </button>
+                <button
+                  type="button"
+                  id="resetOpenAIStats"
+                  class="secondary"
+                  style="padding: 6px 12px; font-size: 12px"
+                >
+                  ↻ Reset Stats
+                </button>
               </div>
-              <div id="openaiKeysContainer" style="min-height: 80px;">
-                <p style="color: #64748b; text-align: center;">Loading OpenAI keys...</p>
+              <div id="openaiKeysContainer" style="min-height: 80px">
+                <p style="color: #64748b; text-align: center">
+                  Loading OpenAI keys...
+                </p>
               </div>
             </div>
 
             <!-- Gemini API Key Section -->
-            <div style="margin-top: 20px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc;">
-              <h3 style="color: #2196f3; margin-top: 0; margin-bottom: 12px; font-size: 16px;">Gemini API Key</h3>
-              <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-                <button type="button" id="refreshGeminiStatus" class="secondary" style="padding: 6px 12px; font-size: 12px;">🔄 Refresh Status</button>
-                <button type="button" id="resetGeminiStats" class="secondary" style="padding: 6px 12px; font-size: 12px;">↻ Reset Stats</button>
+            <div
+              style="
+                margin-top: 20px;
+                padding: 12px;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                background: #f8fafc;
+              "
+            >
+              <h3
+                style="
+                  color: #2196f3;
+                  margin-top: 0;
+                  margin-bottom: 12px;
+                  font-size: 16px;
+                "
+              >
+                Gemini API Key
+              </h3>
+              <div style="display: flex; gap: 8px; margin-bottom: 12px">
+                <button
+                  type="button"
+                  id="refreshGeminiStatus"
+                  class="secondary"
+                  style="padding: 6px 12px; font-size: 12px"
+                >
+                  🔄 Refresh Status
+                </button>
+                <button
+                  type="button"
+                  id="resetGeminiStats"
+                  class="secondary"
+                  style="padding: 6px 12px; font-size: 12px"
+                >
+                  ↻ Reset Stats
+                </button>
               </div>
-              <div id="geminiKeyContainer" style="min-height: 60px;">
-                <p style="color: #64748b; text-align: center;">Loading Gemini key...</p>
+              <div id="geminiKeyContainer" style="min-height: 60px">
+                <p style="color: #64748b; text-align: center">
+                  Loading Gemini key...
+                </p>
               </div>
             </div>
 
             <!-- Usage Statistics -->
-            <div style="margin-top: 20px; padding: 12px; border: 1px solid #e2e8f0; border-radius: 8px; background: #f8fafc;">
-              <h3 style="color: #f59e0b; margin-top: 0; margin-bottom: 12px; font-size: 16px;">📊 Overall Usage Statistics</h3>
-              <div id="usageStatsContainer" style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
-                <div style="padding: 10px; background: white; border-radius: 6px; border-left: 3px solid #1dbf73;">
-                  <div style="font-size: 12px; color: #64748b;">Total OpenAI Calls</div>
-                  <div style="font-size: 20px; font-weight: bold; color: #1dbf73; margin-top: 4px;" id="totalOpenAICalls">0</div>
+            <div
+              style="
+                margin-top: 20px;
+                padding: 12px;
+                border: 1px solid #e2e8f0;
+                border-radius: 8px;
+                background: #f8fafc;
+              "
+            >
+              <h3
+                style="
+                  color: #f59e0b;
+                  margin-top: 0;
+                  margin-bottom: 12px;
+                  font-size: 16px;
+                "
+              >
+                📊 Overall Usage Statistics
+              </h3>
+              <div
+                id="usageStatsContainer"
+                style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px"
+              >
+                <div
+                  style="
+                    padding: 10px;
+                    background: white;
+                    border-radius: 6px;
+                    border-left: 3px solid #1dbf73;
+                  "
+                >
+                  <div style="font-size: 12px; color: #64748b">
+                    Total OpenAI Calls
+                  </div>
+                  <div
+                    style="
+                      font-size: 20px;
+                      font-weight: bold;
+                      color: #1dbf73;
+                      margin-top: 4px;
+                    "
+                    id="totalOpenAICalls"
+                  >
+                    0
+                  </div>
                 </div>
-                <div style="padding: 10px; background: white; border-radius: 6px; border-left: 3px solid #2196f3;">
-                  <div style="font-size: 12px; color: #64748b;">Total Gemini Calls</div>
-                  <div style="font-size: 20px; font-weight: bold; color: #2196f3; margin-top: 4px;" id="totalGeminiCalls">0</div>
+                <div
+                  style="
+                    padding: 10px;
+                    background: white;
+                    border-radius: 6px;
+                    border-left: 3px solid #2196f3;
+                  "
+                >
+                  <div style="font-size: 12px; color: #64748b">
+                    Total Gemini Calls
+                  </div>
+                  <div
+                    style="
+                      font-size: 20px;
+                      font-weight: bold;
+                      color: #2196f3;
+                      margin-top: 4px;
+                    "
+                    id="totalGeminiCalls"
+                  >
+                    0
+                  </div>
                 </div>
-                <div style="padding: 10px; background: white; border-radius: 6px; border-left: 3px solid #f59e0b;">
-                  <div style="font-size: 12px; color: #64748b;">Failed API Attempts</div>
-                  <div style="font-size: 20px; font-weight: bold; color: #f59e0b; margin-top: 4px;" id="failedAttempts">0</div>
+                <div
+                  style="
+                    padding: 10px;
+                    background: white;
+                    border-radius: 6px;
+                    border-left: 3px solid #f59e0b;
+                  "
+                >
+                  <div style="font-size: 12px; color: #64748b">
+                    Failed API Attempts
+                  </div>
+                  <div
+                    style="
+                      font-size: 20px;
+                      font-weight: bold;
+                      color: #f59e0b;
+                      margin-top: 4px;
+                    "
+                    id="failedAttempts"
+                  >
+                    0
+                  </div>
                 </div>
-                <div style="padding: 10px; background: white; border-radius: 6px; border-left: 3px solid #8b5cf6;">
-                  <div style="font-size: 12px; color: #64748b;">Current Active Key</div>
-                  <div style="font-size: 14px; font-weight: bold; color: #8b5cf6; margin-top: 4px; word-break: break-all;" id="activeKeyIndex">Index 0</div>
+                <div
+                  style="
+                    padding: 10px;
+                    background: white;
+                    border-radius: 6px;
+                    border-left: 3px solid #8b5cf6;
+                  "
+                >
+                  <div style="font-size: 12px; color: #64748b">
+                    Current Active Key
+                  </div>
+                  <div
+                    style="
+                      font-size: 14px;
+                      font-weight: bold;
+                      color: #8b5cf6;
+                      margin-top: 4px;
+                      word-break: break-all;
+                    "
+                    id="activeKeyIndex"
+                  >
+                    Index 0
+                  </div>
                 </div>
               </div>
             </div>
 
             <!-- Key Status Table -->
-            <div style="margin-top: 20px;">
-              <h3 style="color: #475569; margin-bottom: 12px; font-size: 14px;">📋 API Key Status Detail</h3>
-              <div style="overflow-x: auto;">
-                <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <div style="margin-top: 20px">
+              <h3 style="color: #475569; margin-bottom: 12px; font-size: 14px">
+                📋 API Key Status Detail
+              </h3>
+              <div style="overflow-x: auto">
+                <table
+                  style="
+                    width: 100%;
+                    border-collapse: collapse;
+                    font-size: 12px;
+                  "
+                >
                   <thead>
-                    <tr style="background: #e2e8f0;">
-                      <th style="padding: 8px; text-align: left; border: 1px solid #cbd5e1;">Provider</th>
-                      <th style="padding: 8px; text-align: left; border: 1px solid #cbd5e1;">Key (Preview)</th>
-                      <th style="padding: 8px; text-align: center; border: 1px solid #cbd5e1;">Status</th>
-                      <th style="padding: 8px; text-align: center; border: 1px solid #cbd5e1;">Index</th>
-                      <th style="padding: 8px; text-align: center; border: 1px solid #cbd5e1;">Calls</th>
+                    <tr style="background: #e2e8f0">
+                      <th
+                        style="
+                          padding: 8px;
+                          text-align: left;
+                          border: 1px solid #cbd5e1;
+                        "
+                      >
+                        Provider
+                      </th>
+                      <th
+                        style="
+                          padding: 8px;
+                          text-align: left;
+                          border: 1px solid #cbd5e1;
+                        "
+                      >
+                        Key (Preview)
+                      </th>
+                      <th
+                        style="
+                          padding: 8px;
+                          text-align: center;
+                          border: 1px solid #cbd5e1;
+                        "
+                      >
+                        Status
+                      </th>
+                      <th
+                        style="
+                          padding: 8px;
+                          text-align: center;
+                          border: 1px solid #cbd5e1;
+                        "
+                      >
+                        Index
+                      </th>
+                      <th
+                        style="
+                          padding: 8px;
+                          text-align: center;
+                          border: 1px solid #cbd5e1;
+                        "
+                      >
+                        Calls
+                      </th>
                     </tr>
                   </thead>
                   <tbody id="keyStatusTable">
-                    <tr><td colspan="5" style="padding: 12px; text-align: center; color: #64748b;">Loading key details...</td></tr>
+                    <tr>
+                      <td
+                        colspan="5"
+                        style="
+                          padding: 12px;
+                          text-align: center;
+                          color: #64748b;
+                        "
+                      >
+                        Loading key details...
+                      </td>
+                    </tr>
                   </tbody>
                 </table>
               </div>
             </div>
 
             <!-- Info Box -->
-            <div style="margin-top: 20px; padding: 12px; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px;">
-              <p style="margin: 0; color: #92400e; font-size: 12px;">
-                <strong>ℹ️ How it works:</strong> 
-                When an API key fails or runs out of tokens, the extension automatically switches to the next available key. 
-                Failed keys are marked with a ⚠️ icon and will be retried after a successful call to another key.
-                Use the "Reset Stats" button to clear usage counters.
+            <div
+              style="
+                margin-top: 20px;
+                padding: 12px;
+                background: #fef3c7;
+                border: 1px solid #fcd34d;
+                border-radius: 6px;
+              "
+            >
+              <p style="margin: 0; color: #92400e; font-size: 12px">
+                <strong>ℹ️ How it works:</strong>
+                When an API key fails or runs out of tokens, the extension
+                automatically switches to the next available key. Failed keys
+                are marked with a ⚠️ icon and will be retried after a successful
+                call to another key. Use the "Reset Stats" button to clear usage
+                counters.
               </p>
             </div>
           </section>
@@ -247,19 +605,65 @@
         <!-- Reload Logs Tab -->
         <div class="tab-content" id="tab-reloadLogs">
           <section>
-            <h2 style="margin-top: 0; color: #1dbf73; font-size: 18px;">Reload Logs</h2>
-            <p class="hint">A chronological list of reload/navigation events performed by the reloader (time and target URL).</p>
-            <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
-              <button type="button" id="refreshReloadLogs" class="secondary">Refresh</button>
-              <button type="button" id="clearReloadLogs" class="danger">Clear Logs</button>
-              <span id="reloadLogsCount" style="color:#64748b;margin-left:8px;"></span>
+            <h2 style="margin-top: 0; color: #1dbf73; font-size: 18px">
+              Reload Logs
+            </h2>
+            <p class="hint">
+              A chronological list of reload/navigation events performed by the
+              reloader (time and target URL).
+            </p>
+            <div
+              style="
+                display: flex;
+                gap: 8px;
+                margin-bottom: 12px;
+                align-items: center;
+              "
+            >
+              <button type="button" id="refreshReloadLogs" class="secondary">
+                Refresh
+              </button>
+              <button type="button" id="clearReloadLogs" class="danger">
+                Clear Logs
+              </button>
+              <span
+                id="reloadLogsCount"
+                style="color: #64748b; margin-left: 8px"
+              ></span>
             </div>
-            <div style="max-height:420px;overflow:auto;border:1px solid #e6e6e6;padding:8px;border-radius:6px;">
-              <table id="reloadLogsTable" style="width:100%;border-collapse:collapse;">
+            <div
+              style="
+                max-height: 420px;
+                overflow: auto;
+                border: 1px solid #e6e6e6;
+                padding: 8px;
+                border-radius: 6px;
+              "
+            >
+              <table
+                id="reloadLogsTable"
+                style="width: 100%; border-collapse: collapse"
+              >
                 <thead>
                   <tr>
-                    <th style="text-align:left;padding:8px;border-bottom:1px solid #e6e6e6;">Time</th>
-                    <th style="text-align:left;padding:8px;border-bottom:1px solid #e6e6e6;">URL</th>
+                    <th
+                      style="
+                        text-align: left;
+                        padding: 8px;
+                        border-bottom: 1px solid #e6e6e6;
+                      "
+                    >
+                      Time
+                    </th>
+                    <th
+                      style="
+                        text-align: left;
+                        padding: 8px;
+                        border-bottom: 1px solid #e6e6e6;
+                      "
+                    >
+                      URL
+                    </th>
                   </tr>
                 </thead>
                 <tbody id="reloadLogsBody"></tbody>
@@ -363,18 +767,40 @@
           <section>
             <label>
               <span>Unread Message Icon Selector</span>
-              <input type="text" id="selectorUnreadIcon" name="selectorUnreadIcon" placeholder=".messages-wrapper .unread-icon" />
-              <small style="color: #64748b; font-weight: 400;">CSS selector for detecting unread messages</small>
+              <input
+                type="text"
+                id="selectorUnreadIcon"
+                name="selectorUnreadIcon"
+                placeholder=".messages-wrapper .unread-icon"
+              />
+              <small style="color: #64748b; font-weight: 400"
+                >CSS selector for detecting unread messages</small
+              >
             </label>
             <label>
               <span>New Client Flag Selector</span>
-              <input type="text" id="selectorNewClientFlag" name="selectorNewClientFlag" placeholder=".first > div:nth-child(2) > div:nth-child(1) > span:nth-child(2)" />
-              <small style="color: #64748b; font-weight: 400;">CSS selector for detecting new client indicator</small>
+              <input
+                type="text"
+                id="selectorNewClientFlag"
+                name="selectorNewClientFlag"
+                placeholder=".first > div:nth-child(2) > div:nth-child(1) > span:nth-child(2)"
+              />
+              <small style="color: #64748b; font-weight: 400"
+                >CSS selector for detecting new client indicator</small
+              >
             </label>
             <label>
               <span>Message Content Selector</span>
-              <input type="text" id="selectorMessageContent" name="selectorMessageContent" placeholder=".message-flow .content" />
-              <small style="color: #64748b; font-weight: 400;">CSS selector for message content containers (for scrolling)</small>
+              <input
+                type="text"
+                id="selectorMessageContent"
+                name="selectorMessageContent"
+                placeholder=".message-flow .content"
+              />
+              <small style="color: #64748b; font-weight: 400"
+                >CSS selector for message content containers (for
+                scrolling)</small
+              >
             </label>
           </section>
         </div>
@@ -382,21 +808,37 @@
         <!-- Statistics Tab -->
         <div class="tab-content" id="tab-statistics">
           <section>
-            <h2 style="margin-top: 0; color: #1dbf73; font-size: 18px;">Statistics Overview</h2>
+            <h2 style="margin-top: 0; color: #1dbf73; font-size: 18px">
+              Statistics Overview
+            </h2>
             <div class="chart-controls">
-              <button type="button" class="view-toggle active" data-view="daily">Daily</button>
-              <button type="button" class="view-toggle" data-view="monthly">Monthly</button>
+              <button
+                type="button"
+                class="view-toggle active"
+                data-view="daily"
+              >
+                Daily
+              </button>
+              <button type="button" class="view-toggle" data-view="monthly">
+                Monthly
+              </button>
             </div>
             <div class="chart-section">
-              <h3 style="color: #475569; font-size: 16px; margin-bottom: 12px;">Internet Connection Time</h3>
+              <h3 style="color: #475569; font-size: 16px; margin-bottom: 12px">
+                Internet Connection Time
+              </h3>
               <canvas id="connectionTimeChart"></canvas>
             </div>
-            <div class="chart-section" style="margin-top: 24px;">
-              <h3 style="color: #475569; font-size: 16px; margin-bottom: 12px;">Assistant Monitoring Time</h3>
+            <div class="chart-section" style="margin-top: 24px">
+              <h3 style="color: #475569; font-size: 16px; margin-bottom: 12px">
+                Assistant Monitoring Time
+              </h3>
               <canvas id="monitoringTimeChart"></canvas>
             </div>
-            <div class="chart-section" style="margin-top: 24px;">
-              <h3 style="color: #475569; font-size: 16px; margin-bottom: 12px;">Offline Time</h3>
+            <div class="chart-section" style="margin-top: 24px">
+              <h3 style="color: #475569; font-size: 16px; margin-bottom: 12px">
+                Offline Time
+              </h3>
               <canvas id="offlineTimeChart"></canvas>
             </div>
           </section>
@@ -405,57 +847,113 @@
         <!-- Settings Tab -->
         <div class="tab-content" id="tab-settings">
           <section>
-            <h2 style="margin-top: 0; color: #1dbf73; font-size: 18px;">Extension Settings</h2>
+            <h2 style="margin-top: 0; color: #1dbf73; font-size: 18px">
+              Extension Settings
+            </h2>
             <label class="toggle-row">
               <div class="toggle-text">
                 <span>Enable Auto Reload</span>
-                <small>Automatically reload Fiverr pages at random intervals</small>
+                <small
+                  >Automatically reload Fiverr pages at random intervals</small
+                >
               </div>
-              <input type="checkbox" id="autoReloadEnabled" name="autoReloadEnabled" />
+              <input
+                type="checkbox"
+                id="autoReloadEnabled"
+                name="autoReloadEnabled"
+              />
             </label>
             <label class="toggle-row">
               <div class="toggle-text">
                 <span>Enable New Client Notification Sound</span>
-                <small>Turn on/off sound for new client messages (desktop notification still shows)</small>
+                <small
+                  >Turn on/off sound for new client messages (desktop
+                  notification still shows)</small
+                >
               </div>
-              <input type="checkbox" id="enable_new_client_sound" name="enable_new_client_sound" />
+              <input
+                type="checkbox"
+                id="enable_new_client_sound"
+                name="enable_new_client_sound"
+              />
             </label>
             <label class="toggle-row">
               <div class="toggle-text">
                 <span>Enable Old Client Notification Sound</span>
-                <small>Turn on/off sound for old/returning client messages (desktop notification still shows)</small>
+                <small
+                  >Turn on/off sound for old/returning client messages (desktop
+                  notification still shows)</small
+                >
               </div>
-              <input type="checkbox" id="enable_old_client_sound" name="enable_old_client_sound" />
+              <input
+                type="checkbox"
+                id="enable_old_client_sound"
+                name="enable_old_client_sound"
+              />
             </label>
             <label class="toggle-row">
               <div class="toggle-text">
                 <span>Enable New Client Desktop Notifications</span>
-                <small>Turn on/off browser desktop notifications for new client messages</small>
+                <small
+                  >Turn on/off browser desktop notifications for new client
+                  messages</small
+                >
               </div>
-              <input type="checkbox" id="enable_new_client_notification" name="enable_new_client_notification" />
+              <input
+                type="checkbox"
+                id="enable_new_client_notification"
+                name="enable_new_client_notification"
+              />
             </label>
             <label class="toggle-row">
               <div class="toggle-text">
                 <span>Enable Old Client Desktop Notifications</span>
-                <small>Turn on/off browser desktop notifications for old/returning client messages</small>
+                <small
+                  >Turn on/off browser desktop notifications for old/returning
+                  client messages</small
+                >
               </div>
-              <input type="checkbox" id="enable_old_client_notification" name="enable_old_client_notification" />
-            </label>
-          </section>
-          
-          <section>
-            <h2 style="color: #1dbf73; font-size: 18px;">Statistics Settings</h2>
-            <label>
-              <span>Statistics Update Interval (seconds)</span>
-              <input type="number" id="statsUpdateInterval" name="statsUpdateInterval" min="1" max="60" value="1" />
-              <small style="color: #64748b; font-weight: 400;">How often statistics are updated (1-60 seconds)</small>
+              <input
+                type="checkbox"
+                id="enable_old_client_notification"
+                name="enable_old_client_notification"
+              />
             </label>
           </section>
 
           <section>
-            <h2 style="color: #1dbf73; font-size: 18px;">Data Management</h2>
-            <button type="button" id="resetStats" class="secondary">Reset All Statistics</button>
-            <small style="color: #64748b; font-weight: 400; display: block; margin-top: 8px;">This will reset all saved statistics data. This action cannot be undone.</small>
+            <h2 style="color: #1dbf73; font-size: 18px">Statistics Settings</h2>
+            <label>
+              <span>Statistics Update Interval (seconds)</span>
+              <input
+                type="number"
+                id="statsUpdateInterval"
+                name="statsUpdateInterval"
+                min="1"
+                max="60"
+                value="1"
+              />
+              <small style="color: #64748b; font-weight: 400"
+                >How often statistics are updated (1-60 seconds)</small
+              >
+            </label>
+          </section>
+
+          <section>
+            <h2 style="color: #1dbf73; font-size: 18px">Data Management</h2>
+            <button type="button" id="resetStats" class="secondary">
+              Reset All Statistics
+            </button>
+            <small
+              style="
+                color: #64748b;
+                font-weight: 400;
+                display: block;
+                margin-top: 8px;
+              "
+              >This will reset all saved statistics data. This action cannot be
+              undone.</small
+            >
           </section>
         </div>
 
@@ -469,4 +967,3 @@
     <script src="options.js"></script>
   </body>
 </html>
-

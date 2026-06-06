@@ -1,6 +1,7 @@
 # Latest Improvements to Fiverr AI Assistant
 
 ## 1. **Message Selection for AI Learning** ✅ NEW
+
 - **Purpose**: Select specific messages from the conversation to teach AI about effective responses
 - **How to use**:
   1. Hover over any message in the conversation
@@ -24,6 +25,7 @@
 - **Storage**: Selected messages stored in `farSelectedMessages`, persist across browser sessions
 
 ## 2. **Improved First Message Generation** ✅ NEW
+
 - **Professional & Natural Tone**:
   - Shows genuine interest referencing specific project details
   - Demonstrates expertise without arrogance
@@ -44,6 +46,7 @@
 - **Results**: More human-like, professional, effective first responses
 
 ## 3. **Smart Cost Estimation** ✅ NEW
+
 - **Purpose**: Generate estimate/cost messages automatically without requiring manual price input
 - **How it works**:
   - AI analyzes the client's task description and scope
@@ -68,6 +71,7 @@
   - Still allows manual override when needed
 
 ## 2. **Multiple OpenAI API Keys with Automatic Failover** ✅ NEW
+
 - **Purpose**: Add multiple API keys so the extension automatically switches to the next key when one runs out of tokens or hits rate limits
 - **How to use**:
   - Open extension settings
@@ -84,7 +88,7 @@
   - Failed key tracking: Marks failed keys temporarily and skips them
   - Daily reset: Failed keys list resets automatically
   - Backward compatible: Works with single key setups
-- **Storage**: 
+- **Storage**:
   - Current key index: `farOpenAIKeyIndex`
   - Failed keys list: `farOpenAIFailedKeys`
 - **Error handling**:
@@ -97,6 +101,7 @@
   - Helpful for teams sharing an extension setup
 
 ## 2. **Message Pinning Feature** ✅
+
 - **Purpose**: Pin reference messages to help AI understand communication style
 - **Storage**: Messages stored in browser local storage (max 10 pinned)
 - **Functions**:
@@ -107,6 +112,7 @@
 - **Integration**: Pinned messages are automatically included as "REFERENCE EXAMPLES" in AI prompts
 
 ## 3. **Enhanced First Message Generation** ✅
+
 - **Improved Quality**: AI now generates more professional, human-like first responses
 - **Special Instructions**:
   - Shows enthusiasm without sounding fake
@@ -118,6 +124,7 @@
 - **Context**: Uses buyer's writing style and pinned messages as references
 
 ## 4. **Improved Modal UI/UX** ✅
+
 - **Tab System**: Two-tab interface for better organization
   - **Tab 1: Generate Response** - All message generation tools
   - **Tab 2: Live Chat** - Interactive AI chat about messages
@@ -142,6 +149,7 @@
   - 📊 Analyze
 
 ## 5. **Writer Style Extraction** ✅
+
 - **Analysis**: Automatically extracts seller's communication patterns
 - **Metrics Analyzed**:
   - Average message length
@@ -154,6 +162,7 @@
 - **Result**: AI generates responses that match seller's natural communication style
 
 ## 6. **Modal Protection (5-minute shield)** ✅
+
 - **Functionality**: Prevents page reloads/redirects while AI modal is open
 - **Duration**: 5 minutes after modal opens
 - **Benefits**: Uninterrupted work - won't lose chat or generated content
@@ -161,6 +170,7 @@
 - **Coverage**: All reload triggers checked - periodic, error page, manual reloads
 
 ## 7. **Refined System Prompts** ✅
+
 - **Conciseness Focus**: Removed all filler phrases
 - **Anti-AI Patterns**: Blocks: "I understand", "I'd be happy to", "Let me know", "I appreciate"
 - **Natural Language**: Emphasizes contractions, short sentences, human rhythm
@@ -168,7 +178,8 @@
 - **Clarity**: Always includes one clear next step
 
 ## 8. **Improved Chat Experience** ✅
-- **Color-Coded Messages**: 
+
+- **Color-Coded Messages**:
   - Green (seller) for user prompts
   - Blue (buyer) for AI responses
   - Red for errors
@@ -179,6 +190,7 @@
 ## Quick Start
 
 ### Using Message Selection:
+
 1. **Hover over any message** in the conversation to see a select button
 2. Click **"📌 Select"** button that appears on hover (top-right corner of message)
 3. Message gets **highlighted in light green** (#e6f9f0 background)
@@ -189,18 +201,21 @@
 8. All selections persist across browser sessions
 
 **Visual Feedback**:
+
 - Hover shows "📌 Select" button (white with gray border)
 - After clicking: Button becomes green "✓ Selected"
 - Message background turns light green (#e6f9f0)
 - Clear visual indication of what's selected
 
 **Pro Tips**:
+
 - Select messages that got positive buyer responses
 - Select 2-3 examples of your best communication
 - Mix of different message types helps AI understand your style
 - Selections are always available - no special mode needed
 
 ### Using Smart Cost Estimation:
+
 1. Open AI Assistant modal (✨ button in Fiverr inbox)
 2. Click the "💰 Cost" button
 3. **Two options**:
@@ -210,12 +225,14 @@
 5. Copy and paste into Fiverr message
 
 **Smart Detection**:
+
 - Complex projects (API, custom code, ecommerce) → Higher estimates
 - Simple tasks (quick fixes, basic edits) → Lower estimates
 - Urgent timelines → Adds rush fee consideration
 - Multiple revisions → Factored into pricing message
 
 ### Using Multiple API Keys:
+
 1. Open settings (click extension icon → Options)
 2. Find "OpenAI API keys" section
 3. Paste multiple keys separated by newlines:
@@ -228,24 +245,28 @@
 5. Extension now automatically switches to next key if current one fails!
 
 ### Using Pinned Messages:
+
 1. Open AI Assistant modal
 2. Right-click on any past message and pin it
 3. Pinned messages appear in system prompt as "REFERENCE EXAMPLES"
 4. AI learns and mimics communication style from pinned examples
 
 ### Using Enhanced First Message:
+
 1. Click "📌 First Message" button
 2. Add optional private note if needed
 3. AI generates professional, human-like first response
 4. Review and copy to Fiverr inbox
 
 ### Using Live Chat Tab:
+
 1. Generate a message on "Generate Response" tab
 2. Switch to "Live Chat" tab
 3. Ask for changes: "Make it shorter", "More friendly", "Formal tone"
 4. AI instantly refines the message based on feedback
 
 ## Files Modified
+
 - **inboxAiAssistant.js** - Main implementation
   - Smart cost estimation function (~80 lines)
   - Task complexity analysis and price range detection (~70 lines)
@@ -268,12 +289,14 @@
   - Modal protection checks in all reload functions (~40 lines)
 
 ## Browser Storage Used
+
 - `farModalProtectionUntilTime` - Modal protection timestamp
 - `farPinnedMessages` - Array of pinned messages (max 10)
 - `farOpenAIKeyIndex` - Current API key index for rotation
 - `farOpenAIFailedKeys` - Temporarily failed keys list
 
 ## Performance Impact
+
 - **Minimal**: All operations are fast and non-blocking
 - **No lag**: Key switching happens instantly
 - **Storage**: ~2-3KB per session
@@ -281,21 +304,25 @@
 ## Troubleshooting Multiple Keys
 
 ### "All API keys marked as failed"
+
 - This means all keys hit rate limits in the same timeframe
 - Wait a few minutes and try again
 - The extension automatically resets this daily
 
 ### Key not switching even though getting rate limited
+
 - Check that all keys are on separate accounts with their own quotas
 - Shared keys on same account will all get rate limited together
 
 ### Want to reset key rotation
+
 - Open browser developer console
 - Go to the extension's storage tab
 - Delete `farOpenAIKeyIndex` and `farOpenAIFailedKeys` entries
 - Next request will start fresh
 
 ## Future Enhancements
+
 - Pinned messages UI (visual chips/tags to manage pins)
 - Message history across conversations
 - AI response quality scoring
@@ -313,6 +340,7 @@
 - **Integration**: Pinned messages are automatically included as "REFERENCE EXAMPLES" in AI prompts
 
 ## 2. **Enhanced First Message Generation** ✅
+
 - **Improved Quality**: AI now generates more professional, human-like first responses
 - **Special Instructions**:
   - Shows enthusiasm without sounding fake
@@ -324,6 +352,7 @@
 - **Context**: Uses buyer's writing style and pinned messages as references
 
 ## 3. **Improved Modal UI/UX** ✅
+
 - **Tab System**: Two-tab interface for better organization
   - **Tab 1: Generate Response** - All message generation tools
   - **Tab 2: Live Chat** - Interactive AI chat about messages
@@ -348,6 +377,7 @@
   - 📊 Analyze
 
 ## 4. **Writer Style Extraction** ✅
+
 - **Analysis**: Automatically extracts seller's communication patterns
 - **Metrics Analyzed**:
   - Average message length
@@ -360,6 +390,7 @@
 - **Result**: AI generates responses that match seller's natural communication style
 
 ## 5. **Modal Protection (5-minute shield)** ✅
+
 - **Functionality**: Prevents page reloads/redirects while AI modal is open
 - **Duration**: 5 minutes after modal opens
 - **Benefits**: Uninterrupted work - won't lose chat or generated content
@@ -367,6 +398,7 @@
 - **Coverage**: All reload triggers checked - periodic, error page, manual reloads
 
 ## 6. **Refined System Prompts** ✅
+
 - **Conciseness Focus**: Removed all filler phrases
 - **Anti-AI Patterns**: Blocks: "I understand", "I'd be happy to", "Let me know", "I appreciate"
 - **Natural Language**: Emphasizes contractions, short sentences, human rhythm
@@ -374,7 +406,8 @@
 - **Clarity**: Always includes one clear next step
 
 ## 7. **Improved Chat Experience** ✅
-- **Color-Coded Messages**: 
+
+- **Color-Coded Messages**:
   - Green (seller) for user prompts
   - Blue (buyer) for AI responses
   - Red for errors
@@ -385,24 +418,28 @@
 ## Quick Start
 
 ### Using Pinned Messages:
+
 1. Open AI Assistant modal
 2. Right-click on any past message and pin it
 3. Pinned messages appear in system prompt as "REFERENCE EXAMPLES"
 4. AI learns and mimics communication style from pinned examples
 
 ### Using Enhanced First Message:
+
 1. Click "📌 First Message" button
 2. Add optional private note if needed
 3. AI generates professional, human-like first response
 4. Review and copy to Fiverr inbox
 
 ### Using Live Chat Tab:
+
 1. Generate a message on "Generate Response" tab
 2. Switch to "Live Chat" tab
 3. Ask for changes: "Make it shorter", "More friendly", "Formal tone"
 4. AI instantly refines the message based on feedback
 
 ## Files Modified
+
 - **inboxAiAssistant.js** - Main implementation
   - Message pinning functions (~60 lines)
   - Writer style extraction (~80 lines)
@@ -414,15 +451,18 @@
   - Modal protection checks in all reload functions (~40 lines)
 
 ## Browser Storage Used
+
 - `farModalProtectionUntilTime` - Modal protection timestamp
 - `farPinnedMessages` - Array of pinned messages (max 10)
 
 ## Performance Impact
+
 - **Minimal**: Pinning and style extraction are one-time per conversation
 - **No lag**: All checks are instant
 - **Storage**: ~1-2KB per session
 
 ## Future Enhancements
+
 - Pinned messages UI (visual chips/tags to manage pins)
 - Message history across conversations
 - AI response quality scoring
