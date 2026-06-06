@@ -549,7 +549,7 @@
       getSettings
     );
     
-    return geminiGenerateContent(
+    return generateWithAI(
       getSettings,
       [
         { role: "system", content: COMMUNICATION_ANALYSIS_SYSTEM_PROMPT },
@@ -574,7 +574,7 @@
     const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
     const userText = buildPresetUserText(kind, transcript, getSettings, { costPrice: "" });
     const userContent = await buildUserContentWithImages(userText, imageUrls, getSettings);
-    return geminiGenerateContent(
+    return generateWithAI(
       getSettings,
       [
         { role: "system", content: sys },
@@ -593,6 +593,15 @@
 
   function mapGeminiError(status, bodySnippet) {
     if (status === 400) {
+      if (bodySnippet && /location.*not.*supported|not.*available.*location|geographic|region.*not.*support/i.test(bodySnippet)) {
+        return "Geographic restriction (400). Your location/country is not supported for Gemini API access.\n\n" +
+               "SOLUTIONS:\n" +
+               "1. Use a VPN to connect from a supported country (US, UK, Canada, etc.)\n" +
+               "2. If using VPN, make sure it's working properly and not exposing your real IP\n" +
+               "3. Try a different Gemini model or use a different API (Claude, ChatGPT, etc.)\n" +
+               "4. Check if your ISP blocks the API - try with mobile hotspot\n\n" +
+               "Visit: https://cloud.google.com/generative-ai/docs/availability for supported regions.";
+      }
       if (bodySnippet && /api.key.invalid/i.test(bodySnippet)) {
         return "Invalid API key (400). The API key doesn't exist or was revoked. Get a new key from https://aistudio.google.com/app/apikey";
       }
@@ -611,6 +620,14 @@
       return "Unauthorized (401). Invalid API key. Get a new key from https://aistudio.google.com/app/apikey";
     }
     if (status === 403) {
+      if (bodySnippet && /location.*not.*supported|not.*available.*location|geographic|region.*not.*support/i.test(bodySnippet)) {
+        return "Geographic restriction (403). Your location/country is not supported for Gemini API access.\n\n" +
+               "SOLUTIONS:\n" +
+               "1. Use a VPN to connect from a supported country (US, UK, Canada, etc.)\n" +
+               "2. If using VPN, make sure it's working properly and not exposing your real IP\n" +
+               "3. Try a different API (Claude, ChatGPT)\n\n" +
+               "Visit: https://cloud.google.com/generative-ai/docs/availability for supported regions.";
+      }
       if (bodySnippet && /billing|quota/i.test(bodySnippet)) {
         return "Billing required (403). This API key requires billing setup. Check your Google Cloud billing.";
       }
@@ -1049,7 +1066,7 @@
 
         const userContent = await buildUserContentWithImages(userText, imageUrls, getSettings);
 
-        const text = await geminiGenerateContent(
+        const text = await generateWithAI(
           getSettings,
           [
             { role: "system", content: sys },
@@ -1105,6 +1122,193 @@
         }
       }
     });
+  }
+
+  /**
+   * OpenAI ChatGPT API handler
+   * @param {() => object} getSettings
+   * @param {Array} messages - Messages in OpenAI format [{role, content}]
+   * @param {object} options - { temperature: number }
+   * @returns {Promise<string>}
+   */
+  async function openaiGenerateContent(getSettings, messages, options) {
+    const s = getSettings();
+    const apiKey = (s && s.openaiApiKey && String(s.openaiApiKey).trim()) || "";
+    
+    console.log('=== OpenAI API Request Debug ===');
+    console.log('1. Settings check:', {
+      hasApiKey: !!apiKey,
+      apiKeyLength: apiKey ? apiKey.length : 0,
+      apiKeyPrefix: apiKey ? apiKey.substring(0, 10) + '...' : 'none',
+      model: s && s.openaiModel && String(s.openaiModel).trim()
+    });
+    
+    if (!apiKey) {
+      throw new Error("Add your OpenAI API key in Fiverr Assistant settings. Get one at https://platform.openai.com/api-keys");
+    }
+    
+    if (!apiKey.startsWith("sk-")) {
+      throw new Error("Invalid OpenAI API key format. Should start with 'sk-'. Get a key at https://platform.openai.com/api-keys");
+    }
+    
+    const model = (s && s.openaiModel && String(s.openaiModel).trim()) || "gpt-4o-mini";
+    console.log('2. Using model:', model);
+    
+    const openaiMessages = messages.map(msg => {
+      if (typeof msg.content === 'string') {
+        return { role: msg.role, content: msg.content };
+      } else if (msg.content && msg.content.text) {
+        return { role: msg.role, content: msg.content.text };
+      } else if (msg.content && msg.content.parts) {
+        // Convert from Gemini format
+        const textParts = msg.content.parts.filter(p => p && p.text).map(p => p.text);
+        return { role: msg.role, content: textParts.join('\n') };
+      }
+      return { role: msg.role, content: String(msg.content || '') };
+    });
+    
+    console.log('3. Converted messages:', openaiMessages);
+    
+    const body = {
+      model: model,
+      messages: openaiMessages,
+      temperature: options && typeof options.temperature === "number" ? options.temperature : 0.7,
+      max_tokens: 8192,
+    };
+    
+    console.log('4. Request body:', JSON.stringify(body, null, 2));
+    
+    const url = "https://api.openai.com/v1/chat/completions";
+    console.log('5. Request URL:', url);
+    
+    const maxRetries = 3;
+    const baseDelay = 2000;
+    
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      console.log(`6. Attempt ${attempt + 1}/${maxRetries}`);
+      
+      try {
+        const fetchOptions = {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${apiKey}`,
+          },
+          body: JSON.stringify(body),
+        };
+        
+        const res = await fetch(url, fetchOptions);
+        console.log('7. Response status:', res.status);
+        
+        const rawText = await res.text();
+        console.log('8. Raw response:', rawText.substring(0, 500));
+        
+        let data;
+        try {
+          data = JSON.parse(rawText);
+        } catch (error) {
+          console.error('9. JSON parse error:', error);
+          data = null;
+        }
+        
+        if (!res.ok) {
+          const errMsg = (data && data.error && data.error.message) || rawText || `HTTP ${res.status}`;
+          console.log('10. API Error:', errMsg);
+          
+          // Check if retryable
+          const isRetryable = res.status === 429 || res.status === 503 || (res.status >= 500);
+          
+          if (isRetryable && attempt < maxRetries - 1) {
+            const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+            console.log(`11. Retrying after ${delay}ms`);
+            showRetryStatus(`OpenAI API busy. Retrying ${attempt + 1}/${maxRetries} in ${Math.round(delay/1000)}s...`);
+            await sleep(delay);
+            continue;
+          }
+          
+          // Map OpenAI errors
+          let msg = mapOpenAIError(res.status, errMsg);
+          throw new Error(msg);
+        }
+        
+        // Success
+        const choice = data && data.choices && data.choices[0];
+        const content = choice && choice.message && choice.message.content;
+        console.log('12. Generated content:', content ? content.substring(0, 100) + '...' : 'empty');
+        
+        if (content) {
+          return stripFencesAndPreamble(content);
+        }
+        
+        return "";
+        
+      } catch (error) {
+        console.log('13. Exception:', error.message);
+        
+        if (attempt === maxRetries - 1) {
+          console.log('=== OpenAI API Request Failed ===\n');
+          throw error;
+        }
+        
+        if (error.message.includes("network") || error.message.includes("fetch")) {
+          const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+          await sleep(delay);
+          continue;
+        }
+        
+        console.log('=== OpenAI API Request Failed (non-retryable) ===\n');
+        throw error;
+      }
+    }
+    
+    throw new Error("OpenAI API request failed after all retries.");
+  }
+
+  /**
+   * Map OpenAI error codes to helpful messages
+   */
+  function mapOpenAIError(status, bodySnippet) {
+    if (status === 401) {
+      return "Unauthorized (401). Invalid OpenAI API key. Check your key at https://platform.openai.com/api-keys";
+    }
+    if (status === 403) {
+      return "Forbidden (403). Your account or API key doesn't have access. Check https://platform.openai.com/account/billing";
+    }
+    if (status === 429) {
+      return "Rate limited (429). You've hit the API rate limit. Wait a moment and try again, or upgrade your plan.";
+    }
+    if (status === 500) {
+      return "OpenAI server error (500). Their servers are having issues. Please try again in a moment.";
+    }
+    if (status === 503) {
+      return "Service unavailable (503). OpenAI is temporarily offline. Please try again shortly.";
+    }
+    if (bodySnippet && /invalid.*model/i.test(bodySnippet)) {
+      return "Invalid model. Try 'gpt-4o-mini', 'gpt-4o', or 'gpt-3.5-turbo'";
+    }
+    if (bodySnippet && /billing|quota/i.test(bodySnippet)) {
+      return "Billing issue. Check your OpenAI account billing and subscription at https://platform.openai.com/account/billing";
+    }
+    return `Request failed (${status}). Check your API key and internet connection.`;
+  }
+
+  /**
+   * Wrapper function that calls either Gemini or OpenAI based on configuration
+   */
+  async function generateWithAI(getSettings, messages, options) {
+    const s = getSettings();
+    const hasGemini = s && s.geminiApiKey && String(s.geminiApiKey).trim().length > 0;
+    const hasOpenAI = s && s.openaiApiKey && String(s.openaiApiKey).trim().length > 0;
+    
+    if (hasOpenAI) {
+      console.log('Using OpenAI API...');
+      return openaiGenerateContent(getSettings, messages, options);
+    } else if (hasGemini) {
+      console.log('Using Gemini API...');
+      return geminiGenerateContent(getSettings, messages, options);
+    } else {
+      throw new Error("No AI API key configured. Add an OpenAI or Gemini API key in Fiverr Assistant settings.");
+    }
   }
 
   function attachToolbarButton(toolbarRow, sendTa, _root, getSettings) {
@@ -1181,7 +1385,7 @@
       outBn.textContent = "Loading…";
       outEn.textContent = "";
 
-      geminiGenerateContent(
+      generateWithAI(
         getSettings,
         [
           { role: "system", content: sys },
@@ -1360,7 +1564,7 @@
         const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
         const userText = appendSellerNoteForApi(presetInstruction(kind, transcript));
         const userContent = await buildUserContentWithImages(userText, imageUrls, getSettings);
-        geminiGenerateContent(getSettings, [
+        generateWithAI(getSettings, [
           { role: "system", content: sys },
           { role: "user", content: userContent },
         ])
@@ -1445,7 +1649,7 @@
           messages.push({ role: "user", content: followText });
         }
 
-        geminiGenerateContent(getSettings, messages)
+        generateWithAI(getSettings, messages)
           .then((t) => {
             out.value = t;
             logChat("assistant", t);

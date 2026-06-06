@@ -25,6 +25,8 @@
     inboxTranslateEnabled: true,
     inboxTranslateClientLang: "",
     inboxTranslateDebounceMs: "500",
+    openaiApiKey: "",
+    openaiModel: "gpt-4o-mini",
     geminiApiKey: "",
     geminiModel: "gemini-2.5-flash",
     disableImageProcessing: false,
@@ -1688,6 +1690,105 @@
     if (resetButton) {
       resetButton.addEventListener("click", resetStatistics);
     }
+
+    // Reload Logs UI wiring
+    const RELOAD_LOGS_KEY = "farReloadLogs";
+    const reloadLogsBody = document.getElementById("reloadLogsBody");
+    const reloadLogsCount = document.getElementById("reloadLogsCount");
+    const refreshReloadLogs = document.getElementById("refreshReloadLogs");
+    const clearReloadLogsBtn = document.getElementById("clearReloadLogs");
+
+    const formatTimestamp = (ts) => {
+      try {
+        return new Date(ts).toLocaleString();
+      } catch (_) {
+        return String(ts || "-");
+      }
+    };
+
+    const renderReloadLogs = (logs) => {
+      if (!reloadLogsBody) return;
+      reloadLogsBody.innerHTML = "";
+      if (!Array.isArray(logs) || logs.length === 0) {
+        reloadLogsBody.innerHTML = '<tr><td colspan="2" style="padding:8px;color:#64748b;">No reload logs available.</td></tr>';
+        if (reloadLogsCount) reloadLogsCount.textContent = "";
+        return;
+      }
+
+      // Show newest first
+      const entries = logs.slice().reverse();
+      entries.forEach((entry) => {
+        const tr = document.createElement("tr");
+        const tdTime = document.createElement("td");
+        tdTime.style.padding = "8px";
+        tdTime.style.borderBottom = "1px solid #f1f5f9";
+        tdTime.textContent = formatTimestamp(entry.ts);
+
+        const tdUrl = document.createElement("td");
+        tdUrl.style.padding = "8px";
+        tdUrl.style.borderBottom = "1px solid #f1f5f9";
+        const a = document.createElement("a");
+        a.href = entry.url || "#";
+        a.target = "_blank";
+        a.rel = "noopener noreferrer";
+        a.textContent = entry.url || "(no url)";
+        tdUrl.appendChild(a);
+
+        tr.appendChild(tdTime);
+        tr.appendChild(tdUrl);
+        reloadLogsBody.appendChild(tr);
+      });
+
+      if (reloadLogsCount) reloadLogsCount.textContent = `${logs.length} entries`;
+    };
+
+    const loadReloadLogs = async () => {
+      try {
+        const r = await storage.get(RELOAD_LOGS_KEY);
+        const logs = r && r[RELOAD_LOGS_KEY] ? r[RELOAD_LOGS_KEY] : [];
+        renderReloadLogs(logs);
+      } catch (error) {
+        console.error("Failed to load reload logs:", error);
+        renderReloadLogs([]);
+      }
+    };
+
+    const clearReloadLogs = async () => {
+      if (!confirm("Clear all reload logs? This cannot be undone.")) return;
+      try {
+        await storage.remove(RELOAD_LOGS_KEY);
+        renderReloadLogs([]);
+        showStatus("Reload logs cleared.", 2000);
+      } catch (error) {
+        console.error("Failed to clear reload logs:", error);
+        showStatus("Failed to clear reload logs.", 3000);
+      }
+    };
+
+    if (refreshReloadLogs) {
+      refreshReloadLogs.addEventListener("click", loadReloadLogs);
+    }
+    if (clearReloadLogsBtn) {
+      clearReloadLogsBtn.addEventListener("click", clearReloadLogs);
+    }
+
+    // Listen for storage changes to update logs in real-time
+    try {
+      if (hasBrowserAPI && browser.storage && browser.storage.onChanged) {
+        browser.storage.onChanged.addListener((changes, area) => {
+          if (area !== "local") return;
+          if (Object.prototype.hasOwnProperty.call(changes, RELOAD_LOGS_KEY)) {
+            const newVal = changes[RELOAD_LOGS_KEY].newValue || [];
+            renderReloadLogs(newVal);
+          }
+        });
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // Initial load
+    loadReloadLogs();
   });
 
   if (activatePrimaryButton) {

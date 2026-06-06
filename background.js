@@ -88,7 +88,11 @@
 
   const AUTO_RELOAD_KEY = "autoReloadEnabled";
   const PRIMARY_TAB_ID_STORAGE_KEY = "farPrimaryTabId";
+  const NEXT_RELOAD_TIMESTAMP_KEY = "farNextReloadTimestamp";
+  const RELOAD_COUNT_KEY = "farReloadCount";
+  const RELOAD_DATE_KEY = "farReloadDate";
   let autoReloadEnabled = false;
+  let enforcedReloadTimeoutId = null;
 
   const storageGet = (keys) => {
     if (!storage) {
@@ -134,6 +138,41 @@
     });
   };
 
+  const getTodayDateString = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const incrementReloadCount = async () => {
+    if (!storage) {
+      return null;
+    }
+    try {
+      const today = getTodayDateString();
+      const stored = await storageGet([RELOAD_COUNT_KEY, RELOAD_DATE_KEY]);
+      const storedDate = stored && stored[RELOAD_DATE_KEY] ? String(stored[RELOAD_DATE_KEY]) : null;
+      let count = 0;
+      if (storedDate === today && stored && stored[RELOAD_COUNT_KEY] !== undefined && stored[RELOAD_COUNT_KEY] !== null) {
+        const parsed = parseInt(stored[RELOAD_COUNT_KEY], 10);
+        if (!Number.isNaN(parsed)) {
+          count = parsed;
+        }
+      }
+      count += 1;
+      await storageSet({
+        [RELOAD_COUNT_KEY]: count,
+        [RELOAD_DATE_KEY]: today,
+      });
+      return count;
+    } catch (error) {
+      console.warn("Fiverr Assistant: unable to increment reload count", error);
+      return null;
+    }
+  };
+
   const storageRemove = (keys) => {
     if (!storage) {
       return Promise.resolve();
@@ -154,6 +193,45 @@
         reject(error);
       }
     });
+
+    // Reload log retention: remove entries older than 24 hours
+    const RELOAD_LOG_RETENTION_MS = 24 * 60 * 60 * 1000; // 24 hours
+    const RELOAD_LOG_CLEAN_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+    let reloadLogCleanupIntervalId = null;
+
+    const cleanOldReloadLogs = async () => {
+      try {
+        const r = await storageGet(["farReloadLogs"]);
+        const logs = (r && r.farReloadLogs && Array.isArray(r.farReloadLogs)) ? r.farReloadLogs : [];
+        if (!logs || logs.length === 0) return;
+        const cutoff = Date.now() - RELOAD_LOG_RETENTION_MS;
+        const filtered = logs.filter((entry) => entry && entry.ts && Number(entry.ts) >= cutoff);
+        if (filtered.length !== logs.length) {
+          // save trimmed logs
+          await storageSet({ farReloadLogs: filtered });
+        }
+      } catch (e) {
+        // ignore cleanup errors
+      }
+    };
+
+    const startReloadLogCleanup = () => {
+      try {
+        if (reloadLogCleanupIntervalId) return;
+        // run once immediately
+        cleanOldReloadLogs().catch(() => {});
+        reloadLogCleanupIntervalId = setInterval(() => {
+          cleanOldReloadLogs().catch(() => {});
+        }, RELOAD_LOG_CLEAN_INTERVAL_MS);
+      } catch (e) {}
+    };
+
+    const stopReloadLogCleanup = () => {
+      if (reloadLogCleanupIntervalId) {
+        clearInterval(reloadLogCleanupIntervalId);
+        reloadLogCleanupIntervalId = null;
+      }
+    };
   };
 
   const refreshAutoReloadSetting = async () => {
@@ -629,7 +707,7 @@
     if (areaName && areaName !== "local") {
       return;
     }
-    if (!changes || !Object.prototype.hasOwnProperty.call(changes, AUTO_RELOAD_KEY)) {
+    if (!changes || (!Object.prototype.hasOwnProperty.call(changes, AUTO_RELOAD_KEY) && !Object.prototype.hasOwnProperty.call(changes, NEXT_RELOAD_TIMESTAMP_KEY))) {
       return;
     }
     const changeRecord = changes[AUTO_RELOAD_KEY];
@@ -647,6 +725,133 @@
       startErrorPageChecking();
       startPeriodicReload();
     }
+    // Also react to next-reload timestamp changes to enforce reloads from background
+    if (changes && Object.prototype.hasOwnProperty.call(changes, NEXT_RELOAD_TIMESTAMP_KEY)) {
+      const newVal = changes[NEXT_RELOAD_TIMESTAMP_KEY] && changes[NEXT_RELOAD_TIMESTAMP_KEY].newValue ? changes[NEXT_RELOAD_TIMESTAMP_KEY].newValue : 0;
+      scheduleEnforcedReload(newVal);
+    }
+  };
+
+  // Schedule an enforced reload at the timestamp stored by content script
+  const clearEnforcedReload = () => {
+    if (enforcedReloadTimeoutId) {
+      clearTimeout(enforcedReloadTimeoutId);
+      enforcedReloadTimeoutId = null;
+    }
+  };
+
+  const scheduleEnforcedReload = (timestamp) => {
+    clearEnforcedReload();
+    const ts = Number(timestamp) || 0;
+    if (!ts) {
+      // no scheduled timestamp
+      return;
+    }
+    const now = Date.now();
+    if (ts <= now) {
+      // If timestamp is recent (within last minute), run immediately; otherwise ignore
+      if (now - ts < 60 * 1000) {
+        performEnforcedReload().catch(() => {});
+      }
+      return;
+    }
+    const delay = Math.max(0, ts - now);
+    enforcedReloadTimeoutId = setTimeout(() => {
+      enforcedReloadTimeoutId = null;
+      performEnforcedReload().catch(() => {});
+    }, delay + 50); // small buffer
+  };
+
+  const normalizeToAbsolute = (candidate, profileUsername) => {
+    if (!candidate || typeof candidate !== "string") return null;
+    const trimmed = candidate.trim();
+    if (/^https?:\/\//i.test(trimmed)) return trimmed;
+    if (!trimmed.startsWith('/')) {
+      return 'https://www.fiverr.com/' + trimmed.replace(/^\/+/, '');
+    }
+    return 'https://www.fiverr.com' + trimmed;
+  };
+
+  const performEnforcedReload = async () => {
+    try {
+      // Read primary tab and pageLinks from storage
+      const s = await storageGet([PRIMARY_TAB_ID_STORAGE_KEY, "pageLinks", "profileUsername"]);
+      const primaryTabId = s && s[PRIMARY_TAB_ID_STORAGE_KEY] ? s[PRIMARY_TAB_ID_STORAGE_KEY] : null;
+      const pageLinksRaw = s && s.pageLinks ? s.pageLinks : "";
+      const profileUsername = s && s.profileUsername ? s.profileUsername : "";
+
+      if (!primaryTabId) return;
+
+      // Get tab info
+      let tab = null;
+      try {
+        tab = await new Promise((resolve, reject) => {
+          api.tabs.get(primaryTabId, (t) => {
+            if (api.runtime.lastError) return resolve(null);
+            resolve(t);
+          });
+        });
+      } catch (e) {
+        tab = null;
+      }
+
+      if (!tab || !tab.url || !tab.url.includes("fiverr.com")) {
+        return;
+      }
+
+      // Build candidates array
+      let candidates = [];
+      if (typeof pageLinksRaw === 'string') {
+        candidates = pageLinksRaw.split(',').map(p => p.trim()).filter(Boolean);
+      } else if (Array.isArray(pageLinksRaw)) {
+        candidates = pageLinksRaw.slice();
+      }
+      if (candidates.length === 0 && profileUsername) {
+        candidates = [`/users/${profileUsername}/seller_dashboard`];
+      }
+      if (candidates.length === 0) {
+        candidates = ['/seller_dashboard'];
+      }
+
+      const currentNormalized = (tab.url || '').replace(/#.*$/, '').replace(/\/?$/, '');
+      let newLink = null;
+      for (let i = 0; i < Math.max(3, candidates.length); i++) {
+        const idx = Math.floor(Math.random() * candidates.length);
+        const cand = candidates[idx] || candidates[0];
+        const abs = normalizeToAbsolute(cand, profileUsername);
+        if (!abs) continue;
+        const absNormalized = abs.replace(/#.*$/, '').replace(/\/?$/, '');
+        if (absNormalized !== currentNormalized) {
+          newLink = abs;
+          break;
+        }
+      }
+      if (!newLink) newLink = normalizeToAbsolute(candidates[0] || `/users/${profileUsername}/seller_dashboard`, profileUsername);
+
+      // Navigate tab to newLink
+      api.tabs.update(primaryTabId, { url: newLink }, async () => {
+        if (api.runtime.lastError) {
+          console.warn("Fiverr Assistant: enforced reload failed to update tab", api.runtime.lastError);
+          try { api.tabs.reload(primaryTabId); } catch (_) {}
+          return;
+        }
+        // Persist reload count and append a reload log so options UI shows it
+        try {
+          await incrementReloadCount();
+          const r = await storageGet(["farReloadLogs"]);
+          const existing = r && r.farReloadLogs ? r.farReloadLogs : [];
+          existing.push({ ts: Date.now(), url: newLink });
+          const MAX_LOGS = 500;
+          const trimmed = existing.slice(-MAX_LOGS);
+          await storageSet({ farReloadLogs: trimmed });
+          try { await cleanOldReloadLogs(); } catch(_) {}
+        } catch (err) {
+          // ignore
+        }
+      });
+    } catch (error) {
+      console.warn("Fiverr Assistant: performEnforcedReload error", error);
+    }
   };
 
   if (storage) {
@@ -655,6 +860,71 @@
     } else if (typeof chrome !== "undefined" && chrome.storage && chrome.storage.onChanged) {
       chrome.storage.onChanged.addListener(handleStorageChange);
     }
+    // On startup, schedule enforced reload if content script already set a next timestamp
+    (async () => {
+      try {
+        const r = await storageGet([NEXT_RELOAD_TIMESTAMP_KEY]);
+        const ts = r && r[NEXT_RELOAD_TIMESTAMP_KEY] ? r[NEXT_RELOAD_TIMESTAMP_KEY] : 0;
+        if (ts && Number(ts) > Date.now()) {
+          scheduleEnforcedReload(ts);
+        }
+        // Start periodic cleanup of old reload logs
+        try { startReloadLogCleanup(); } catch(_) {}
+      } catch (e) {
+        // ignore
+      }
+    })();
+  }
+
+  // Listen for explicit schedule requests from content scripts (more immediate than storage.onChanged)
+  try {
+    api.runtime.onMessage.addListener((message, sender, sendResponse) => {
+      try {
+        if (!message || !message.type) return true;
+        if (message.type === 'scheduleEnforcedReload' && message.timestamp) {
+          scheduleEnforcedReload(message.timestamp);
+          try { if (typeof sendResponse === 'function') sendResponse(); } catch (_) {}
+          return true;
+        }
+
+        if (message.type === 'performEnforcedReloadNow' && message.url) {
+          (async () => {
+            try {
+              const r = await storageGet([PRIMARY_TAB_ID_STORAGE_KEY]);
+              const primaryTabId = r && r[PRIMARY_TAB_ID_STORAGE_KEY] ? r[PRIMARY_TAB_ID_STORAGE_KEY] : null;
+              if (!primaryTabId) return;
+              // Try to update primary tab to requested URL
+              api.tabs.update(primaryTabId, { url: message.url }, async () => {
+                if (api.runtime.lastError) {
+                  console.warn('Fiverr Assistant: performEnforcedReloadNow failed to update tab', api.runtime.lastError);
+                  try { api.tabs.reload(primaryTabId); } catch (_) {}
+                  return;
+                }
+                try {
+                  await incrementReloadCount();
+                  const rr = await storageGet(['farReloadLogs']);
+                  const existing = rr && rr.farReloadLogs ? rr.farReloadLogs : [];
+                  existing.push({ ts: Date.now(), url: message.url });
+                  const MAX_LOGS = 500;
+                  const trimmed = existing.slice(-MAX_LOGS);
+                  await storageSet({ farReloadLogs: trimmed });
+                  try { await cleanOldReloadLogs(); } catch(_) {}
+                } catch (err) {}
+              });
+            } catch (err) {
+              console.warn('Fiverr Assistant: performEnforcedReloadNow error', err);
+            }
+          })();
+          try { if (typeof sendResponse === 'function') sendResponse(); } catch (_) {}
+          return true;
+        }
+      } catch (e) {}
+      // Keep backward compatibility - no response needed
+      try { if (typeof sendResponse === 'function') sendResponse(); } catch (_) {}
+      return true;
+    });
+  } catch (e) {
+    // ignore
   }
 
   // Listen for tab creation (including restored tabs on Firefox startup)

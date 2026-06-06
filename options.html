@@ -14,6 +14,7 @@
         <button type="button" class="tab-button" data-tab="sounds">Sounds</button>
         <button type="button" class="tab-button" data-tab="selectors">Selectors</button>
         <button type="button" class="tab-button" data-tab="statistics">Statistics</button>
+        <button type="button" class="tab-button" data-tab="reloadLogs">Logs</button>
         <button type="button" class="tab-button" data-tab="settings">Settings</button>
       </div>
 
@@ -104,22 +105,20 @@
           </section>
 
           <section>
-            <h3>AI inbox assistant (Google Gemini)</h3>
-            <p class="hint">Uses your API key only in this browser; it is not logged. Seller name comes from "Fiverr Profile Name" above. Use a vision-capable model (e.g. gemini-2.5-flash) so the assistant can see buyer image attachments from the inbox; with text-only models, image URLs are pasted as text instead.</p>
+            <h3>AI inbox assistant (OpenAI ChatGPT)</h3>
+            <p class="hint">Uses your OpenAI API key only in this browser; it is not logged. Seller name comes from "Fiverr Profile Name" above. Works globally in most countries. Get a free trial key at https://platform.openai.com/api-keys</p>
             <label>
-              <span>Gemini API key</span>
-              <input type="password" id="geminiApiKey" name="geminiApiKey" autocomplete="new-password" spellcheck="false" placeholder="AIza..." />
+              <span>OpenAI API key</span>
+              <input type="password" id="openaiApiKey" name="openaiApiKey" autocomplete="new-password" spellcheck="false" placeholder="sk-..." />
             </label>
             <label>
               <span>Chat model</span>
-              <input type="text" id="geminiModel" name="geminiModel" placeholder="gemini-2.5-flash" />
-            </label>
-            <label class="toggle-row">
-              <div class="toggle-text">
-                <span>Disable image processing (temporary)</span>
-                <small>When enabled, images from Fiverr conversations won't be sent to Gemini API. Use this to avoid rate limiting errors during high demand periods.</small>
-              </div>
-              <input type="checkbox" id="disableImageProcessing" name="disableImageProcessing" />
+              <select id="openaiModel" name="openaiModel">
+                <option value="gpt-4o-mini">gpt-4o-mini (Recommended - Fast & Free tier compatible)</option>
+                <option value="gpt-4o">gpt-4o (High quality)</option>
+                <option value="gpt-4-turbo">gpt-4-turbo (Advanced)</option>
+                <option value="gpt-3.5-turbo">gpt-3.5-turbo (Budget friendly)</option>
+              </select>
             </label>
             <label>
               <span>Inbox message list selector (optional override)</span>
@@ -154,6 +153,30 @@
               <span>Random Time End (seconds)</span>
               <input type="number" id="relEnd" name="relEnd" min="1" />
             </label>
+          </section>
+        </div>
+
+        <!-- Reload Logs Tab -->
+        <div class="tab-content" id="tab-reloadLogs">
+          <section>
+            <h2 style="margin-top: 0; color: #1dbf73; font-size: 18px;">Reload Logs</h2>
+            <p class="hint">A chronological list of reload/navigation events performed by the reloader (time and target URL).</p>
+            <div style="display:flex;gap:8px;margin-bottom:12px;align-items:center;">
+              <button type="button" id="refreshReloadLogs" class="secondary">Refresh</button>
+              <button type="button" id="clearReloadLogs" class="danger">Clear Logs</button>
+              <span id="reloadLogsCount" style="color:#64748b;margin-left:8px;"></span>
+            </div>
+            <div style="max-height:420px;overflow:auto;border:1px solid #e6e6e6;padding:8px;border-radius:6px;">
+              <table id="reloadLogsTable" style="width:100%;border-collapse:collapse;">
+                <thead>
+                  <tr>
+                    <th style="text-align:left;padding:8px;border-bottom:1px solid #e6e6e6;">Time</th>
+                    <th style="text-align:left;padding:8px;border-bottom:1px solid #e6e6e6;">URL</th>
+                  </tr>
+                </thead>
+                <tbody id="reloadLogsBody"></tbody>
+              </table>
+            </div>
           </section>
         </div>
 

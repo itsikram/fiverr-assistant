@@ -1100,6 +1100,64 @@ const phoneCall = () => {
     return false;
   };
 
+  const findNewClientFlag = (root = document, preferredScope = null) => {
+    if (!root || typeof root.querySelector !== "function") {
+      return null;
+    }
+
+    const preferredSelector = settings.selectorNewClientFlag || defaultSettings.selectorNewClientFlag;
+
+    if (preferredScope) {
+      const preferredRow = preferredScope.closest('[data-testid="contact"], div.contact, [class*="contact"], li, a');
+      if (preferredRow && isValidNewClientFlag(preferredRow)) {
+        return preferredRow;
+      }
+      if (preferredScope && isValidNewClientFlag(preferredScope)) {
+        return preferredScope;
+      }
+    }
+
+    if (preferredSelector) {
+      try {
+        const preferred = root.querySelector(preferredSelector);
+        if (preferred && isValidNewClientFlag(preferred)) {
+          return preferred;
+        }
+      } catch (error) {
+        console.warn("Fiverr Assistant: Invalid selectorNewClientFlag, falling back to heuristic detection", error);
+      }
+    }
+
+    const candidateSet = new Set();
+    const candidateSelectors = [
+      '[data-testid="contact"]',
+      'div.contact',
+      '[class*="contact"]'
+    ];
+
+    for (const selector of candidateSelectors) {
+      try {
+        root.querySelectorAll(selector).forEach((element) => candidateSet.add(element));
+      } catch (_) {}
+    }
+
+    for (const candidate of candidateSet) {
+      if (isValidNewClientFlag(candidate)) {
+        return candidate;
+      }
+    }
+
+    const clockIcons = root.querySelectorAll('svg[data-track-tag="clock_icon"], svg[viewBox="0 0 16 17"]');
+    for (const clockIcon of clockIcons) {
+      const contactCandidate = clockIcon.closest('[data-testid="contact"], div.contact, [class*="contact"], li, a');
+      if (contactCandidate && isValidNewClientFlag(contactCandidate)) {
+        return contactCandidate;
+      }
+    }
+
+    return null;
+  };
+
   // Function to check and handle new client message instantly
   const checkNewClientMessageInstantly = () => {
     if (siteDomain !== "www.fiverr.com") {
@@ -1126,7 +1184,7 @@ const phoneCall = () => {
     } else {
       // Refresh cache
       hasMessage = document.querySelector(unreadIconSelector);
-      const foundFlag = hasMessage ? document.querySelector(newClientFlagSelector) : null;
+      const foundFlag = hasMessage ? findNewClientFlag(document, hasMessage) : null;
       // Validate found flag to ensure it's actually a new client (clock icon), not Pro Client badge
       newClientFlag = foundFlag && isValidNewClientFlag(foundFlag) ? foundFlag : null;
       
@@ -1429,7 +1487,7 @@ const phoneCall = () => {
     } else {
       // Refresh cache
       hasMessage = document.querySelector(unreadIconSelector);
-      const foundFlag = hasMessage ? document.querySelector(newClientFlagSelector) : null;
+      const foundFlag = hasMessage ? findNewClientFlag(document, hasMessage) : null;
       // Validate found flag to ensure it's actually a new client (clock icon), not Pro Client badge
       newClientFlag = foundFlag && isValidNewClientFlag(foundFlag) ? foundFlag : null;
       
@@ -3903,10 +3961,7 @@ const phoneCall = () => {
       }
 
       try {
-      const newClientFlagSelector = settings.selectorNewClientFlag || defaultSettings.selectorNewClientFlag;
-      const foundFlag = document.querySelector(newClientFlagSelector);
-      // Validate to ensure it's actually a new client (clock icon), not Pro Client badge
-      var isNewClient = foundFlag && isValidNewClientFlag(foundFlag) ? true : false;
+      const isNewClient = !!findNewClientFlag();
 
       function isWithinLastTenMinutes(givenTime) {
         if (givenTime == null) return null;
@@ -4295,6 +4350,23 @@ const phoneCall = () => {
           console.log("Fiverr Assistant Content: Generated new reload delay:", delay);
         }
         persistReloadState();
+        // Notify background immediately to schedule enforced reload (avoids missed storage.onChanged)
+        try {
+          if (runtime && typeof runtime.sendMessage === 'function') {
+            // Firefox returns a Promise for sendMessage; Chrome uses callback
+            try {
+              const result = runtime.sendMessage({ type: 'scheduleEnforcedReload', timestamp: nextReloadTimestamp });
+              if (result && typeof result.then === 'function') {
+                result.catch(() => {});
+              }
+            } catch (err) {
+              // Fallback for callback-style APIs
+              try {
+                runtime.sendMessage({ type: 'scheduleEnforcedReload', timestamp: nextReloadTimestamp }, () => {});
+              } catch (_) {}
+            }
+          }
+        } catch (_) {}
         updateStatusDisplay();
 
         nextReloadTimeoutId = setTimeout(() => {
@@ -4336,10 +4408,45 @@ const phoneCall = () => {
             }
 
             // No tabs are loading, proceed with reload
-            const randomInt = Math.floor(Math.random() * pageLinks.length);
+            // Pick a random target from pageLinks but prefer a different page than the current one
             const fallbackLink = "/users/" + (getVal("profileUsername") || "") + "/seller_dashboard";
-            const goToLink = pageLinks[randomInt] || fallbackLink;
-            const newLink = new URL("https://www.fiverr.com" + goToLink).toString();
+            const candidates = Array.isArray(pageLinks) && pageLinks.length > 0 ? pageLinks.slice() : [fallbackLink];
+
+            const normalizeToAbsolute = (candidate) => {
+              if (!candidate || typeof candidate !== 'string') return null;
+              const trimmed = candidate.trim();
+              if (/^https?:\/\//i.test(trimmed)) {
+                return trimmed;
+              }
+              // ensure it starts with a single slash
+              if (!trimmed.startsWith('/')) {
+                return 'https://www.fiverr.com/' + trimmed.replace(/^\/+/, '');
+              }
+              return 'https://www.fiverr.com' + trimmed;
+            };
+
+            const currentNormalized = (window.location.href || '').replace(/#.*$/, '').replace(/\/?$/, '');
+
+            let newLink = null;
+            // Try to pick a different page up to N attempts
+            const maxAttempts = Math.max(3, candidates.length);
+            for (let attempt = 0; attempt < maxAttempts; attempt++) {
+              const idx = Math.floor(Math.random() * candidates.length);
+              const candidate = candidates[idx] || fallbackLink;
+              const abs = normalizeToAbsolute(candidate);
+              if (!abs) continue;
+              const absNormalized = abs.replace(/#.*$/, '').replace(/\/?$/, '');
+              if (absNormalized !== currentNormalized) {
+                newLink = abs;
+                break;
+              }
+              // If only one candidate equals current, try another; otherwise we'll accept it after attempts
+            }
+
+            // If still null, fall back to the first candidate (may be same as current)
+            if (!newLink) {
+              newLink = normalizeToAbsolute(candidates[0] || fallbackLink);
+            }
 
             // Check if we need to reset for a new day before incrementing
             checkAndResetDailyCount();
@@ -4348,7 +4455,62 @@ const phoneCall = () => {
             persistReloadState();
             updateStatusDisplay();
             markPrimaryNavigation();
-            window.location.href = newLink;
+            // Append reload log (timestamp + url) into extension storage (farReloadLogs)
+            try {
+              if (extensionStorage && typeof extensionStorage.get === 'function' && typeof extensionStorage.set === 'function') {
+                extensionStorage.get('farReloadLogs').then((res) => {
+                  const existing = (res && res.farReloadLogs) ? res.farReloadLogs : [];
+                  const entry = { ts: Date.now(), url: newLink };
+                  existing.push(entry);
+                  const MAX_LOGS = 500;
+                  const trimmed = existing.slice(-MAX_LOGS);
+                  extensionStorage.set({ farReloadLogs: trimmed }).catch(()=>{});
+                }).catch(()=>{});
+              }
+            } catch (err) {
+              // ignore storage errors
+            }
+            try {
+              console.log('Fiverr Assistant Content: Navigating to', newLink);
+              // Ask background to enforce this navigation now as a backup
+              try {
+                if (runtime && typeof runtime.sendMessage === 'function') {
+                  try {
+                    const res = runtime.sendMessage({ type: 'performEnforcedReloadNow', url: newLink });
+                    if (res && typeof res.then === 'function') res.catch(() => {});
+                  } catch (err) {
+                    try { runtime.sendMessage({ type: 'performEnforcedReloadNow', url: newLink }, () => {}); } catch (_) {}
+                  }
+                }
+              } catch (_) {}
+              window.location.href = newLink;
+            } catch (e) {
+              console.warn('Fiverr Assistant: failed to navigate to newLink, falling back to reload', e, newLink);
+              try {
+                // Log the intended reload even when navigation fails
+                if (extensionStorage && typeof extensionStorage.get === 'function' && typeof extensionStorage.set === 'function') {
+                  extensionStorage.get('farReloadLogs').then((res) => {
+                    const existing = (res && res.farReloadLogs) ? res.farReloadLogs : [];
+                    const entry = { ts: Date.now(), url: newLink };
+                    existing.push(entry);
+                    const MAX_LOGS = 500;
+                    const trimmed = existing.slice(-MAX_LOGS);
+                    extensionStorage.set({ farReloadLogs: trimmed }).catch(()=>{});
+                  }).catch(()=>{});
+                }
+              } catch (_) {}
+              try {
+                if (runtime && typeof runtime.sendMessage === 'function') {
+                  try {
+                    const res2 = runtime.sendMessage({ type: 'performEnforcedReloadNow', url: newLink });
+                    if (res2 && typeof res2.then === 'function') res2.catch(() => {});
+                  } catch (_) {
+                    try { runtime.sendMessage({ type: 'performEnforcedReloadNow', url: newLink }, () => {}); } catch (_) {}
+                  }
+                }
+              } catch (_) {}
+              try { window.location.reload(); } catch (_) {}
+            }
           }).catch((error) => {
             console.warn("Fiverr Assistant: Error checking for loading tabs, proceeding with reload", error);
             // If check fails, proceed with reload to avoid blocking
@@ -4363,6 +4525,20 @@ const phoneCall = () => {
             persistReloadState();
             updateStatusDisplay();
             markPrimaryNavigation();
+            try {
+              if (extensionStorage && typeof extensionStorage.get === 'function' && typeof extensionStorage.set === 'function') {
+                extensionStorage.get('farReloadLogs').then((res) => {
+                  const existing = (res && res.farReloadLogs) ? res.farReloadLogs : [];
+                  const entry = { ts: Date.now(), url: newLink };
+                  existing.push(entry);
+                  const MAX_LOGS = 500;
+                  const trimmed = existing.slice(-MAX_LOGS);
+                  extensionStorage.set({ farReloadLogs: trimmed }).catch(()=>{});
+                }).catch(()=>{});
+              }
+            } catch (err) {
+              // ignore
+            }
             window.location.href = newLink;
           });
         }, delay);
@@ -4664,13 +4840,10 @@ const phoneCall = () => {
 
       if (window.location.href === inboxUrl) {
         const unreadIconSelector = settings.selectorUnreadIcon || defaultSettings.selectorUnreadIcon;
-        const newClientFlagSelector = settings.selectorNewClientFlag || defaultSettings.selectorNewClientFlag;
         let hasMessage = document.querySelector(unreadIconSelector);
 
         if (hasMessage) {
-          const foundFlag = document.querySelector(newClientFlagSelector);
-          // Validate to ensure it's actually a new client (clock icon), not Pro Client badge
-          let newClientFlag = foundFlag && isValidNewClientFlag(foundFlag) ? foundFlag : null;
+          let newClientFlag = findNewClientFlag(document, hasMessage);
           if (newClientFlag) {
             // Try to extract client name using comprehensive extraction function
             let clientName = extractClientName(newClientFlag);
