@@ -1867,9 +1867,13 @@
               sendNotification("Old client Message", clientName);
             }
 
-            // Show unread clients alert to display all unread clients
-            setTimeout(() => {
+            // Show unread clients alert to display all unread clients (debounced to prevent duplicates)
+            if (unreadAlertTimeoutId) {
+              clearTimeout(unreadAlertTimeoutId);
+            }
+            unreadAlertTimeoutId = setTimeout(() => {
               showUnreadClientsAlert();
+              unreadAlertTimeoutId = null;
             }, 500);
 
             // Instantly redirect to inbox when new message is detected
@@ -4162,6 +4166,11 @@
     return isTargeted;
   };
 
+  // Debounce mechanism for showing unread clients alert (prevent duplicate alerts)
+  let lastUnreadAlertTime = 0;
+  const UNREAD_ALERT_DEBOUNCE_MS = 3000; // Prevent alerts within 3 seconds of each other
+  let unreadAlertTimeoutId = null;
+
   // Function to show alert with all unread clients
   const showUnreadClientsAlert = () => {
     console.log("=== Fiverr Assistant: showUnreadClientsAlert STARTED ===");
@@ -4179,6 +4188,23 @@
       console.log("❌ Not on inbox page");
       return;
     }
+
+    // Debounce check: don't show alert if one was shown recently
+    const timeSinceLastAlert = Date.now() - lastUnreadAlertTime;
+    if (timeSinceLastAlert < UNREAD_ALERT_DEBOUNCE_MS) {
+      console.log(
+        `⏱️ Alert debounce active - last alert was ${timeSinceLastAlert}ms ago, skipping`,
+      );
+      return;
+    }
+
+    // Cancel any pending alert to avoid duplicates
+    if (unreadAlertTimeoutId) {
+      clearTimeout(unreadAlertTimeoutId);
+      unreadAlertTimeoutId = null;
+    }
+
+    lastUnreadAlertTime = Date.now();
 
     console.log("✅ On Fiverr inbox page");
 
@@ -4321,10 +4347,9 @@
           message += `\nTargeted: ${targetedArray.length} client(s)`;
         }
 
-        alert(message);
         console.log("✅ Alert shown successfully");
 
-        // Play targeted sound if there are any targeted clients with unread messages
+        // Play targeted sound only once per alert (with debounce)
         if (targetedArray.length > 0) {
           console.log(
             `\n🔊 Playing targeted client sound for ${targetedArray.length} targeted client(s): ${targetedArray.join(", ")}`,
@@ -6658,9 +6683,13 @@
   // Show unread clients alert separately (independent of pageLoadCheckDone)
   const handleInboxPageLoad = () => {
     if (isFiverrInboxPage()) {
-      // Wait for DOM to fully render
-      setTimeout(() => {
+      // Wait for DOM to fully render, then show unread clients alert (debounced to prevent duplicates)
+      if (unreadAlertTimeoutId) {
+        clearTimeout(unreadAlertTimeoutId);
+      }
+      unreadAlertTimeoutId = setTimeout(() => {
         showUnreadClientsAlert();
+        unreadAlertTimeoutId = null;
       }, 1500);
     }
   };
