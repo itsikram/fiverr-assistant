@@ -16,6 +16,401 @@
   const CHAT_HISTORY_MAX_TURNS = 12;
   /** Max images sent per API call (buyer attachments + thread); avoids huge payloads */
   const MAX_THREAD_IMAGES = 10;
+  /** Prevent reload for 5 minutes when modal is open */
+  const MODAL_PROTECTION_DURATION = 5 * 60 * 1000; // 5 minutes
+  const MODAL_PROTECTION_STORAGE_KEY = "farModalProtectionUntilTime";
+  const OPENAI_KEY_INDEX_STORAGE_KEY = "farOpenAIKeyIndex";
+  const OPENAI_FAILED_KEYS_STORAGE_KEY = "farOpenAIFailedKeys";
+  const SELECTED_MESSAGES_STORAGE_KEY = "farSelectedMessages";
+  const MESSAGE_SELECTION_MODE_KEY = "farMessageSelectionMode";
+
+  /**
+   * Check if modal protection is currently active by reading from storage
+   * @returns {Promise<boolean>}
+   */
+  async function isModalProtectionActive() {
+    try {
+      const result = await browser.storage.local.get(MODAL_PROTECTION_STORAGE_KEY);
+      const protectionTime = result && result[MODAL_PROTECTION_STORAGE_KEY];
+      return protectionTime && Date.now() < parseInt(protectionTime, 10);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Activate modal protection (prevents reload for 5 minutes)
+   * @returns {Promise<void>}
+   */
+  async function activateModalProtection() {
+    try {
+      const protectionUntil = Date.now() + MODAL_PROTECTION_DURATION;
+      await browser.storage.local.set({
+        [MODAL_PROTECTION_STORAGE_KEY]: protectionUntil.toString()
+      });
+      console.log(`Modal protection active for 5 minutes (until ${new Date(protectionUntil).toLocaleTimeString()})`);
+    } catch (error) {
+      console.warn("Failed to activate modal protection:", error);
+    }
+  }
+
+  /**
+   * Deactivate modal protection
+   * @returns {Promise<void>}
+   */
+  async function deactivateModalProtection() {
+    try {
+      await browser.storage.local.remove(MODAL_PROTECTION_STORAGE_KEY);
+      console.log('Modal protection deactivated');
+    } catch (error) {
+      console.warn("Failed to deactivate modal protection:", error);
+    }
+  }
+
+  // ============================================================================
+  // OPENAI API KEY MANAGEMENT (Multiple Keys with Failover)
+  // ============================================================================
+  
+  /**
+   * Get the list of API keys as an array
+   * @param {object} settings - Settings object from getSettings()
+   * @returns {string[]} Array of API keys
+   */
+  function getApiKeyList(settings) {
+    if (!settings || !settings.openaiApiKey) return [];
+    const key = settings.openaiApiKey;
+    // Handle both array and string formats
+    if (Array.isArray(key)) {
+      return key.filter(k => k && String(k).trim().length > 0);
+    }
+    const keyStr = String(key || "").trim();
+    if (keyStr.length === 0) return [];
+    // Parse comma or newline separated
+    return keyStr
+      .split(/[\n,]/)
+      .map(k => k.trim())
+      .filter(k => k.length > 0);
+  }
+
+  /**
+   * Get current API key index from storage
+   * @returns {Promise<number>}
+   */
+  async function getCurrentKeyIndex() {
+    try {
+      const result = await browser.storage.local.get(OPENAI_KEY_INDEX_STORAGE_KEY);
+      return result && result[OPENAI_KEY_INDEX_STORAGE_KEY] ? parseInt(result[OPENAI_KEY_INDEX_STORAGE_KEY], 10) : 0;
+    } catch (error) {
+      console.warn("Failed to get key index:", error);
+      return 0;
+    }
+  }
+
+  /**
+   * Set current API key index in storage
+   * @param {number} index
+   * @returns {Promise<void>}
+   */
+  async function setCurrentKeyIndex(index) {
+    try {
+      await browser.storage.local.set({
+        [OPENAI_KEY_INDEX_STORAGE_KEY]: index
+      });
+    } catch (error) {
+      console.warn("Failed to set key index:", error);
+    }
+  }
+
+  /**
+   * Get list of failed API keys
+   * @returns {Promise<Set<string>>}
+   */
+  async function getFailedKeys() {
+    try {
+      const result = await browser.storage.local.get(OPENAI_FAILED_KEYS_STORAGE_KEY);
+      const failed = result && result[OPENAI_FAILED_KEYS_STORAGE_KEY];
+      return new Set(Array.isArray(failed) ? failed : []);
+    } catch (error) {
+      console.warn("Failed to get failed keys:", error);
+      return new Set();
+    }
+  }
+
+  /**
+   * Mark an API key as failed
+   * @param {string} key
+   * @returns {Promise<void>}
+   */
+  async function markKeyAsFailed(key) {
+    try {
+      const failed = await getFailedKeys();
+      failed.add(key);
+      await browser.storage.local.set({
+        [OPENAI_FAILED_KEYS_STORAGE_KEY]: Array.from(failed)
+      });
+      console.log("Marked API key as failed, will try next key");
+    } catch (error) {
+      console.warn("Failed to mark key as failed:", error);
+    }
+  }
+
+  /**
+   * Clear failed keys list (e.g., daily reset)
+   * @returns {Promise<void>}
+   */
+  async function clearFailedKeys() {
+    try {
+      await browser.storage.local.remove(OPENAI_FAILED_KEYS_STORAGE_KEY);
+      console.log("Cleared failed keys list");
+    } catch (error) {
+      console.warn("Failed to clear failed keys:", error);
+    }
+  }
+
+  /**
+   * Track OpenAI API call count for a specific key
+   * @param {number} keyIndex - Index of the API key
+   * @returns {Promise<void>}
+   */
+  async function trackOpenAICall(keyIndex) {
+    try {
+      const result = await browser.storage.local.get("farOpenAICallCounts");
+      const counts = result && result.farOpenAICallCounts ? result.farOpenAICallCounts : {};
+      const key = `key_${keyIndex}`;
+      counts[key] = (counts[key] || 0) + 1;
+      await browser.storage.local.set({ farOpenAICallCounts: counts });
+      console.log(`[FAR API Usage] OpenAI Key ${keyIndex + 1} call count: ${counts[key]}`);
+    } catch (error) {
+      console.warn("Failed to track OpenAI call:", error);
+    }
+  }
+
+  /**
+   * Track Gemini API call count
+   * @returns {Promise<void>}
+   */
+  async function trackGeminiCall() {
+    try {
+      const result = await browser.storage.local.get("farGeminiCallCount");
+      const count = (result && result.farGeminiCallCount || 0) + 1;
+      await browser.storage.local.set({ farGeminiCallCount: count });
+      console.log(`[FAR API Usage] Gemini call count: ${count}`);
+    } catch (error) {
+      console.warn("Failed to track Gemini call:", error);
+    }
+  }
+
+  // ============================================================================
+  // MESSAGE SELECTION FUNCTIONALITY (for AI context learning)
+  // ============================================================================
+
+  /**
+   * Get list of selected messages
+   * @returns {Promise<string[]>} Array of selected message texts
+   */
+  async function getSelectedMessages() {
+    try {
+      const result = await browser.storage.local.get(SELECTED_MESSAGES_STORAGE_KEY);
+      const selected = result && result[SELECTED_MESSAGES_STORAGE_KEY];
+      return Array.isArray(selected) ? selected : [];
+    } catch (error) {
+      console.warn("Failed to get selected messages:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Add a message to the selected messages list
+   * @param {string} messageText
+   * @returns {Promise<void>}
+   */
+  async function selectMessage(messageText) {
+    try {
+      const selected = await getSelectedMessages();
+      if (!selected.includes(messageText)) {
+        selected.push(messageText);
+        await browser.storage.local.set({
+          [SELECTED_MESSAGES_STORAGE_KEY]: selected
+        });
+      }
+    } catch (error) {
+      console.warn("Failed to select message:", error);
+    }
+  }
+
+  /**
+   * Remove a message from the selected messages list
+   * @param {string} messageText
+   * @returns {Promise<void>}
+   */
+  async function deselectMessage(messageText) {
+    try {
+      const selected = await getSelectedMessages();
+      const filtered = selected.filter(msg => msg !== messageText);
+      await browser.storage.local.set({
+        [SELECTED_MESSAGES_STORAGE_KEY]: filtered
+      });
+    } catch (error) {
+      console.warn("Failed to deselect message:", error);
+    }
+  }
+
+  /**
+   * Clear all selected messages
+   * @returns {Promise<void>}
+   */
+  async function clearSelectedMessages() {
+    try {
+      await browser.storage.local.remove(SELECTED_MESSAGES_STORAGE_KEY);
+      console.log("Cleared selected messages");
+    } catch (error) {
+      console.warn("Failed to clear selected messages:", error);
+    }
+  }
+
+  /**
+   * Format selected messages as learning examples for the AI prompt
+   * @param {string[]} selectedMessages
+   * @returns {string}
+   */
+  function formatSelectedMessagesAsExamples(selectedMessages) {
+    if (!selectedMessages || selectedMessages.length === 0) {
+      return "";
+    }
+    return "\n\nREFERENCE MESSAGES YOU SELECTED TO LEARN FROM:\n" + 
+           selectedMessages.map((msg, i) => `${i + 1}. "${msg}"`).join("\n") +
+           "\n\nUse these as examples to understand the tone, style, and what kinds of responses work for this buyer.";
+  }
+
+  /**
+   * Toggle message selection mode on/off
+   * @returns {Promise<boolean>} New mode state
+   */
+  async function toggleMessageSelectionMode() {
+    try {
+      const result = await browser.storage.local.get(MESSAGE_SELECTION_MODE_KEY);
+      const currentMode = result && result[MESSAGE_SELECTION_MODE_KEY];
+      const newMode = !currentMode;
+      await browser.storage.local.set({
+        [MESSAGE_SELECTION_MODE_KEY]: newMode
+      });
+      return newMode;
+    } catch (error) {
+      console.warn("Failed to toggle message selection mode:", error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if message selection mode is active
+   * @returns {Promise<boolean>}
+   */
+  async function isMessageSelectionModeActive() {
+    try {
+      const result = await browser.storage.local.get(MESSAGE_SELECTION_MODE_KEY);
+      return result && result[MESSAGE_SELECTION_MODE_KEY] === true;
+    } catch (error) {
+      console.warn("Failed to check message selection mode:", error);
+      return false;
+    }
+  }
+
+  // ============================================================================
+  // PINNED MESSAGES FUNCTIONALITY
+  // ============================================================================
+  const PINNED_MESSAGES_STORAGE_KEY = "farPinnedMessages";
+
+  /**
+   * Get all pinned messages for the current conversation
+   * @returns {Promise<object[]>} Array of pinned message objects {text, role, timestamp}
+   */
+  async function getPinnedMessages() {
+    try {
+      const result = await browser.storage.local.get(PINNED_MESSAGES_STORAGE_KEY);
+      const pinned = result && result[PINNED_MESSAGES_STORAGE_KEY];
+      return pinned ? JSON.parse(pinned) : [];
+    } catch (error) {
+      console.warn("Error getting pinned messages:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Add a message to the pinned messages list
+   * @param {string} text - Message text
+   * @param {string} role - "seller" or "buyer"
+   * @returns {Promise<void>}
+   */
+  async function pinMessage(text, role) {
+    try {
+      const pinned = await getPinnedMessages();
+      const exists = pinned.some(m => m.text === text && m.role === role);
+      if (!exists) {
+        pinned.push({ text, role, timestamp: Date.now() });
+        await browser.storage.local.set({
+          [PINNED_MESSAGES_STORAGE_KEY]: JSON.stringify(pinned.slice(-10)) // Keep max 10 pinned
+        });
+        console.log(`Pinned message (${role}): ${text.substring(0, 50)}...`);
+      }
+    } catch (error) {
+      console.warn("Error pinning message:", error);
+    }
+  }
+
+  /**
+   * Remove a message from the pinned messages list
+   * @param {string} text - Message text
+   * @param {string} role - "seller" or "buyer"
+   * @returns {Promise<void>}
+   */
+  async function unpinMessage(text, role) {
+    try {
+      const pinned = await getPinnedMessages();
+      const filtered = pinned.filter(m => !(m.text === text && m.role === role));
+      await browser.storage.local.set({
+        [PINNED_MESSAGES_STORAGE_KEY]: JSON.stringify(filtered)
+      });
+      console.log(`Unpinned message (${role}): ${text.substring(0, 50)}...`);
+    } catch (error) {
+      console.warn("Error unpinning message:", error);
+    }
+  }
+
+  /**
+   * Check if a message is pinned
+   * @param {string} text - Message text
+   * @param {string} role - "seller" or "buyer"
+   * @returns {Promise<boolean>}
+   */
+  async function isMessagePinned(text, role) {
+    try {
+      const pinned = await getPinnedMessages();
+      return pinned.some(m => m.text === text && m.role === role);
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Format pinned messages as examples for the AI prompt
+   * @param {object[]} pinnedMessages - Array of pinned message objects
+   * @returns {string} Formatted examples section for the prompt
+   */
+  function formatPinnedMessagesAsExamples(pinnedMessages) {
+    if (!pinnedMessages || pinnedMessages.length === 0) {
+      return "";
+    }
+
+    let examples = "\nREFERENCE EXAMPLES FROM YOUR PINNED MESSAGES:\n";
+    examples += "(Study these to match your communication style)\n\n";
+
+    pinnedMessages.forEach((msg, idx) => {
+      examples += `Example ${idx + 1} (${msg.role}):\n`;
+      examples += `"${msg.text}"\n\n`;
+    });
+
+    return examples;
+  }
 
   /** @type {string} — list container; override in options or here if DevTools path changes */
   const INBOX_MESSAGE_LIST_SELECTOR = ".message-flow";
@@ -27,28 +422,28 @@
 
   const BASE_SYSTEM_PROMPT = [
     "You are an expert Fiverr seller crafting professional inbox replies that achieve 100% positive success scores.",
-    "Write exactly like a top-performing human seller - warm, professional, and authentic. Never sound like AI or templates.",
-    "Output ONLY the final message text ready to paste into Fiverr. No preamble, no explanations, no markdown.",
-    "Fiverr Success Score Optimization:",
-    "- Response time: Show prompt, attentive service without seeming desperate",
-    "- Professionalism: Perfect grammar, natural tone, confident but approachable",
-    "- Client satisfaction: Focus on their needs, show understanding, provide clear value",
-    "- Communication clarity: One clear next step, no ambiguity",
-    "- Trust building: Demonstrate expertise without bragging, be reliable and transparent",
-    "Human Writing Style:",
-    "- Use natural contractions (I'm, you'll, we've) where appropriate",
-    "- Vary sentence length and structure for natural flow",
-    "- Include specific details from their message to show you read carefully",
-    "- Ask thoughtful questions when clarification needed",
-    "- End with warm, professional closing that invites response",
-    "- Use 1-2 exclamation marks maximum, only where genuinely enthusiastic",
-    "What to Avoid:",
-    "- AI patterns: 'I understand', 'I'd be happy to', template phrases",
-    "- Over-formal language: 'furthermore', 'henceforth', stiff corporate speak",
-    "- Sales pressure: 'act now', 'limited time', urgency tactics",
-    "- Generic compliments: 'great project', 'amazing idea'",
-    "- Invented specifics: fake prices, deadlines, credentials",
-    "When analyzing images, mention specific details you see naturally in conversation flow.",
+    "Write exactly like a TOP-PERFORMING HUMAN SELLER - warm, professional, and authentic. NEVER sound like AI or use templates.",
+    "OUTPUT ONLY the final message text ready to paste into Fiverr. NO preamble. NO explanations. NO markdown. NO '[Your message]' placeholders.",
+    "KEY RULES FOR THIS REPLY:",
+    "1. BE CONCISE - Remove all unnecessary text. Every sentence must add value.",
+    "2. MATCH THE BUYER'S TONE - Mirror their energy and formality level.",
+    "3. BE SPECIFIC - Reference details from their message to show you read carefully.",
+    "4. NO FILLER PHRASES - Avoid: 'I understand', 'I'd be happy to', 'Just to clarify', 'Thanks for reaching out'",
+    "5. NO SALES LANGUAGE - Don't sound pitchy, don't use urgency tactics, don't oversell.",
+    "6. NATURAL LANGUAGE - Use contractions naturally. Short, punchy sentences. Human rhythm.",
+    "7. ONE CLEAR NEXT STEP - Tell them what happens next or what you need from them.",
+    "Fiverr Success Optimization:",
+    "- Response time: Prompt & attentive without seeming desperate",
+    "- Professionalism: Perfect grammar, natural tone, confident",
+    "- Clarity: Direct answers, one clear next step, no ambiguity",
+    "- Trust: Expertise shown through substance not bragging",
+    "What to AVOID:",
+    "- AI patterns: 'I understand', 'I'd be happy to', 'let me know', 'I appreciate'",
+    "- Fluff: 'great project', 'amazing', 'awesome', 'perfect', generic praise",
+    "- Formality: 'furthermore', 'henceforth', 'regarding', overly corporate",
+    "- Invented details: fake prices, deadlines, package names not in thread",
+    "- Multiple paragraphs: Keep it tight. One or two short paragraphs max.",
+    "- Exclamation marks: Use 0-1 max, only if genuinely enthusiastic",
   ].join("\n");
 
   /** Task explanation (BN/EN) stays neutral—no sales voice */
@@ -496,15 +891,239 @@
     return getLastInboxMessageRole(getSettings) === "buyer";
   }
 
+  /**
+   * Extract the seller's writing style from their previous messages
+   * Analyzes: message length, tone, formality, punctuation, greeting/closing patterns
+   * @param {() => object} getSettings
+   * @returns {string} Writing style guide for AI
+   */
+  function extractSellerWritingStyle(getSettings) {
+    const { listSel, rowSel } = resolveSelectors(getSettings);
+    const sellerUser = getSellerUsername(getSettings);
+    const scopeEl = document.querySelector(listSel);
+    const rowSelParts = rowSel.trim().split(/\s+/);
+    const rowRelative = rowSelParts.length > 1 ? rowSelParts.slice(1).join(" ") : rowSel;
+    const rows = Array.from(
+      scopeEl ? scopeEl.querySelectorAll(rowRelative) : document.querySelectorAll(rowSel)
+    );
+    
+    const sellerMessages = [];
+    const seen = new Set();
+    
+    // Extract all seller messages
+    rows.forEach((el) => {
+      const id = el.id || el.getAttribute("data-id") || "";
+      const key = id || el.outerHTML.slice(0, 200);
+      if (seen.has(key)) return;
+      seen.add(key);
+
+      let role = "unknown";
+      const av = el.querySelector('[data-track-tag="avatar"]');
+      const track = av && av.getAttribute("data-track-value");
+      if (track && sellerUser && String(track).toLowerCase() === sellerUser) {
+        role = "seller";
+      } else {
+        const header = el.querySelector(".header") || el;
+        const ps = header.querySelectorAll('p[data-track-tag="typography"], p');
+        for (let i = 0; i < ps.length; i++) {
+          const t = (ps[i].textContent || "").trim();
+          if (t === "Me") {
+            role = "seller";
+            break;
+          }
+        }
+      }
+
+      if (role !== "seller") return;
+
+      const body = el.querySelector(".message-content") || el;
+      const textParts = [];
+      body.querySelectorAll('p[data-track-tag="typography"]').forEach((p) => {
+        const tx = (p.textContent || "").replace(/\s+/g, " ").trim();
+        if (!tx || /^(WE HAVE YOUR BACK|Learn more|This message relates to:|Translate to English)$/i.test(tx) || tx.length < 2) return;
+        textParts.push(tx);
+      });
+      if (textParts.length === 0) {
+        body.querySelectorAll("p").forEach((p) => {
+          const tx = (p.textContent || "").replace(/\s+/g, " ").trim();
+          if (tx && tx.length > 2 && tx.length < 8000) textParts.push(tx);
+        });
+      }
+      const text = textParts.join("\n").trim();
+      if (text) sellerMessages.push(text);
+    });
+
+    if (sellerMessages.length === 0) {
+      return ""; // No seller messages to analyze
+    }
+
+    // Analyze writing patterns
+    const avgLength = Math.round(sellerMessages.reduce((sum, msg) => sum + msg.length, 0) / sellerMessages.length);
+    const exclamationCount = sellerMessages.reduce((sum, msg) => sum + (msg.match(/!/g) || []).length, 0);
+    const questionCount = sellerMessages.reduce((sum, msg) => sum + (msg.match(/\?/g) || []).length, 0);
+    const ellipsisCount = sellerMessages.reduce((sum, msg) => sum + (msg.match(/\.\.\./g) || []).length, 0);
+    const hasShortMessages = sellerMessages.some(msg => msg.length < 100);
+    const hasLongMessages = sellerMessages.some(msg => msg.length > 400);
+    
+    // Detect formality level
+    const formalWords = sellerMessages.join(' ').match(/\b(regarding|therefore|henceforth|furthermore|nonetheless|furthermore)\b/gi) || [];
+    const casualWords = sellerMessages.join(' ').match(/\b(gonna|wanna|kinda|sorta|yeah|cool|awesome|amazing)\b/gi) || [];
+    const contractionsCount = sellerMessages.join(' ').match(/\b(I'm|you're|it's|don't|won't|can't|isn't|that's|we're|they're)\b/gi) || [];
+    
+    const isFormal = formalWords.length > casualWords.length;
+    const isConversational = contractionsCount.length > 2;
+    
+    // Extract greetings and closings
+    const greetings = sellerMessages
+      .map(msg => {
+        const match = msg.match(/^(Hi|Hello|Hey|Thanks|Thank you|Thanks for|Hi there|Good morning|Good afternoon|Good evening)/i);
+        return match ? match[1] : null;
+      })
+      .filter(Boolean);
+    
+    const closings = sellerMessages
+      .map(msg => {
+        const match = msg.match(/(Best|Cheers|Thanks|Thank you|Regards|Respectfully|Talk soon|Look forward|Let me know|Feel free to|Reach out|Get back to|Hope that helps)[,.]?$/i);
+        return match ? match[1] : null;
+      })
+      .filter(Boolean);
+    
+    // Build style guide
+    let styleGuide = "SELLER'S WRITING STYLE (learn from their past messages):\n";
+    styleGuide += `- Message length: ${avgLength > 300 ? 'Detailed & thorough' : avgLength > 100 ? 'Moderate' : 'Brief & concise'}\n`;
+    styleGuide += `- Punctuation: ${exclamationCount > sellerMessages.length * 0.5 ? 'Uses exclamation marks frequently' : exclamationCount > 0 ? 'Uses exclamation marks occasionally' : 'Rarely uses exclamation marks'}\n`;
+    styleGuide += `- Questions: ${questionCount > sellerMessages.length * 0.3 ? 'Asks many questions' : questionCount > 0 ? 'Asks some questions' : 'Rarely asks questions'}\n`;
+    styleGuide += `- Formality: ${isFormal ? 'Formal & professional' : 'Conversational & friendly'}\n`;
+    styleGuide += `- Contractions: ${isConversational ? 'Uses natural contractions (I\'m, don\'t, etc.)' : 'Avoids contractions'}\n`;
+    styleGuide += `- Variety: ${hasShortMessages && hasLongMessages ? 'Mixes short and long messages' : hasLongMessages ? 'Writes longer messages' : 'Writes concise messages'}\n`;
+    
+    if (greetings.length > 0) {
+      const mostCommonGreeting = greetings.sort((a, b) => greetings.filter(x => x === a).length - greetings.filter(x => x === b).length).pop();
+      styleGuide += `- Greeting preference: "${mostCommonGreeting}"\n`;
+    }
+    
+    if (closings.length > 0) {
+      const mostCommonClosing = closings.sort((a, b) => closings.filter(x => x === a).length - closings.filter(x => x === b).length).pop();
+      styleGuide += `- Closing preference: "${mostCommonClosing}"\n`;
+    }
+    
+    styleGuide += "\nREPLY GUIDELINES:\n";
+    styleGuide += "- Match this exact writing style, tone, and patterns above\n";
+    styleGuide += "- Don't add extra explanations or unnecessary text\n";
+    styleGuide += "- Write as if you (the seller) are replying - authentic and direct\n";
+    styleGuide += "- NO preamble, NO placeholder text, NO '[Your message here]'\n";
+    styleGuide += "- Output ONLY the reply message ready to paste as-is\n";
+    
+    return styleGuide;
+  }
+
+  /**
+   * Analyze task description and estimate appropriate cost range based on complexity
+   * @param {string} transcript - The conversation text
+   * @returns {string} - Estimated cost message to include in prompt
+   */
+  function analyzeTaskAndEstimateCost(transcript) {
+    const lowerText = transcript.toLowerCase();
+    
+    // Define complexity indicators and their weight
+    const complexityIndicators = {
+      // High complexity (advanced/technical)
+      high: [
+        'api', 'integration', 'database', 'backend', 'architecture', 'custom code',
+        'ecommerce', 'mobile app', 'machine learning', 'ai model', 'deep learning',
+        'scalability', 'performance optimization', 'security audit', 'complex design',
+        'wordpress plugin', 'custom theme', 'seo optimization', 'marketing strategy'
+      ],
+      // Medium complexity
+      medium: [
+        'web design', 'logo', 'branding', 'copywriting', 'content', 'social media',
+        'video editing', 'photography', 'graphic design', 'ui design', 'ux design',
+        'translation', 'proofreading', 'email marketing', 'seo'
+      ],
+      // Low complexity (simple tasks)
+      low: [
+        'small task', 'quick fix', 'simple', 'basic', 'quick turnaround',
+        'one page', 'simple edit', 'minor', 'short article'
+      ]
+    };
+    
+    // Count complexity indicators
+    let highCount = 0, mediumCount = 0, lowCount = 0;
+    
+    complexityIndicators.high.forEach(indicator => {
+      if (lowerText.includes(indicator)) highCount++;
+    });
+    
+    complexityIndicators.medium.forEach(indicator => {
+      if (lowerText.includes(indicator)) mediumCount++;
+    });
+    
+    complexityIndicators.low.forEach(indicator => {
+      if (lowerText.includes(indicator)) lowCount++;
+    });
+    
+    // Check for urgency/timeline
+    const hasUrgency = /urgent|asap|today|tomorrow|within (hours|day)|rush/.test(lowerText);
+    const hasRevisions = /unlimited revisions|multiple revisions|revision|changes|adjustments/.test(lowerText);
+    const hasTimeline = /weeks|months|days|deadline|timeline|schedule/.test(lowerText);
+    
+    // Estimate complexity level
+    let complexityLevel = 'medium';
+    let estimateRange = '$100-300';
+    
+    if (highCount >= 2) {
+      complexityLevel = 'high';
+      estimateRange = hasUrgency ? '$300-1000+' : '$200-800';
+    } else if (mediumCount >= 2) {
+      complexityLevel = 'medium';
+      estimateRange = hasUrgency ? '$150-500' : '$100-400';
+    } else if (lowCount >= 2) {
+      complexityLevel = 'low';
+      estimateRange = hasUrgency ? '$50-150' : '$25-100';
+    }
+    
+    // Adjust for revisions and urgency
+    if (hasRevisions) {
+      estimateRange += ' (+revisions)';
+    }
+    if (hasUrgency) {
+      estimateRange += ' (rush)';
+    }
+    
+    // Create estimation context for the AI
+    return `\n\nTask Complexity Analysis (for your reference, don't mention in message):\n- Complexity: ${complexityLevel}\n- Estimated range: ${estimateRange}\n- Has timeline: ${hasTimeline ? 'yes' : 'no'}\n- Mentions revisions: ${hasRevisions ? 'yes' : 'no'}\n- Seems urgent: ${hasUrgency ? 'yes' : 'no'}\n\nProvide a pricing message that fits this scope. Be specific with numbers if possible, and explain what's included.`;
+  }
+
   function buildPresetUserText(kind, transcript, getSettings, opts) {
     const costPrice = (opts && opts.costPrice && String(opts.costPrice).trim()) || "";
     const sellerName = getSellerDisplayName(getSettings);
+    
     switch (kind) {
       case "first":
+        const selectedMessages = (opts && opts.selectedMessages) || [];
+        const selectedContext = selectedMessages.length > 0 ? 
+          "\n\nREFERENCE EXAMPLES FROM YOUR SELECTED MESSAGES:\n" + 
+          selectedMessages.map((msg, i) => `${i + 1}. "${msg}"`).join("\n") +
+          "\n\nStudy these messages to understand the tone, communication style, and what resonates with this specific buyer. Match this energy and style." 
+          : "";
+        
         return (
           "Buyer's first message in this thread:\n" +
           transcript +
-          "\n\nWrite a warm, authentic first response that sounds like a real person. Use natural language, maybe a light greeting if appropriate. Show you genuinely understand their project and are interested in helping. Ask 1-2 specific questions that show you're thinking about their actual needs. End naturally - no formal 'looking forward to working with you' unless it feels genuine. Make it feel like you're genuinely excited about their project."
+          selectedContext +
+          "\n\n" +
+          "Write an authentic, professional first response that:"+
+          "\n1. Shows genuine interest in their specific project (reference details they mentioned)\n" +
+          "2. Demonstrates expertise without sounding arrogant\n" +
+          "3. Addresses a key concern or question they have\n" +
+          "4. Uses natural language with contractions (I'm, you'll, etc.) - sounds like a real person\n" +
+          "5. Ends with a clear next step: ask 1-2 focused questions about their requirements\n" +
+          "6. Keeps it concise (2-3 short paragraphs, not a wall of text)\n" +
+          "7. Shows personality but stays professional - warm without being overly casual\n" +
+          "\n" +
+          "AVOID: Generic welcomes, fluff phrases like 'I understand' or 'I'd be happy to', promises without context, or asking vague questions.\n" +
+          "\n" +
+          "Start directly with substance - make them feel like you actually read their message and care about their success."
         );
       case "reply":
         return (
@@ -519,11 +1138,16 @@
           "\n\nWrite a message asking for clarification in a natural way. Frame it positively - 'To make sure I deliver exactly what you need...' or 'Just want to understand a couple of things better...'. Ask 2-3 specific questions that show you're thinking through their project. Don't make it sound like an interrogation - more like you're genuinely trying to get it right for them."
         );
       case "cost":
+        // Use manual price if provided, otherwise analyze task for estimate
+        const costContext = costPrice ? 
+          "\n\nSeller's specific price to mention: " + costPrice : 
+          analyzeTaskAndEstimateCost(transcript);
+        
         return (
           "Conversation:\n" +
           transcript +
-          (costPrice ? "\n\nSeller's target price to mention: " + costPrice + "" : "") +
-          "\n\nWrite a natural message about pricing. Don't sound like a salesperson - more like a professional discussing costs. If you have a specific price, state it confidently and explain what it includes. If discussing options, present them clearly. Frame pricing around value and results, not just numbers. Be transparent about what's included. Make it feel like a business discussion, not a sales pitch."
+          costContext +
+          "\n\nWrite a natural message about pricing based on the task complexity and scope. Don't sound like a salesperson - more like a professional discussing costs. State your price confidently and explain what it includes (deliverables, timeline, revisions, etc.). Frame pricing around value and results, not just numbers. Be transparent about what's included. Make it feel like a business discussion, not a sales pitch. If the estimate range is provided, pick a reasonable number within or adjusted for the scope."
         );
       default:
         return transcript;
@@ -531,10 +1155,266 @@
   }
 
   /**
-   * Generate communication analysis for Fiverr success score optimization
-   * @param {() => object} getSettings
-   * @returns {Promise<string>}
+   * Enable or disable message selection mode in the conversation
+   * @param {boolean} enable
    */
+  function setMessageSelectionMode(enable) {
+    const { listSel, rowSel } = resolveSelectors();
+    const scopeEl = document.querySelector(listSel);
+    const rowSelParts = rowSel.trim().split(/\s+/);
+    const rowRelative = rowSelParts.length > 1 ? rowSelParts.slice(1).join(" ") : rowSel;
+    const messageRows = Array.from(
+      scopeEl ? scopeEl.querySelectorAll(rowRelative) : document.querySelectorAll(rowSel)
+    );
+    
+    if (enable) {
+      console.log("Message selection mode ENABLED");
+      // Add hover handlers and select buttons to each message
+      messageRows.forEach((row) => {
+        if (row.dataset.farSelectionEnabled) return; // Already enabled
+        
+        row.style.position = "relative";
+        
+        // Extract message text
+        const textParts = [];
+        const header = row.querySelector(".header") || row;
+        header.querySelectorAll('p[data-track-tag="typography"]').forEach((p) => {
+          const tx = (p.textContent || "").replace(/\s+/g, " ").trim();
+          if (tx && !(/^(WE HAVE YOUR BACK|Learn more|This message relates to:|Translate to English|Me)$/i.test(tx)) && tx.length > 2) {
+            textParts.push(tx);
+          }
+        });
+        const messageText = textParts.join("\n").trim();
+        
+        if (!messageText) return; // Skip empty messages
+        
+        row.dataset.farSelectionEnabled = "true";
+        row.dataset.messageText = messageText;
+        
+        // Create select button that appears on hover
+        const selectBtn = document.createElement("button");
+        selectBtn.type = "button";
+        selectBtn.className = "far-ia-select-msg-btn";
+        selectBtn.textContent = "📌 Select";
+        selectBtn.style.cssText = `
+          position: absolute;
+          top: 8px;
+          right: 8px;
+          padding: 6px 10px;
+          background: white;
+          border: 1px solid #ddd;
+          border-radius: 4px;
+          cursor: pointer;
+          font-size: 12px;
+          font-weight: 500;
+          display: none;
+          z-index: 10;
+          white-space: nowrap;
+        `;
+        row.appendChild(selectBtn);
+        
+        // Show/hide button on hover
+        row.addEventListener("mouseenter", () => {
+          selectBtn.style.display = "block";
+        });
+        row.addEventListener("mouseleave", () => {
+          selectBtn.style.display = "none";
+        });
+        
+        // Handle select button click
+        selectBtn.addEventListener("click", async (e) => {
+          e.stopPropagation();
+          const isSelected = row.dataset.farSelected === "true";
+          
+          if (isSelected) {
+            // Deselect
+            row.dataset.farSelected = "false";
+            row.style.background = "transparent";
+            selectBtn.textContent = "📌 Select";
+            selectBtn.style.background = "white";
+            selectBtn.style.color = "#333";
+            await deselectMessage(messageText);
+          } else {
+            // Select
+            row.dataset.farSelected = "true";
+            row.style.background = "#e6f9f0";
+            selectBtn.textContent = "✓ Selected";
+            selectBtn.style.background = "#1dbf73";
+            selectBtn.style.color = "white";
+            selectBtn.style.borderColor = "#1dbf73";
+            await selectMessage(messageText);
+          }
+        });
+      });
+    } else {
+      console.log("Message selection mode DISABLED");
+      // Keep selection UI but just don't highlight, since we want persistent selection
+      messageRows.forEach((row) => {
+        const selectBtn = row.querySelector(".far-ia-select-msg-btn");
+        if (selectBtn) selectBtn.remove();
+        row.style.background = "transparent";
+        delete row.dataset.farSelectionEnabled;
+      });
+    }
+  }
+
+  /**
+   * Initialize message selection UI for all messages (always available on hover)
+   * This is called on page load to set up selection for all existing messages
+   */
+  async function initializeMessageSelection() {
+    // Use default selectors directly to avoid needing getSettings
+    const listSel = INBOX_MESSAGE_LIST_SELECTOR; // ".message-flow"
+    const rowSel = INBOX_MESSAGE_ROW_SELECTOR; // ".message-flow .message"
+    
+    const scopeEl = document.querySelector(listSel);
+    if (!scopeEl) {
+      console.log("[FAR] Message flow container not found - trying alternate selectors");
+      // Try alternate selector
+      const alternates = [".message-list", ".messages", "[data-track-tag='message_list']"];
+      for (const alt of alternates) {
+        const alt_el = document.querySelector(alt);
+        if (alt_el) {
+          console.log("[FAR] Found messages using alternate selector:", alt);
+          break;
+        }
+      }
+      return;
+    }
+    
+    const rowSelParts = rowSel.trim().split(/\s+/);
+    const rowRelative = rowSelParts.length > 1 ? rowSelParts.slice(1).join(" ") : rowSel;
+    const messageRows = Array.from(
+      scopeEl ? scopeEl.querySelectorAll(rowRelative) : document.querySelectorAll(rowSel)
+    );
+    
+    console.log(`[FAR] Found ${messageRows.length} messages to initialize`);
+    
+    // Get already selected messages
+    const selectedMessages = await getSelectedMessages();
+    const selectedSet = new Set(selectedMessages);
+    
+    let initializedCount = 0;
+    messageRows.forEach((row, idx) => {
+      if (row.dataset.farInitialized) return; // Already initialized
+      
+      // Extract message text
+      const textParts = [];
+      const header = row.querySelector(".header") || row;
+      header.querySelectorAll('p[data-track-tag="typography"]').forEach((p) => {
+        const tx = (p.textContent || "").replace(/\s+/g, " ").trim();
+        if (tx && !(/^(WE HAVE YOUR BACK|Learn more|This message relates to:|Translate to English|Me)$/i.test(tx)) && tx.length > 2) {
+          textParts.push(tx);
+        }
+      });
+      const messageText = textParts.join("\n").trim();
+      
+      if (!messageText) {
+        console.log(`[FAR] Message ${idx} has no text content, skipping`);
+        return; // Skip empty messages
+      }
+      
+      row.dataset.farInitialized = "true";
+      row.dataset.messageText = messageText;
+      
+      // Check if this message was previously selected
+      if (selectedSet.has(messageText)) {
+        row.dataset.farSelected = "true";
+        row.style.background = "#e6f9f0";
+      }
+      
+      // Find the actions button container (the one with the three dots menu)
+      const actionsBtnContainer = row.querySelector('[data-track-tag="popover_anchor"]');
+      if (!actionsBtnContainer) {
+        console.log(`[FAR] Message ${idx} has no actions button, skipping`);
+        return;
+      }
+      
+      // Create select button that appears on hover
+      const selectBtn = document.createElement("button");
+      selectBtn.type = "button";
+      selectBtn.className = "far-ia-select-msg-btn";
+      selectBtn.setAttribute("data-track-tag", "icon_button");
+      selectBtn.textContent = row.dataset.farSelected === "true" ? "✓ Selected" : "📌 Select";
+      selectBtn.style.cssText = `
+        padding: 6px 10px;
+        background: ${row.dataset.farSelected === "true" ? "#1dbf73" : "white"};
+        color: ${row.dataset.farSelected === "true" ? "white" : "#333"};
+        border: 1px solid ${row.dataset.farSelected === "true" ? "#1dbf73" : "#ddd"};
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 500;
+        display: none;
+        white-space: nowrap;
+        margin-right: 8px;
+      `;
+      
+      // Insert button before the actions button container
+      actionsBtnContainer.parentNode.insertBefore(selectBtn, actionsBtnContainer);
+      console.log(`[FAR] Created select button for message ${idx}: "${messageText.substring(0, 30)}..."`);
+      initializedCount++;
+      
+      // Show/hide button on hover (hover on message row)
+      row.addEventListener("mouseenter", () => {
+        selectBtn.style.display = "block";
+      });
+      row.addEventListener("mouseleave", () => {
+        selectBtn.style.display = "none";
+      });
+      
+      // Handle select button click
+      selectBtn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const isSelected = row.dataset.farSelected === "true";
+        
+        if (isSelected) {
+          // Deselect
+          row.dataset.farSelected = "false";
+          row.style.background = "transparent";
+          selectBtn.textContent = "📌 Select";
+          selectBtn.style.background = "white";
+          selectBtn.style.color = "#333";
+          selectBtn.style.borderColor = "#ddd";
+          await deselectMessage(messageText);
+        } else {
+          // Select
+          row.dataset.farSelected = "true";
+          row.style.background = "#e6f9f0";
+          selectBtn.textContent = "✓ Selected";
+          selectBtn.style.background = "#1dbf73";
+          selectBtn.style.color = "white";
+          selectBtn.style.borderColor = "#1dbf73";
+          await selectMessage(messageText);
+        }
+      });
+    });
+    
+    console.log(`[FAR] Successfully initialized ${initializedCount} messages with select buttons`);
+    
+    // Set up MutationObserver to reinitialize when new messages are added
+    const messageFlow = document.querySelector(INBOX_MESSAGE_LIST_SELECTOR);
+    if (messageFlow && !messageFlow.dataset.farMutationObserverActive) {
+      messageFlow.dataset.farMutationObserverActive = "true";
+      const observer = new MutationObserver(() => {
+        // Debounce: wait 500ms after last mutation before reinitializing
+        clearTimeout(window.farInitTimeout);
+        window.farInitTimeout = setTimeout(() => {
+          console.log("[FAR] New messages detected, reinitializing selection UI");
+          initializeMessageSelection().catch(err => console.warn("Failed to reinitialize message selection:", err));
+        }, 500);
+      });
+      
+      observer.observe(messageFlow, {
+        childList: true,
+        subtree: true,
+        attributes: false
+      });
+      console.log("[FAR] MutationObserver set up to watch for new messages");
+    }
+  }
+
+  /**
   async function generateCommunicationAnalysis(getSettings) {
     const sellerName = getSellerDisplayName(getSettings);
     const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
@@ -566,11 +1446,34 @@
    */
   async function generatePresetReply(kind, getSettings) {
     const sellerName = getSellerDisplayName(getSettings);
-    const sys =
-      BASE_SYSTEM_PROMPT +
-      " Seller display name (use when natural): " +
-      sellerName +
-      ". Aim for a reply that leaves the buyer confident this seller is reliable and the right fit—without pressure or empty claims.";
+    const sellerStyle = extractSellerWritingStyle(getSettings);
+    const pinnedMessages = await getPinnedMessages();
+    
+    let sys = BASE_SYSTEM_PROMPT;
+    
+    // Add pinned messages as examples for reference
+    if (pinnedMessages && pinnedMessages.length > 0) {
+      sys += formatPinnedMessagesAsExamples(pinnedMessages);
+    }
+    
+    if (sellerStyle) {
+      sys += "\n\n" + sellerStyle;
+    }
+    sys += "\nSeller display name (use when natural): " + sellerName;
+    
+    // Enhance first message with special instructions
+    if (kind === "first") {
+      sys += "\n\nFIRST MESSAGE SPECIAL INSTRUCTIONS:\n";
+      sys += "- This is your FIRST response to this buyer - make a strong professional impression\n";
+      sys += "- Show enthusiasm about their project WITHOUT sounding fake or desperate\n";
+      sys += "- Demonstrate you understand their requirements by referencing specific details they mentioned\n";
+      sys += "- Keep it concise (2-3 short paragraphs max) - respect their time\n";
+      sys += "- End with 1-2 specific, relevant questions that show you've thought about their project\n";
+      sys += "- DO NOT include pricing, packages, or generic service info in first message\n";
+      sys += "- Sound like a skilled professional who is selective about projects, not desperate for work\n";
+      sys += "- If they mentioned timeline/budget, acknowledge it to show you're listening\n";
+    }
+    
     const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
     const userText = buildPresetUserText(kind, transcript, getSettings, { costPrice: "" });
     const userContent = await buildUserContentWithImages(userText, imageUrls, getSettings);
@@ -580,7 +1483,7 @@
         { role: "system", content: sys },
         { role: "user", content: userContent },
       ],
-      { temperature: 0.45 }
+      { temperature: kind === "first" ? 0.5 : 0.45 }
     );
   }
 
@@ -897,6 +1800,9 @@
             .map((p) => p.text);
           console.log('20. Text parts:', textParts);
           
+          // Track successful Gemini call
+          await trackGeminiCall();
+          
           const finalText = stripFencesAndPreamble(textParts.join("\n"));
           console.log('21. Final text to return:', finalText);
           console.log('=== Gemini API Request Complete ===\n');
@@ -905,6 +1811,10 @@
         }
         
         console.log('20. No text parts found, returning empty string');
+        
+        // Track successful Gemini call (even if empty response)
+        await trackGeminiCall();
+        
         console.log('=== Gemini API Request Complete (Empty) ===\n');
         return "";
         
@@ -950,31 +1860,48 @@
     st.textContent =
       ".far-ia-backdrop{position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:100002;display:flex;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;}" +
       ".far-ia-task-modal{z-index:100003;}" +
-      ".far-ia-dialog{background:#fff;color:#0e0e10;border-radius:12px;max-width:560px;width:100%;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,0.25);font-family:system-ui,-apple-system,sans-serif;font-size:14px;}" +
+      ".far-ia-dialog{background:#fff;color:#0e0e10;border-radius:12px;max-width:600px;width:100%;max-height:90vh;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 20px 50px rgba(0,0,0,0.25);font-family:system-ui,-apple-system,sans-serif;font-size:14px;}" +
       ".far-ia-head{display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-bottom:1px solid #e2e8f0;background:#fafafa;}" +
       ".far-ia-title{font-weight:700;font-size:15px;color:#1dbf73;}" +
+      ".far-ia-tabs{display:flex;gap:4px;align-items:center;flex:1;margin-left:16px;}" +
+      ".far-ia-tab-btn{padding:6px 14px;border-radius:6px;border:none;background:transparent;cursor:pointer;font-size:13px;font-weight:500;color:#64748b;transition:all 0.2s;}" +
+      ".far-ia-tab-btn:hover{background:#f1f5f9;color:#334155;}" +
+      ".far-ia-tab-btn.active{background:#1dbf73;color:#fff;}" +
       ".far-ia-body{padding:12px 16px;overflow-y:auto;flex:1;min-height:0;display:flex;flex-direction:column;gap:10px;}" +
-      ".far-ia-presets{display:flex;flex-direction:column;gap:6px;}" +
+      ".far-ia-tab-content{display:none;flex:1;overflow-y:auto;}" +
+      ".far-ia-tab-content.active{display:flex;flex-direction:column;gap:10px;}" +
+      ".far-ia-presets{display:flex;flex-direction:column;gap:8px;}" +
+      ".far-ia-preset-group{display:flex;flex-direction:column;gap:6px;}" +
+      ".far-ia-preset-group-title{font-size:12px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;margin-top:6px;margin-bottom:2px;}" +
       ".far-ia-cost-row{display:flex;flex-direction:row;align-items:stretch;gap:8px;width:100%;}" +
       ".far-ia-cost-input{flex:0 0 118px;min-width:96px;max-width:168px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;box-sizing:border-box;font:inherit;}" +
       ".far-ia-cost-input:focus{outline:2px solid rgba(29,191,115,0.35);outline-offset:1px;}" +
       ".far-ia-btn.far-ia-cost-btn{flex:1;min-width:0;text-align:left;}" +
-      ".far-ia-btn{text-align:left;padding:10px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;font-size:13px;line-height:1.35;}" +
-      ".far-ia-btn:hover{border-color:#1dbf73;background:#f0fdf4;}" +
+      ".far-ia-btn{text-align:left;padding:10px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;font-size:13px;line-height:1.35;transition:all 0.2s;}" +
+      ".far-ia-btn:hover{border-color:#1dbf73;background:#f0fdf4;color:#1dbf73;}" +
       ".far-ia-btn:disabled{opacity:0.55;cursor:not-allowed;}" +
       ".far-ia-out{width:100%;min-height:100px;max-height:200px;resize:vertical;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;box-sizing:border-box;}" +
-      ".far-ia-err{color:#b91c1c;font-size:13px;}" +
-      ".far-ia-chat-log{min-height:60px;max-height:140px;overflow-y:auto;font-size:12px;color:#475569;border:1px solid #e2e8f0;border-radius:8px;padding:8px;background:#f8fafc;}" +
-      ".far-ia-chat-row{margin-bottom:6px;}" +
+      ".far-ia-err{color:#b91c1c;font-size:13px;padding:8px;background:#fee2e2;border-radius:6px;}" +
+      ".far-ia-chat-log{min-height:200px;max-height:65vh;overflow-y:auto;font-size:13px;color:#475569;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#f8fafc;display:flex;flex-direction:column;gap:8px;}" +
+      ".far-ia-chat-row{padding:10px;border-radius:6px;line-height:1.5;word-wrap:break-word;display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;}" +
+      ".far-ia-chat-row.seller{background:#e8f5e9;border-left:4px solid #1dbf73;padding-left:10px;color:#1b5e20;}" +
+      ".far-ia-chat-row.buyer{background:#e3f2fd;border-left:4px solid #2196f3;padding-left:10px;color:#0d47a1;}" +
+      ".far-ia-chat-row.error{background:#ffebee;border-left:4px solid #f44336;padding-left:10px;color:#b71c1c;}" +
+      ".far-ia-chat-actions{display:flex;gap:4px;flex-direction:column;}" +
+      ".far-ia-chat-btn{padding:4px 8px;font-size:11px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;cursor:pointer;transition:0.2s;white-space:nowrap;}" +
+      ".far-ia-chat-btn:hover{background:#1dbf73;color:#fff;border-color:#1dbf73;}" +
+      ".far-ia-chat-btn:active{transform:scale(0.95);}" +
       ".far-ia-chat-input-row{display:flex;gap:8px;align-items:flex-end;}" +
       ".far-ia-chat-input{flex:1;min-height:40px;padding:8px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;resize:vertical;}" +
+      ".far-ia-chat-input:focus{outline:2px solid rgba(29,191,115,0.35);outline-offset:1px;}" +
       ".far-ia-seller-note{width:100%;min-height:64px;max-height:140px;box-sizing:border-box;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;line-height:1.4;resize:vertical;font:inherit;}" +
       ".far-ia-seller-note:focus{outline:2px solid rgba(29,191,115,0.35);outline-offset:1px;}" +
       ".far-ia-small{font-size:11px;color:#64748b;}" +
       ".far-ia-ai-toggle{display:flex;align-items:center;justify-content:center;width:40px;height:40px;border-radius:8px;border:1px solid #c4c4c4;background:#fff;color:#222;cursor:pointer;padding:0;}" +
       ".far-ia-ai-toggle:hover{background:#f5f5f5;}" +
       ".far-ia-ai-toggle--on{border-color:#1dbf73;background:#1dbf73;color:#fff;}" +
-      ".far-ia-task-modal .far-ia-out{min-height:160px;max-height:40vh;white-space:pre-wrap;}";
+      ".far-ia-task-modal .far-ia-out{min-height:160px;max-height:40vh;white-space:pre-wrap;}" +
+      ".far-ia-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px;}";
     document.documentElement.appendChild(st);
   }
 
@@ -1133,26 +2060,45 @@
    */
   async function openaiGenerateContent(getSettings, messages, options) {
     const s = getSettings();
-    const apiKey = (s && s.openaiApiKey && String(s.openaiApiKey).trim()) || "";
+    const apiKeys = getApiKeyList(s);
     
-    console.log('=== OpenAI API Request Debug ===');
-    console.log('1. Settings check:', {
-      hasApiKey: !!apiKey,
-      apiKeyLength: apiKey ? apiKey.length : 0,
-      apiKeyPrefix: apiKey ? apiKey.substring(0, 10) + '...' : 'none',
-      model: s && s.openaiModel && String(s.openaiModel).trim()
-    });
-    
-    if (!apiKey) {
-      throw new Error("Add your OpenAI API key in Fiverr Assistant settings. Get one at https://platform.openai.com/api-keys");
+    if (!apiKeys || apiKeys.length === 0) {
+      throw new Error("Add your OpenAI API key(s) in Fiverr Assistant settings. Get one at https://platform.openai.com/api-keys. You can add multiple keys separated by newlines or commas for automatic failover.");
     }
     
-    if (!apiKey.startsWith("sk-")) {
-      throw new Error("Invalid OpenAI API key format. Should start with 'sk-'. Get a key at https://platform.openai.com/api-keys");
+    // Validate all keys have correct format
+    for (const key of apiKeys) {
+      if (!key.startsWith("sk-")) {
+        throw new Error("Invalid OpenAI API key format. Should start with 'sk-'. Get a key at https://platform.openai.com/api-keys");
+      }
     }
     
     const model = (s && s.openaiModel && String(s.openaiModel).trim()) || "gpt-4o-mini";
-    console.log('2. Using model:', model);
+    console.log(`Using OpenAI model: ${model} with ${apiKeys.length} API key(s)`);
+    
+    // Get current key index and failed keys
+    let currentIndex = await getCurrentKeyIndex();
+    const failedKeys = await getFailedKeys();
+    
+    // Find first non-failed key starting from current index
+    let keyToUse = null;
+    let startIndex = currentIndex;
+    for (let i = 0; i < apiKeys.length; i++) {
+      const idx = (startIndex + i) % apiKeys.length;
+      if (!failedKeys.has(apiKeys[idx])) {
+        keyToUse = apiKeys[idx];
+        currentIndex = idx;
+        break;
+      }
+    }
+    
+    // If all keys are marked as failed, try them anyway but reset failed list
+    if (!keyToUse) {
+      console.log("All API keys marked as failed, resetting and trying again...");
+      await clearFailedKeys();
+      keyToUse = apiKeys[0];
+      currentIndex = 0;
+    }
     
     const openaiMessages = messages.map(msg => {
       if (typeof msg.content === 'string') {
@@ -1167,8 +2113,6 @@
       return { role: msg.role, content: String(msg.content || '') };
     });
     
-    console.log('3. Converted messages:', openaiMessages);
-    
     const body = {
       model: model,
       messages: openaiMessages,
@@ -1176,92 +2120,130 @@
       max_tokens: 8192,
     };
     
-    console.log('4. Request body:', JSON.stringify(body, null, 2));
-    
     const url = "https://api.openai.com/v1/chat/completions";
-    console.log('5. Request URL:', url);
-    
     const maxRetries = 3;
     const baseDelay = 2000;
     
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      console.log(`6. Attempt ${attempt + 1}/${maxRetries}`);
+    // Try current key, then rotate through other keys if this one fails
+    for (let keyAttempt = 0; keyAttempt < apiKeys.length; keyAttempt++) {
+      if (keyAttempt > 0) {
+        // Move to next key
+        currentIndex = (currentIndex + 1) % apiKeys.length;
+        keyToUse = apiKeys[currentIndex];
+        console.log(`Switching to API key ${currentIndex + 1}/${apiKeys.length}`);
+        await setCurrentKeyIndex(currentIndex);
+      }
       
-      try {
-        const fetchOptions = {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${apiKey}`,
-          },
-          body: JSON.stringify(body),
-        };
+      console.log(`Using OpenAI API key ${currentIndex + 1}/${apiKeys.length}`);
+      
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        console.log(`Attempt ${attempt + 1}/${maxRetries}`);
         
-        const res = await fetch(url, fetchOptions);
-        console.log('7. Response status:', res.status);
-        
-        const rawText = await res.text();
-        console.log('8. Raw response:', rawText.substring(0, 500));
-        
-        let data;
         try {
-          data = JSON.parse(rawText);
+          const fetchOptions = {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": `Bearer ${keyToUse}`,
+            },
+            body: JSON.stringify(body),
+          };
+          
+          const res = await fetch(url, fetchOptions);
+          console.log('Response status:', res.status);
+          
+          const rawText = await res.text();
+          let data;
+          try {
+            data = JSON.parse(rawText);
+          } catch (error) {
+            console.error('JSON parse error:', error);
+            data = null;
+          }
+          
+          if (!res.ok) {
+            const errMsg = (data && data.error && data.error.message) || rawText || `HTTP ${res.status}`;
+            console.log('API Error:', errMsg);
+            
+            // Check if retryable with same key
+            const isRetryable = res.status === 429 || res.status === 503 || (res.status >= 500);
+            
+            if (res.status === 401 || (res.status === 429 && keyAttempt < apiKeys.length - 1)) {
+              // Invalid key or rate limited - mark as failed and try next key
+              await markKeyAsFailed(keyToUse);
+              if (res.status === 401) {
+                console.log("Invalid API key, trying next key...");
+                break; // Break inner retry loop, try next key in outer loop
+              } else if (res.status === 429) {
+                console.log("Rate limited, trying next key...");
+                break;
+              }
+            }
+            
+            if (isRetryable && attempt < maxRetries - 1) {
+              const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+              console.log(`Retrying after ${delay}ms`);
+              showRetryStatus(`OpenAI API busy. Retrying ${attempt + 1}/${maxRetries} in ${Math.round(delay/1000)}s...`);
+              await sleep(delay);
+              continue;
+            }
+            
+            let msg = mapOpenAIError(res.status, errMsg);
+            if (keyAttempt < apiKeys.length - 1) {
+              msg += ` (trying next API key...)`;
+            }
+            
+            if (res.status === 401) {
+              throw new Error(msg);
+            }
+            
+            if (attempt === maxRetries - 1 && keyAttempt === apiKeys.length - 1) {
+              throw new Error(msg);
+            }
+            
+            continue;
+          }
+          
+          // Success
+          const choice = data && data.choices && data.choices[0];
+          const content = choice && choice.message && choice.message.content;
+          console.log('Generated content:', content ? content.substring(0, 100) + '...' : 'empty');
+          
+          // Track successful call
+          await trackOpenAICall(currentIndex);
+          
+          // Reset current index on success
+          await setCurrentKeyIndex(0);
+          
+          if (content) {
+            return stripFencesAndPreamble(content);
+          }
+          
+          return "";
+          
         } catch (error) {
-          console.error('9. JSON parse error:', error);
-          data = null;
-        }
-        
-        if (!res.ok) {
-          const errMsg = (data && data.error && data.error.message) || rawText || `HTTP ${res.status}`;
-          console.log('10. API Error:', errMsg);
+          console.log('Exception:', error.message);
           
-          // Check if retryable
-          const isRetryable = res.status === 429 || res.status === 503 || (res.status >= 500);
+          if (attempt === maxRetries - 1) {
+            if (keyAttempt < apiKeys.length - 1) {
+              console.log("Trying next API key...");
+              break; // Break inner retry loop, try next key
+            }
+            throw error;
+          }
           
-          if (isRetryable && attempt < maxRetries - 1) {
+          if (error.message.includes("network") || error.message.includes("fetch")) {
             const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
-            console.log(`11. Retrying after ${delay}ms`);
-            showRetryStatus(`OpenAI API busy. Retrying ${attempt + 1}/${maxRetries} in ${Math.round(delay/1000)}s...`);
             await sleep(delay);
             continue;
           }
           
-          // Map OpenAI errors
-          let msg = mapOpenAIError(res.status, errMsg);
-          throw new Error(msg);
-        }
-        
-        // Success
-        const choice = data && data.choices && data.choices[0];
-        const content = choice && choice.message && choice.message.content;
-        console.log('12. Generated content:', content ? content.substring(0, 100) + '...' : 'empty');
-        
-        if (content) {
-          return stripFencesAndPreamble(content);
-        }
-        
-        return "";
-        
-      } catch (error) {
-        console.log('13. Exception:', error.message);
-        
-        if (attempt === maxRetries - 1) {
-          console.log('=== OpenAI API Request Failed ===\n');
           throw error;
         }
-        
-        if (error.message.includes("network") || error.message.includes("fetch")) {
-          const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
-          await sleep(delay);
-          continue;
-        }
-        
-        console.log('=== OpenAI API Request Failed (non-retryable) ===\n');
-        throw error;
       }
     }
     
-    throw new Error("OpenAI API request failed after all retries.");
+    throw new Error("OpenAI API request failed with all available API keys. Check your keys and account status at https://platform.openai.com/account/billing");
   }
 
   /**
@@ -1332,6 +2314,7 @@
       backdrop = null;
       btn.classList.remove("far-ia-ai-toggle--on");
       document.removeEventListener("keydown", onEsc);
+      deactivateModalProtection().catch(err => console.warn("Error deactivating modal protection:", err));
     }
 
     function onEsc(e) {
@@ -1417,6 +2400,10 @@
       closeModal();
       document.addEventListener("keydown", onEsc);
       btn.classList.add("far-ia-ai-toggle--on");
+      activateModalProtection().catch(err => console.warn("Error activating modal protection:", err));
+
+      // Initialize or refresh message selection UI for any new messages
+      initializeMessageSelection().catch(err => console.warn("Failed to initialize message selection:", err));
 
       /** @type {{role:string,content:string}[]} */
       let chatPanelHistory = [];
@@ -1428,7 +2415,7 @@
       const dlg = document.createElement("div");
       dlg.className = "far-ia-dialog";
       dlg.innerHTML =
-        '<div class="far-ia-head"><span class="far-ia-title">AI inbox assistant</span><button type="button" class="far-ia-btn" data-x style="max-width:72px">Close</button></div>' +
+        '<div class="far-ia-head"><span class="far-ia-title">✨ AI Assistant</span><div class="far-ia-tabs"><button type="button" class="far-ia-tab-btn active" data-tab="generate">Generate Response</button><button type="button" class="far-ia-tab-btn" data-tab="chat">Live Chat</button></div><button type="button" class="far-ia-btn" data-x style="max-width:72px">Close</button></div>' +
         '<div class="far-ia-body">' +
         '<p class="far-ia-small">Uses the visible conversation as context. Buyer image attachments in the thread are included for vision-capable models (e.g. gemini-2.5-flash). Paste the output into Fiverr when ready.</p>' +
         '<div class="far-ia-loading-text" style="color:#64748b; font-size:12px; margin-bottom:8px; display:none;"></div>' +
@@ -1440,7 +2427,7 @@
         '<button type="button" class="far-ia-btn" data-a="clarify">Generate clarification message — ask focused questions from the thread</button>' +
         '<button type="button" class="far-ia-btn" data-a="analysis">Analyze communication — improve success score</button>' +
         '<div class="far-ia-cost-row">' +
-        '<input type="text" class="far-ia-cost-input" data-cost-input placeholder="$ / price" title="Your price to mention in the cost message" aria-label="Your cost or price" />' +
+        '<input type="text" class="far-ia-cost-input" data-cost-input placeholder="Optional: your price (e.g., $50, $25-50)" title="Optional: Enter your price or let AI estimate from task scope" aria-label="Your cost or price (optional)" />' +
         '<button type="button" class="far-ia-btn far-ia-cost-btn" data-a="cost">Generate cost message</button>' +
         "</div>" +
         '<button type="button" class="far-ia-btn" data-a="quote">Generate quote message — structured quote; no invented specifics</button>' +
@@ -1464,6 +2451,69 @@
 
       backdrop.appendChild(dlg);
       document.body.appendChild(backdrop);
+
+      // Restructure modal into tabs - convert old flat layout to new tabbed layout
+      (function restructureModalToTabs() {
+        // Create tab structure if not already present
+        if (!dlg.querySelector('.far-ia-tab-content')) {
+          // Move content into tabs
+          const body = dlg.querySelector('.far-ia-body');
+          if (body) {
+            body.innerHTML = 
+              '<div class="far-ia-tab-content active" data-tab-content="generate">' +
+              '<p class="far-ia-small">✓ Context: Uses visible conversation and attachments as reference.</p>' +
+              '<label class="far-ia-small" style="font-weight:600;color:#475569;margin-top:6px;display:block;">Your private note (optional)</label>' +
+              '<textarea id="far-ia-seller-note" class="far-ia-seller-note" data-seller-note rows="3" placeholder="Tone, price, deadline, context not in thread..."></textarea>' +
+              '<div class="far-ia-preset-group">' +
+              '<div class="far-ia-preset-group-title">Quick Messages</div>' +
+              '<button type="button" class="far-ia-btn" data-a="first">📌 First message — short welcome; invite requirements</button>' +
+              '<button type="button" class="far-ia-btn" data-a="reply">💬 Reply — professional response to buyer\'s last message</button>' +
+              '<button type="button" class="far-ia-btn" data-a="clarify">❓ Clarify — ask focused questions from the thread</button>' +
+              '</div>' +
+              '<div class="far-ia-preset-group">' +
+              '<div class="far-ia-preset-group-title">Management</div>' +
+              '<button type="button" class="far-ia-btn" data-a="cool">😊 Cool-Down — de-escalation, empathy</button>' +
+              '<button type="button" class="far-ia-btn" data-a="postdelivery">✅ After Delivery — set expectations (revisions vs new work)</button>' +
+              '</div>' +
+              '<div class="far-ia-preset-group">' +
+              '<div class="far-ia-preset-group-title">Advanced</div>' +
+              '<div class="far-ia-cost-row">' +
+              '<input type="text" class="far-ia-cost-input" data-cost-input placeholder="Optional: your price (e.g., $50, $25-50)" title="Optional: Enter your price or let AI estimate from task scope" aria-label="Your cost or price (optional)" />' +
+              '<button type="button" class="far-ia-btn far-ia-cost-btn" data-a="cost">💰 Cost</button>' +
+              '</div>' +
+              '<button type="button" class="far-ia-btn" data-a="quote">📋 Quote — structured quote; no invented specifics</button>' +
+              '<button type="button" class="far-ia-btn" data-a="task">🔍 Task Explain — Bangla + English summary (new window)</button>' +
+              '<button type="button" class="far-ia-btn" data-a="analysis">📊 Analyze — communication improvement score</button>' +
+              '</div>' +
+              '<div class="far-ia-loading-text" style="color:#1dbf73;font-size:12px;margin-bottom:8px;display:none;font-weight:500;"></div>' +
+              '<textarea class="far-ia-out" readonly placeholder="✓ Generated message..." data-out></textarea>' +
+              '<p class="far-ia-err" data-err style="display:none"></p>' +
+              '<div class="far-ia-actions" style="display:flex;gap:8px;"><button type="button" class="far-ia-btn" data-copy style="flex:1;">📋 Copy</button><button type="button" class="far-ia-btn" data-insert style="flex:1;display:none;">→ Insert</button></div>' +
+              '</div>' +
+              '<div class="far-ia-tab-content" data-tab-content="chat">' +
+              '<p class="far-ia-small">Ask AI for rewrites, tone changes, refinements.</p>' +
+              '<div class="far-ia-chat-log" data-chat-log style="flex:1;min-height:120px;margin-bottom:8px;"></div>' +
+              '<textarea class="far-ia-chat-input" data-chat-in placeholder="Ask: shorter, formal, friendly..." rows="3" style="width:100%;margin-bottom:8px;"></textarea>' +
+              '<button type="button" class="far-ia-btn" data-chat-send style="width:100%;text-align:center;">→ Send Message</button>' +
+              '</div>';
+          }
+        }
+      })();
+
+      // Tab switching functionality
+      const tabButtons = dlg.querySelectorAll(".far-ia-tab-btn");
+      const tabContents = dlg.querySelectorAll(".far-ia-tab-content");
+      
+      tabButtons.forEach(btn => {
+        btn.addEventListener("click", () => {
+          const tabName = btn.getAttribute("data-tab");
+          tabButtons.forEach(b => b.classList.remove("active"));
+          tabContents.forEach(c => c.classList.remove("active"));
+          btn.classList.add("active");
+          const content = dlg.querySelector(`[data-tab-content="${tabName}"]`);
+          if (content) content.classList.add("active");
+        });
+      });
 
       const out = dlg.querySelector("[data-out]");
       const err = dlg.querySelector("[data-err]");
@@ -1510,15 +2560,62 @@
 
       function logChat(role, text) {
         const row = document.createElement("div");
-        row.className = "far-ia-chat-row";
-        row.textContent = (role === "user" ? "You: " : "AI: ") + text;
+        const isUser = role === "user";
+        const isAI = role === "assistant" || role === "ai";
+        const isError = !isUser && !isAI;
+        
+        row.className = "far-ia-chat-row " + (isUser ? "seller" : isAI ? "buyer" : "error");
+        
+        // Create message content container
+        const msgContent = document.createElement("div");
+        msgContent.style.cssText = "white-space:pre-wrap;overflow-wrap:break-word;";
+        msgContent.innerHTML = (isUser ? "<strong>You:</strong> " : isAI ? "<strong>AI:</strong> " : "<strong>Error:</strong> ") + (typeof text === "string" ? text.replace(/</g, "&lt;").replace(/>/g, "&gt;") : text);
+        row.appendChild(msgContent);
+        
+        // Create action buttons (except for errors)
+        if (!isError) {
+          const actions = document.createElement("div");
+          actions.className = "far-ia-chat-actions";
+          
+          const copyBtn = document.createElement("button");
+          copyBtn.className = "far-ia-chat-btn";
+          copyBtn.type = "button";
+          copyBtn.textContent = "📋 Copy";
+          copyBtn.addEventListener("click", () => {
+            navigator.clipboard.writeText(text).then(() => {
+              const orig = copyBtn.textContent;
+              copyBtn.textContent = "✓ Copied";
+              setTimeout(() => { copyBtn.textContent = orig; }, 2000);
+            }).catch(err => console.warn("Copy failed:", err));
+          });
+          
+          const insertBtn = document.createElement("button");
+          insertBtn.className = "far-ia-chat-btn";
+          insertBtn.type = "button";
+          insertBtn.textContent = "📌 Insert";
+          insertBtn.addEventListener("click", () => {
+            const outField = out;
+            if (outField) {
+              outField.value = text;
+              outField.focus();
+              outField.scrollTop = outField.scrollHeight;
+              insertBtn.textContent = "✓ Inserted";
+              setTimeout(() => { insertBtn.textContent = "📌 Insert"; }, 2000);
+            }
+          });
+          
+          actions.appendChild(copyBtn);
+          actions.appendChild(insertBtn);
+          row.appendChild(actions);
+        }
+        
         chatLog.appendChild(row);
         chatLog.scrollTop = chatLog.scrollHeight;
       }
 
-      function presetInstruction(kind, transcript) {
+      function presetInstruction(kind, transcript, selectedMessages = []) {
         const myCost = (costInput && String(costInput.value || "").trim()) || "";
-        return buildPresetUserText(kind, transcript, getSettings, { costPrice: myCost });
+        return buildPresetUserText(kind, transcript, getSettings, { costPrice: myCost, selectedMessages });
       }
 
       async function runCommunicationAnalysis() {
@@ -1562,7 +2659,14 @@
           sellerName +
           ". Aim for a reply that leaves the buyer confident this seller is reliable and the right fit—without pressure or empty claims.";
         const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
-        const userText = appendSellerNoteForApi(presetInstruction(kind, transcript));
+        
+        // Get selected messages for the first message type
+        let selectedMessages = [];
+        if (kind === "first") {
+          selectedMessages = await getSelectedMessages();
+        }
+        
+        const userText = appendSellerNoteForApi(presetInstruction(kind, transcript, selectedMessages));
         const userContent = await buildUserContentWithImages(userText, imageUrls, getSettings);
         generateWithAI(getSettings, [
           { role: "system", content: sys },
@@ -1689,6 +2793,9 @@
     btn.addEventListener("click", () => {
       openMainModal();
     });
+
+    // Initialize message selection UI on page load
+    initializeMessageSelection().catch(err => console.warn("Failed to initialize message selection:", err));
   }
 
   window.FarInboxAi = {

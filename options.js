@@ -25,7 +25,7 @@
     inboxTranslateEnabled: true,
     inboxTranslateClientLang: "",
     inboxTranslateDebounceMs: "500",
-    openaiApiKey: "",
+    openaiApiKey: [],
     openaiModel: "gpt-4o-mini",
     geminiApiKey: "",
     geminiModel: "gemini-2.5-flash",
@@ -94,6 +94,9 @@
 
       if (field.type === "checkbox") {
         field.checked = coerceBoolean(value, Boolean(defaultSettings[key]));
+      } else if (key === "openaiApiKey" && Array.isArray(value)) {
+        // Convert array back to textarea format
+        field.value = value.filter(k => k && k.trim()).join('\n');
       } else {
         field.value = value || "";
       }
@@ -121,6 +124,19 @@
     if (values.relEnd && parseInt(values.relEnd, 10) < 1) {
       values.relEnd = "1";
     }
+    
+    // Parse multiple API keys from textarea or comma-separated
+    if (values.openaiApiKey) {
+      const keyText = String(values.openaiApiKey || "");
+      const keys = keyText
+        .split(/[\n,]/)
+        .map(k => k.trim())
+        .filter(k => k.length > 0);
+      values.openaiApiKey = keys;
+    } else {
+      values.openaiApiKey = [];
+    }
+    
     return values;
   };
 
@@ -1689,6 +1705,180 @@
     const resetButton = document.getElementById("resetStats");
     if (resetButton) {
       resetButton.addEventListener("click", resetStatistics);
+    }
+
+    // ===== API USAGE TAB FUNCTIONALITY =====
+    const updateAPIUsageDisplay = async () => {
+      try {
+        const data = await storage.get([
+          "openaiApiKey",
+          "geminiApiKey",
+          "farOpenAIKeyIndex",
+          "farOpenAIFailedKeys",
+          "farGeminiCallCount",
+          "farOpenAICallCounts"
+        ]);
+        
+        // OpenAI Keys Section
+        const openaiKeys = Array.isArray(data.openaiApiKey) ? data.openaiApiKey : [];
+        const openaiKeyIndex = data.farOpenAIKeyIndex ? parseInt(data.farOpenAIKeyIndex, 10) : 0;
+        const failedKeys = Array.isArray(data.farOpenAIFailedKeys) ? data.farOpenAIFailedKeys : [];
+        const callCounts = data.farOpenAICallCounts || {};
+        
+        const openaiContainer = document.getElementById("openaiKeysContainer");
+        if (openaiContainer) {
+          if (openaiKeys.length === 0) {
+            openaiContainer.innerHTML = '<p style="color: #64748b; text-align: center;">No OpenAI keys configured. Add keys in the General tab.</p>';
+          } else {
+            let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+            openaiKeys.forEach((key, idx) => {
+              const isFailed = failedKeys.includes(idx);
+              const isActive = idx === openaiKeyIndex && !isFailed;
+              const callCount = callCounts[`key_${idx}`] || 0;
+              const keyPreview = key.substring(0, 20) + "...";
+              const statusEmoji = isFailed ? "⚠️ Failed" : isActive ? "✅ Active" : "⏸️ Standby";
+              const bgColor = isFailed ? "#fee2e2" : isActive ? "#e8f5e9" : "#f3f4f6";
+              const borderColor = isFailed ? "#fca5a5" : isActive ? "#86efac" : "#d1d5db";
+              
+              html += `<div style="padding: 10px; background: ${bgColor}; border-left: 3px solid ${borderColor}; border-radius: 4px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                  <div>
+                    <div style="font-size: 12px; color: #64748b;">Key ${idx + 1}: ${keyPreview}</div>
+                    <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Calls: <strong>${callCount}</strong></div>
+                  </div>
+                  <div style="font-size: 14px; font-weight: bold; color: ${isFailed ? '#dc2626' : isActive ? '#16a34a' : '#6b7280'};">${statusEmoji}</div>
+                </div>
+              </div>`;
+            });
+            html += '</div>';
+            openaiContainer.innerHTML = html;
+          }
+        }
+        
+        // Gemini Key Section
+        const geminiKey = data.geminiApiKey || "";
+        const geminiContainer = document.getElementById("geminiKeyContainer");
+        if (geminiContainer) {
+          if (!geminiKey) {
+            geminiContainer.innerHTML = '<p style="color: #64748b; text-align: center;">No Gemini key configured. Add key in the General tab.</p>';
+          } else {
+            const geminiCallCount = data.farGeminiCallCount || 0;
+            const keyPreview = geminiKey.substring(0, 20) + "...";
+            geminiContainer.innerHTML = `<div style="padding: 10px; background: #e3f2fd; border-left: 3px solid #2196f3; border-radius: 4px;">
+              <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <div style="font-size: 12px; color: #64748b;">Key: ${keyPreview}</div>
+                  <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Calls: <strong>${geminiCallCount}</strong></div>
+                </div>
+                <div style="font-size: 14px; font-weight: bold; color: #2196f3;">✅ Active</div>
+              </div>
+            </div>`;
+          }
+        }
+        
+        // Overall Statistics
+        const totalOpenAICalls = openaiKeys.reduce((sum, _, idx) => sum + (callCounts[`key_${idx}`] || 0), 0);
+        const totalGeminiCalls = data.farGeminiCallCount || 0;
+        
+        const totalOpenAICallsEl = document.getElementById("totalOpenAICalls");
+        const totalGeminiCallsEl = document.getElementById("totalGeminiCalls");
+        const failedAttemptsEl = document.getElementById("failedAttempts");
+        const activeKeyIndexEl = document.getElementById("activeKeyIndex");
+        
+        if (totalOpenAICallsEl) totalOpenAICallsEl.textContent = totalOpenAICalls;
+        if (totalGeminiCallsEl) totalGeminiCallsEl.textContent = totalGeminiCalls;
+        if (failedAttemptsEl) failedAttemptsEl.textContent = failedKeys.length;
+        if (activeKeyIndexEl) activeKeyIndexEl.textContent = `OpenAI Key ${openaiKeyIndex + 1} / Gemini Key 1`;
+        
+        // Key Status Table
+        const tableBody = document.getElementById("keyStatusTable");
+        if (tableBody) {
+          let tableHtml = "";
+          
+          // OpenAI keys rows
+          openaiKeys.forEach((key, idx) => {
+            const isFailed = failedKeys.includes(idx);
+            const isActive = idx === openaiKeyIndex && !isFailed;
+            const callCount = callCounts[`key_${idx}`] || 0;
+            const keyPreview = key.substring(0, 15) + "...";
+            const statusEmoji = isFailed ? "⚠️ Failed" : isActive ? "✅ Active" : "⏸️ Standby";
+            const statusColor = isFailed ? "#dc2626" : isActive ? "#16a34a" : "#6b7280";
+            
+            tableHtml += `<tr style="border-bottom: 1px solid #e5e7eb;">
+              <td style="padding: 8px; border: 1px solid #cbd5e1;">OpenAI</td>
+              <td style="padding: 8px; border: 1px solid #cbd5e1; font-family: monospace; font-size: 11px;">${keyPreview}</td>
+              <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center; color: ${statusColor};">${statusEmoji}</td>
+              <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">${idx + 1}</td>
+              <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold;">${callCount}</td>
+            </tr>`;
+          });
+          
+          // Gemini key row
+          if (geminiKey) {
+            const geminiCallCount = data.farGeminiCallCount || 0;
+            const keyPreview = geminiKey.substring(0, 15) + "...";
+            tableHtml += `<tr style="border-bottom: 1px solid #e5e7eb;">
+              <td style="padding: 8px; border: 1px solid #cbd5e1;">Gemini</td>
+              <td style="padding: 8px; border: 1px solid #cbd5e1; font-family: monospace; font-size: 11px;">${keyPreview}</td>
+              <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center; color: #2196f3;">✅ Active</td>
+              <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">1</td>
+              <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold;">${geminiCallCount}</td>
+            </tr>`;
+          }
+          
+          if (!tableHtml) {
+            tableHtml = '<tr><td colspan="5" style="padding: 12px; text-align: center; color: #64748b;">No API keys configured.</td></tr>';
+          }
+          tableBody.innerHTML = tableHtml;
+        }
+      } catch (err) {
+        console.warn("Error updating API usage display:", err);
+      }
+    };
+    
+    // Initial load and refresh button handlers
+    updateAPIUsageDisplay();
+    
+    const refreshOpenAIStatus = document.getElementById("refreshOpenAIStatus");
+    if (refreshOpenAIStatus) {
+      refreshOpenAIStatus.addEventListener("click", async () => {
+        refreshOpenAIStatus.textContent = "🔄 Refreshing...";
+        refreshOpenAIStatus.disabled = true;
+        await updateAPIUsageDisplay();
+        refreshOpenAIStatus.textContent = "🔄 Refresh Status";
+        refreshOpenAIStatus.disabled = false;
+      });
+    }
+    
+    const refreshGeminiStatus = document.getElementById("refreshGeminiStatus");
+    if (refreshGeminiStatus) {
+      refreshGeminiStatus.addEventListener("click", async () => {
+        refreshGeminiStatus.textContent = "🔄 Refreshing...";
+        refreshGeminiStatus.disabled = true;
+        await updateAPIUsageDisplay();
+        refreshGeminiStatus.textContent = "🔄 Refresh Status";
+        refreshGeminiStatus.disabled = false;
+      });
+    }
+    
+    const resetOpenAIStats = document.getElementById("resetOpenAIStats");
+    if (resetOpenAIStats) {
+      resetOpenAIStats.addEventListener("click", async () => {
+        if (confirm("Reset all OpenAI call statistics? This cannot be undone.")) {
+          await storage.set({ farOpenAICallCounts: {}, farOpenAIFailedKeys: [] });
+          await updateAPIUsageDisplay();
+        }
+      });
+    }
+    
+    const resetGeminiStats = document.getElementById("resetGeminiStats");
+    if (resetGeminiStats) {
+      resetGeminiStats.addEventListener("click", async () => {
+        if (confirm("Reset Gemini call statistics? This cannot be undone.")) {
+          await storage.set({ farGeminiCallCount: 0 });
+          await updateAPIUsageDisplay();
+        }
+      });
     }
 
     // Reload Logs UI wiring

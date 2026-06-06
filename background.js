@@ -91,8 +91,24 @@
   const NEXT_RELOAD_TIMESTAMP_KEY = "farNextReloadTimestamp";
   const RELOAD_COUNT_KEY = "farReloadCount";
   const RELOAD_DATE_KEY = "farReloadDate";
+  const MODAL_PROTECTION_STORAGE_KEY = "farModalProtectionUntilTime";
   let autoReloadEnabled = false;
   let enforcedReloadTimeoutId = null;
+
+  /**
+   * Check if modal protection is currently active
+   * @returns {Promise<boolean>}
+   */
+  const isModalProtectionActive = async () => {
+    try {
+      const result = await storageGet([MODAL_PROTECTION_STORAGE_KEY]);
+      const protectionTime = result && result[MODAL_PROTECTION_STORAGE_KEY];
+      return protectionTime && Date.now() < parseInt(protectionTime, 10);
+    } catch (error) {
+      console.warn("Error checking modal protection:", error);
+      return false;
+    }
+  };
 
   const storageGet = (keys) => {
     if (!storage) {
@@ -774,6 +790,13 @@
 
   const performEnforcedReload = async () => {
     try {
+      // Check if modal protection is active - don't reload if it is
+      const protectionActive = await isModalProtectionActive();
+      if (protectionActive) {
+        console.log("Fiverr Assistant: Skipping enforced reload - modal protection is active");
+        return;
+      }
+
       // Read primary tab and pageLinks from storage
       const s = await storageGet([PRIMARY_TAB_ID_STORAGE_KEY, "pageLinks", "profileUsername"]);
       const primaryTabId = s && s[PRIMARY_TAB_ID_STORAGE_KEY] ? s[PRIMARY_TAB_ID_STORAGE_KEY] : null;
@@ -832,7 +855,11 @@
       api.tabs.update(primaryTabId, { url: newLink }, async () => {
         if (api.runtime.lastError) {
           console.warn("Fiverr Assistant: enforced reload failed to update tab", api.runtime.lastError);
-          try { api.tabs.reload(primaryTabId); } catch (_) {}
+          // Check modal protection before reload
+          const protectionStillActive = await isModalProtectionActive();
+          if (!protectionStillActive) {
+            try { api.tabs.reload(primaryTabId); } catch (_) {}
+          }
           return;
         }
         // Persist reload count and append a reload log so options UI shows it
@@ -890,6 +917,13 @@
         if (message.type === 'performEnforcedReloadNow' && message.url) {
           (async () => {
             try {
+              // Check if modal protection is active - don't reload if it is
+              const protectionActive = await isModalProtectionActive();
+              if (protectionActive) {
+                console.log("Fiverr Assistant: Skipping performEnforcedReloadNow - modal protection is active");
+                return;
+              }
+
               const r = await storageGet([PRIMARY_TAB_ID_STORAGE_KEY]);
               const primaryTabId = r && r[PRIMARY_TAB_ID_STORAGE_KEY] ? r[PRIMARY_TAB_ID_STORAGE_KEY] : null;
               if (!primaryTabId) return;
@@ -897,7 +931,10 @@
               api.tabs.update(primaryTabId, { url: message.url }, async () => {
                 if (api.runtime.lastError) {
                   console.warn('Fiverr Assistant: performEnforcedReloadNow failed to update tab', api.runtime.lastError);
-                  try { api.tabs.reload(primaryTabId); } catch (_) {}
+                  const protectionStillActive = await isModalProtectionActive();
+                  if (!protectionStillActive) {
+                    try { api.tabs.reload(primaryTabId); } catch (_) {}
+                  }
                   return;
                 }
                 try {
@@ -1248,6 +1285,13 @@
     }
 
     try {
+      // Check if modal protection is active - don't reload if it is
+      const protectionActive = await isModalProtectionActive();
+      if (protectionActive) {
+        console.log("Fiverr Assistant: Skipping error page reload - modal protection is active");
+        return;
+      }
+
       const attempts = errorPageReloadAttempts.get(tabId) || 0;
       if (attempts >= MAX_ERROR_RELOAD_ATTEMPTS) {
         console.warn(`Fiverr Assistant: Max error page reload attempts (${MAX_ERROR_RELOAD_ATTEMPTS}) reached for tab ${tabId}`);
@@ -1380,6 +1424,14 @@
             const isFiverrUrl = primaryTab.url.includes("fiverr.com");
             if (isFiverrUrl) {
               console.log(`Fiverr Assistant: Periodic reload triggered for primary tab ${primaryTabId}`);
+              
+              // Check if modal protection is active - don't reload if it is
+              const protectionActive = await isModalProtectionActive();
+              if (protectionActive) {
+                console.log("Fiverr Assistant: Skipping periodic reload - modal protection is active");
+                return;
+              }
+              
               api.tabs.reload(primaryTabId, { bypassCache: false }, () => {
                 if (api.runtime.lastError) {
                   console.warn("Fiverr Assistant: Error in periodic reload", api.runtime.lastError);
