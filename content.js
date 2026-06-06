@@ -1867,6 +1867,9 @@
               sendNotification("Old client Message", clientName);
             }
 
+            // Preload audio for better playback when alert shows
+            preloadTargetedAudio().catch(() => {});
+
             // Show unread clients alert to display all unread clients (debounced to prevent duplicates)
             if (unreadAlertTimeoutId) {
               clearTimeout(unreadAlertTimeoutId);
@@ -4724,6 +4727,77 @@
   // Track currently playing audio elements so we can stop them on user interaction
   const playingAudioElements = new Set();
 
+  // Preload audio elements for better autoplay compatibility
+  let preloadedAudioElements = {};
+
+  // Function to preload audio on page load (helps bypass autoplay restrictions)
+  const preloadTargetedAudio = async () => {
+    try {
+      const settingKey =
+        SOUND_TYPE_TO_SETTING_KEY["targeted"] ||
+        SOUND_TYPE_TO_SETTING_KEY.default;
+      const configuredUrl =
+        getVal(settingKey) ||
+        settings[settingKey] ||
+        defaultSettings[settingKey] ||
+        "";
+      const normalizedUrl = normalizeUrl(configuredUrl);
+
+      if (!normalizedUrl) {
+        console.log(
+          "Fiverr Assistant: No targeted sound URL configured for preloading",
+        );
+        return;
+      }
+
+      console.log(
+        "Fiverr Assistant: Preloading targeted client audio for faster playback",
+        { settingKey, sourceUrl: normalizedUrl },
+      );
+
+      let audioSource = normalizedUrl;
+      let objectUrl = null;
+
+      // Try to get from IndexedDB cache
+      if (supportsIndexedDB) {
+        try {
+          const cachedBlob = await getCachedAudioBlobForUrl(
+            settingKey,
+            normalizedUrl,
+          );
+          if (cachedBlob instanceof Blob) {
+            objectUrl = URL.createObjectURL(cachedBlob);
+            audioSource = objectUrl;
+            console.log(
+              "Fiverr Assistant: Preloaded audio from IndexedDB cache",
+            );
+          }
+        } catch (error) {
+          console.warn(
+            "Fiverr Assistant: Could not preload audio from cache",
+            error,
+          );
+        }
+      }
+
+      // Create and preload audio element
+      const audio = new Audio(audioSource);
+      audio.preload = "auto";
+      audio.volume = 1; // Ensure full volume
+
+      // Add to preloaded elements for later use
+      preloadedAudioElements["targeted"] = {
+        audio,
+        objectUrl,
+        sourceUrl: normalizedUrl,
+      };
+
+      console.log("Fiverr Assistant: Targeted audio preloaded successfully");
+    } catch (error) {
+      console.warn("Fiverr Assistant: Error preloading targeted audio", error);
+    }
+  };
+
   // Function to stop all currently playing notification sounds
   const stopAllNotificationSounds = () => {
     playingAudioElements.forEach((audio) => {
@@ -5784,6 +5858,50 @@
         updateStatusDisplay();
 
         playAudio = async (type) => {
+          // First, try to use preloaded audio for faster playback
+          if (type === "targeted" && preloadedAudioElements["targeted"]) {
+            try {
+              const { audio } = preloadedAudioElements["targeted"];
+              // Reset audio to start from beginning
+              audio.currentTime = 0;
+
+              // Stop other playing audio to avoid conflicts
+              stopAllNotificationSounds();
+
+              console.log(
+                "Fiverr Assistant: Playing preloaded targeted audio for instant playback",
+              );
+
+              const playPromise = audio.play();
+              if (playPromise && typeof playPromise.then === "function") {
+                playPromise
+                  .then(() => {
+                    playingAudioElements.add(audio);
+                    console.log(
+                      "✅ Preloaded targeted audio playing successfully",
+                    );
+                  })
+                  .catch((error) => {
+                    console.warn(
+                      "⚠️ Preloaded audio playback failed, will try fallback:",
+                      error,
+                    );
+                    // Fall through to standard playAudio method below
+                  });
+              } else {
+                playingAudioElements.add(audio);
+              }
+              return; // Exit early if preloaded audio plays successfully
+            } catch (error) {
+              console.warn(
+                "Fiverr Assistant: Error using preloaded audio, will fall back:",
+                error,
+              );
+              // Fall through to standard playAudio method
+            }
+          }
+
+          // Standard audio playback method (fallback)
           const settingKey =
             SOUND_TYPE_TO_SETTING_KEY[type] ||
             SOUND_TYPE_TO_SETTING_KEY.default;
@@ -6683,6 +6801,11 @@
   // Show unread clients alert separately (independent of pageLoadCheckDone)
   const handleInboxPageLoad = () => {
     if (isFiverrInboxPage()) {
+      // Preload targeted audio immediately for better autoplay compatibility
+      preloadTargetedAudio().catch((error) => {
+        console.warn("Fiverr Assistant: Error preloading audio:", error);
+      });
+
       // Wait for DOM to fully render, then show unread clients alert (debounced to prevent duplicates)
       if (unreadAlertTimeoutId) {
         clearTimeout(unreadAlertTimeoutId);
