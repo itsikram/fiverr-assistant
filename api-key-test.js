@@ -77,7 +77,14 @@ async function diagnoseApiKey() {
 async function testGeminiKey(settings) {
   console.log("1. Testing Gemini API Key Format...");
   console.log("   Key length:", settings.geminiApiKey.length);
-  console.log("   Key format:", settings.geminiApiKey.startsWith("AIza") ? "Valid format (starts with AIza)" : "Invalid format");
+  console.log(
+    "   Key format:",
+    settings.geminiApiKey.startsWith("AIza")
+      ? "Valid format (starts with AIza)"
+      : settings.geminiApiKey.startsWith("AQ.")
+      ? "Valid format (starts with AQ.)"
+      : "Invalid format",
+  );
   console.log("   Model:", settings.geminiModel);
   
   // Test basic API connectivity

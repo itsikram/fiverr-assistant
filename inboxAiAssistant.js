@@ -1935,16 +1935,19 @@
     }
 
     // Validate API key format
+    const isGoogleApiKey = apiKey.startsWith("AIza") || apiKey.startsWith("AQ.");
     console.log("2. API key validation:", {
       startsWithAIza: apiKey.startsWith("AIza"),
+      startsWithAQ: apiKey.startsWith("AQ."),
+      isGoogleApiKey,
       length: apiKey.length,
       minLength: apiKey.length >= 30,
     });
 
-    if (!apiKey.startsWith("AIza")) {
+    if (!isGoogleApiKey) {
       console.error("ERROR: Invalid API key format");
       throw new Error(
-        "Invalid API key format. Gemini API keys should start with 'AIza'. Get a new key from https://aistudio.google.com/app/apikey",
+        "Invalid API key format. Gemini API keys should start with 'AIza' or 'AQ.' and be an active Google API key. Get a new key from https://aistudio.google.com/app/apikey",
       );
     }
 
@@ -2396,8 +2399,10 @@
       }
     }
 
-    const model =
+    let model =
       (s && s.openaiModel && String(s.openaiModel).trim()) || "gpt-4o-mini";
+    let hasSwitchedOpenAIModel = false;
+    let lastError = null;
     console.log(
       `Using OpenAI model: ${model} with ${apiKeys.length} API key(s)`,
     );
@@ -2510,6 +2515,23 @@
                 : "";
             console.log("API Error:", errMsg, errorCode ? `(${errorCode})` : "");
 
+            const unsupportedModelError =
+              isOpenAIModelUnsupported(errMsg, errorCode) &&
+              model !== "gpt-3.5-turbo";
+
+            if (unsupportedModelError && !hasSwitchedOpenAIModel) {
+              console.log(
+                `OpenAI model '${model}' not available for this key, falling back to gpt-3.5-turbo`,
+              );
+              showRetryStatus(
+                "OpenAI model not available for this key. Falling back to gpt-3.5-turbo.",
+              );
+              model = "gpt-3.5-turbo";
+              hasSwitchedOpenAIModel = true;
+              body.model = model;
+              continue;
+            }
+
             const quotaExhausted = isOpenAIQuotaExhausted(errMsg, errorCode);
             const isRateLimited =
               res.status === 429 && !quotaExhausted;
@@ -2556,14 +2578,18 @@
             }
 
             if (res.status === 401) {
-              throw new Error(msg);
+              const errorToThrow = new Error(msg);
+              lastError = errorToThrow;
+              throw errorToThrow;
             }
 
             if (
               attempt === maxRetries - 1 &&
               keyAttempt === apiKeys.length - 1
             ) {
-              throw new Error(msg);
+              const errorToThrow = new Error(msg);
+              lastError = errorToThrow;
+              throw errorToThrow;
             }
 
             continue;
@@ -2590,6 +2616,7 @@
           return "";
         } catch (error) {
           console.log("Exception:", error.message);
+          lastError = error;
 
           if (attempt === maxRetries - 1) {
             if (keyAttempt < apiKeys.length - 1) {
@@ -2615,7 +2642,11 @@
     }
 
     throw new Error(
-      "OpenAI API request failed with all available API keys. Check your keys and account status at https://platform.openai.com/account/billing",
+      `OpenAI API request failed with all available API keys. ${
+        lastError && lastError.message
+          ? `Last error: ${lastError.message}`
+          : "Check your keys and account status at https://platform.openai.com/account/billing"
+      }`,
     );
   }
 
@@ -2681,26 +2712,84 @@
     return `Request failed (${status}). Check your API key and internet connection.`;
   }
 
+  function isOpenAIModelUnsupported(errMsg, errorCode) {
+    const message = String(errMsg || "").toLowerCase();
+    const code = String(errorCode || "").toLowerCase();
+    return (
+      /invalid.*model|unsupported.*model|model.*not.*available|not.*found|model.*does.*not.*exist|permission.*model|model.*not.*allowed|not.*enabled|not.*authorized|not.*have.*access|access.*denied|permission.*denied|not.*available.*for.*your.*account/.test(
+        message,
+      ) ||
+      /model_not_found|resource_not_found|permission_denied|not_authorized|access_denied|model_not_allowed/.test(code)
+    );
+  }
+
   /**
    * Wrapper function that calls either Gemini or OpenAI based on configuration
    */
   async function generateWithAI(getSettings, messages, options) {
     const s = getSettings();
+    const platform =
+      (s && s.aiPlatform && String(s.aiPlatform).trim().toLowerCase()) ||
+      "auto";
     const hasOpenAI = getApiKeyList(s).length > 0;
     const hasGemini =
       s && s.geminiApiKey && String(s.geminiApiKey).trim().length > 0;
 
-    if (hasOpenAI) {
-      console.log("Using OpenAI API...");
+    if (platform === "openai") {
+      if (!hasOpenAI) {
+        throw new Error(
+          "OpenAI is selected but no OpenAI API key is configured. Add a key in settings.",
+        );
+      }
+      console.log("Using OpenAI API (OpenAI only)...");
       return openaiGenerateContent(getSettings, messages, options);
-    } else if (hasGemini) {
-      console.log("Using Gemini API...");
+    }
+
+    if (platform === "gemini") {
+      if (!hasGemini) {
+        throw new Error(
+          "Gemini is selected but no Gemini API key is configured. Add a key in settings.",
+        );
+      }
+      console.log("Using Gemini API (Gemini only)...");
       return geminiGenerateContent(getSettings, messages, options);
-    } else {
+    }
+
+    if (platform === "both") {
+      if (hasOpenAI) {
+        try {
+          console.log("Using OpenAI API first, with Gemini failover...");
+          return await openaiGenerateContent(getSettings, messages, options);
+        } catch (error) {
+          console.warn("OpenAI failed, falling back to Gemini:", error.message);
+          if (hasGemini) {
+            return geminiGenerateContent(getSettings, messages, options);
+          }
+          throw error;
+        }
+      }
+      if (hasGemini) {
+        console.log("OpenAI not configured, using Gemini API...");
+        return geminiGenerateContent(getSettings, messages, options);
+      }
       throw new Error(
         "No AI API key configured. Add an OpenAI or Gemini API key in Fiverr Assistant settings.",
       );
     }
+
+    // Auto fallback behavior: prefer OpenAI, otherwise use Gemini.
+    if (hasOpenAI) {
+      console.log("Using OpenAI API (auto)...");
+      return openaiGenerateContent(getSettings, messages, options);
+    }
+    if (hasGemini) {
+      console.log("Using Gemini API (auto)...");
+      return geminiGenerateContent(getSettings, messages, options);
+    }
+
+    throw new Error(
+      "No AI API key configured. Add an OpenAI or Gemini API key in Fiverr Assistant settings.",
+    );
   }
 
   function attachToolbarButton(toolbarRow, sendTa, _root, getSettings) {

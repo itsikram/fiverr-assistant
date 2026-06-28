@@ -219,6 +219,47 @@
               </select>
             </label>
             <label>
+              <span>AI platform</span>
+              <select id="aiPlatform" name="aiPlatform">
+                <option value="auto">
+                  Auto (OpenAI if available, else Gemini)
+                </option>
+                <option value="both">
+                  Both / failover (try OpenAI first, then Gemini)
+                </option>
+                <option value="openai">OpenAI only</option>
+                <option value="gemini">Gemini only</option>
+              </select>
+              <small
+                style="color: #64748b; font-weight: 400; display: block; margin-top: 6px;"
+              >Choose which AI backend to use. "Both" will fall back to Gemini if OpenAI fails.</small>
+            </label>
+            <label>
+              <span>Gemini API key</span>
+              <textarea
+                id="geminiApiKey"
+                name="geminiApiKey"
+                rows="2"
+                spellcheck="false"
+                placeholder="AIza..."
+              ></textarea>
+              <small
+                style="color: #64748b; font-weight: 400; display: block; margin-top: 6px;"
+              >Enter your Gemini API key here if you want to use Gemini for replies.</small>
+            </label>
+            <label>
+              <span>Gemini model</span>
+              <select id="geminiModel" name="geminiModel">
+                <option value="gemini-2.5-flash">gemini-2.5-flash</option>
+                <option value="gemini-2.5-pro">gemini-2.5-pro</option>
+                <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+                <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+              </select>
+              <small
+                style="color: #64748b; font-weight: 400; display: block; margin-top: 6px;"
+              >Choose the Gemini model to use when Gemini is selected or used for failover.</small>
+            </label>
+            <label>
               <span>Inbox message list selector (optional override)</span>
               <input
                 type="text"

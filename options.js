@@ -32,6 +32,7 @@
     openaiModel: "gpt-4o-mini",
     geminiApiKey: "",
     geminiModel: "gemini-2.5-flash",
+    aiPlatform: "auto",
     disableImageProcessing: false,
     inboxMessageListSelector: "",
     inboxMessageRowSelector: "",
