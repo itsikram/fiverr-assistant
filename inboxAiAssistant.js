@@ -22,6 +22,8 @@
   const MODAL_PROTECTION_STORAGE_KEY = "farModalProtectionUntilTime";
   const OPENAI_KEY_INDEX_STORAGE_KEY = "farOpenAIKeyIndex";
   const OPENAI_FAILED_KEYS_STORAGE_KEY = "farOpenAIFailedKeys";
+  const GEMINI_KEY_INDEX_STORAGE_KEY = "farGeminiKeyIndex";
+  const GEMINI_FAILED_KEYS_STORAGE_KEY = "farGeminiFailedKeys";
   const SELECTED_MESSAGES_STORAGE_KEY = "farSelectedMessages";
   const MESSAGE_SELECTION_MODE_KEY = "farMessageSelectionMode";
 
@@ -95,6 +97,79 @@
       .split(/[\n,]/)
       .map((k) => k.trim())
       .filter((k) => k.length > 0);
+  }
+
+  function getGeminiKeyList(settings) {
+    if (!settings || !settings.geminiApiKey) return [];
+    const key = settings.geminiApiKey;
+    if (Array.isArray(key)) {
+      return key.filter((k) => k && String(k).trim().length > 0);
+    }
+    const keyStr = String(key || "").trim();
+    if (keyStr.length === 0) return [];
+    return keyStr
+      .split(/[\n,]/)
+      .map((k) => k.trim())
+      .filter((k) => k.length > 0);
+  }
+
+  async function getCurrentGeminiKeyIndex() {
+    try {
+      const result = await browser.storage.local.get(
+        GEMINI_KEY_INDEX_STORAGE_KEY,
+      );
+      return result && result[GEMINI_KEY_INDEX_STORAGE_KEY]
+        ? parseInt(result[GEMINI_KEY_INDEX_STORAGE_KEY], 10)
+        : 0;
+    } catch (error) {
+      console.warn("Failed to get Gemini key index:", error);
+      return 0;
+    }
+  }
+
+  async function setCurrentGeminiKeyIndex(index) {
+    try {
+      await browser.storage.local.set({
+        [GEMINI_KEY_INDEX_STORAGE_KEY]: index,
+      });
+    } catch (error) {
+      console.warn("Failed to set Gemini key index:", error);
+    }
+  }
+
+  async function getFailedGeminiKeys() {
+    try {
+      const result = await browser.storage.local.get(
+        GEMINI_FAILED_KEYS_STORAGE_KEY,
+      );
+      const failed = result && result[GEMINI_FAILED_KEYS_STORAGE_KEY];
+      return new Set(Array.isArray(failed) ? failed : []);
+    } catch (error) {
+      console.warn("Failed to get Gemini failed keys:", error);
+      return new Set();
+    }
+  }
+
+  async function markGeminiKeyAsFailed(key) {
+    try {
+      const failed = await getFailedGeminiKeys();
+      failed.add(key);
+      await browser.storage.local.set({
+        [GEMINI_FAILED_KEYS_STORAGE_KEY]: Array.from(failed),
+      });
+      console.log("Marked Gemini API key as failed, will try next key");
+    } catch (error) {
+      console.warn("Failed to mark Gemini key as failed:", error);
+    }
+  }
+
+  async function clearFailedGeminiKeys() {
+    try {
+      await browser.storage.local.remove(GEMINI_FAILED_KEYS_STORAGE_KEY);
+      console.log("Cleared Gemini failed keys list");
+    } catch (error) {
+      console.warn("Failed to clear Gemini failed keys:", error);
+    }
   }
 
   /**
@@ -450,6 +525,7 @@
   const BASE_SYSTEM_PROMPT = [
     "You are an expert Fiverr seller crafting professional inbox replies that achieve 100% positive success scores.",
     "Write exactly like a TOP-PERFORMING HUMAN SELLER - warm, professional, and authentic. NEVER sound like AI or use templates.",
+    "Write as if a real person typed this directly into Fiverr chat. Do not mention AI, automation, prompts, chatbots, or generated text.",
     "OUTPUT ONLY the final message text ready to paste into Fiverr. NO preamble. NO explanations. NO markdown. NO '[Your message]' placeholders.",
     "KEY RULES FOR THIS REPLY:",
     "1. BE CONCISE - Remove all unnecessary text. Every sentence must add value.",
@@ -466,6 +542,7 @@
     "- Trust: Expertise shown through substance not bragging",
     "What to AVOID:",
     "- AI patterns: 'I understand', 'I'd be happy to', 'let me know', 'I appreciate'",
+    "- AI references: 'as an AI', 'AI assistant', 'generated', 'automated', 'chatbot', 'machine-generated'",
     "- Fluff: 'great project', 'amazing', 'awesome', 'perfect', generic praise",
     "- Formality: 'furthermore', 'henceforth', 'regarding', overly corporate",
     "- Invented details: fake prices, deadlines, package names not in thread",
@@ -1324,6 +1401,7 @@
           "7. Shows personality but stays professional - warm without being overly casual\n" +
           "\n" +
           "AVOID: Generic welcomes, fluff phrases like 'I understand' or 'I'd be happy to', promises without context, or asking vague questions.\n" +
+          "Do not mention AI, automation, or that this reply is generated. Write as if you are a real seller responding directly.\n" +
           "\n" +
           "Start directly with substance - make them feel like you actually read their message and care about their success."
         );
@@ -1331,13 +1409,13 @@
         return (
           "Recent conversation with this buyer:\n" +
           transcript +
-          "\n\nWrite a natural, conversational reply to their last message. Reference specific details they mentioned to show you're paying attention. Be helpful and professional but not formal - like talking to a colleague. Use contractions naturally (I'm, you'll, etc.). If they have questions, answer them directly. If they're sharing progress or feedback, respond appropriately. Keep it flowing like a real conversation."
+          "\n\nWrite a natural, conversational reply to their last message. Reference specific details they mentioned to show you're paying attention. Be helpful and professional but not formal - like talking to a colleague. Use contractions naturally (I'm, you'll, etc.). If they have questions, answer them directly. If they're sharing progress or feedback, respond appropriately. Keep it flowing like a real conversation.\n\nDo not mention AI, automation, or that the message was generated. Write as if you are the seller replying personally."
         );
       case "clarify":
         return (
           "Conversation so far:\n" +
           transcript +
-          "\n\nWrite a message asking for clarification in a natural way. Frame it positively - 'To make sure I deliver exactly what you need...' or 'Just want to understand a couple of things better...'. Ask 2-3 specific questions that show you're thinking through their project. Don't make it sound like an interrogation - more like you're genuinely trying to get it right for them."
+          "\n\nWrite a message asking for clarification in a natural way. Frame it positively - 'To make sure I deliver exactly what you need...' or 'Just want to understand a couple of things better...'. Ask 2-3 specific questions that show you're thinking through their project. Don't make it sound like an interrogation - more like you're genuinely trying to get it right for them.\n\nDo not mention AI, automation, or that this message was generated. Make it sound like a direct, human follow-up from the seller."
         );
       case "cost":
         // Use manual price if provided, otherwise analyze task for estimate
@@ -1349,7 +1427,19 @@
           "Conversation:\n" +
           transcript +
           costContext +
-          "\n\nWrite a natural message about pricing based on the task complexity and scope. Don't sound like a salesperson - more like a professional discussing costs. State your price confidently and explain what it includes (deliverables, timeline, revisions, etc.). Frame pricing around value and results, not just numbers. Be transparent about what's included. Make it feel like a business discussion, not a sales pitch. If the estimate range is provided, pick a reasonable number within or adjusted for the scope."
+          "\n\nWrite a natural message about pricing based on the task complexity and scope. Don't sound like a salesperson - more like a professional discussing costs. State your price confidently and explain what it includes (deliverables, timeline, revisions, etc.). Frame pricing around value and results, not just numbers. Be transparent about what's included. Make it feel like a business discussion, not a sales pitch. If the estimate range is provided, pick a reasonable number within or adjusted for the scope.\n\nDo not mention AI, automation, or that this message was generated. Write as if you are the seller directly responding to the client."
+        );
+      case "cursorPrompt":
+        return (
+          "The following is a conversation from a client asking for software work. Act as a professional software engineer writing a Cursor AI prompt for an engineering assistant. Focus on technical clarity, implementation approach, and requirements, not buyer-facing sales language.\n\n" +
+          "Conversation:\n" +
+          transcript +
+          "\n\nCreate a concise engineering prompt for Cursor AI that includes:\n" +
+          "- a summary of the project goals and constraints\n" +
+          "- key technical tasks and implementation steps\n" +
+          "- relevant technologies, architecture, and integration points\n" +
+          "- any important edge cases, performance considerations, or delivery notes\n" +
+          "Write it as a prompt for an engineer-focused AI assistant, using professional software engineering language. Do not write the final buyer message; write the prompt that guides the engineering agent. Avoid prompt-style phrasing that sounds like a machine instruction; keep it clear, concise, and written like an engineer describing the task."
         );
       default:
         return transcript;
@@ -1918,43 +2008,61 @@
    */
   async function geminiGenerateContent(getSettings, messages, options) {
     const s = getSettings();
-    const apiKey = (s && s.geminiApiKey && String(s.geminiApiKey).trim()) || "";
+    const apiKeys = getGeminiKeyList(s);
+    const apiKeyCount = apiKeys.length;
+    const apiKeyPrefix = apiKeys[0]
+      ? apiKeys[0].substring(0, 10) + "..."
+      : "none";
 
     // Debug logging
     console.log("=== Gemini API Request Debug ===");
     console.log("1. Settings check:", {
-      hasApiKey: !!apiKey,
-      apiKeyLength: apiKey ? apiKey.length : 0,
-      apiKeyPrefix: apiKey ? apiKey.substring(0, 10) + "..." : "none",
+      apiKeyCount,
+      apiKeyPrefix,
       model: s && s.geminiModel && String(s.geminiModel).trim(),
     });
 
-    if (!apiKey) {
-      console.error("ERROR: No API key found");
+    if (!apiKeyCount) {
+      console.error("ERROR: No Gemini API key found");
       throw new Error("Add your Gemini API key in Fiverr Assistant settings.");
     }
 
-    // Validate API key format
-    const isGoogleApiKey = apiKey.startsWith("AIza") || apiKey.startsWith("AQ.");
-    console.log("2. API key validation:", {
-      startsWithAIza: apiKey.startsWith("AIza"),
-      startsWithAQ: apiKey.startsWith("AQ."),
-      isGoogleApiKey,
-      length: apiKey.length,
-      minLength: apiKey.length >= 30,
-    });
+    let currentIndex = await getCurrentGeminiKeyIndex();
+    const failedKeys = await getFailedGeminiKeys();
 
-    if (!isGoogleApiKey) {
-      console.error("ERROR: Invalid API key format");
-      throw new Error(
-        "Invalid API key format. Gemini API keys should start with 'AIza' or 'AQ.' and be an active Google API key. Get a new key from https://aistudio.google.com/app/apikey",
-      );
+    // Find first usable key starting from stored index
+    let apiKey = null;
+    let startIndex = currentIndex;
+    for (let i = 0; i < apiKeys.length; i++) {
+      const idx = (startIndex + i) % apiKeys.length;
+      if (!failedKeys.has(apiKeys[idx])) {
+        apiKey = apiKeys[idx];
+        currentIndex = idx;
+        break;
+      }
     }
 
-    if (apiKey.length < 30) {
-      console.error("ERROR: API key too short");
+    if (!apiKey) {
+      console.log(
+        "All Gemini API keys marked as failed, resetting and retrying...",
+      );
+      await clearFailedGeminiKeys();
+      apiKey = apiKeys[0];
+      currentIndex = 0;
+    }
+
+    const validateKey = (key) => {
+      const trimmed = String(key || "").trim();
+      return (
+        trimmed.length >= 30 &&
+        (trimmed.startsWith("AIza") || trimmed.startsWith("AQ."))
+      );
+    };
+
+    if (!validateKey(apiKey)) {
+      console.error("ERROR: Invalid Gemini API key format");
       throw new Error(
-        "API key appears too short. Please check you copied the full key from https://aistudio.google.com/app/apikey",
+        "Invalid Gemini API key format. Gemini API keys should start with 'AIza' or 'AQ.' and be an active Google API key. Get a new key from https://aistudio.google.com/app/apikey",
       );
     }
 
@@ -1989,166 +2097,149 @@
     const maxRetries = 3;
     const baseDelay = 2000; // 2 seconds for better user experience
 
-    for (let attempt = 0; attempt < maxRetries; attempt++) {
-      console.log(`7. Attempt ${attempt + 1}/${maxRetries}`);
+    let lastError = null;
+    for (let keyAttempt = 0; keyAttempt < apiKeys.length; keyAttempt++) {
+      if (keyAttempt > 0) {
+        currentIndex = (currentIndex + 1) % apiKeys.length;
+        apiKey = apiKeys[currentIndex];
+        console.log(
+          `Switching to Gemini API key ${currentIndex + 1}/${apiKeys.length}`,
+        );
+        await setCurrentGeminiKeyIndex(currentIndex);
+      }
 
-      try {
-        const fetchOptions = {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(body),
-        };
+      if (!validateKey(apiKey)) {
+        console.warn("Skipping invalid Gemini API key format", { apiKey });
+        await markGeminiKeyAsFailed(apiKey);
+        continue;
+      }
 
-        console.log("8. Fetch options:", {
-          method: fetchOptions.method,
-          headers: fetchOptions.headers,
-          bodyLength: fetchOptions.body.length,
-        });
+      for (let attempt = 0; attempt < maxRetries; attempt++) {
+        console.log(`Gemini key attempt ${attempt + 1}/${maxRetries}`);
 
-        const res = await fetch(`${url}?key=${apiKey}`, fetchOptions);
-
-        console.log("9. Response received:", {
-          status: res.status,
-          statusText: res.statusText,
-          headers: Object.fromEntries(res.headers.entries()),
-          ok: res.ok,
-        });
-
-        const rawText = await res.text();
-        console.log("10. Raw response text:", rawText);
-
-        let data;
         try {
-          data = JSON.parse(rawText);
-          console.log("11. Parsed JSON data:", data);
-        } catch (error) {
-          console.error("11. JSON parse error:", error);
-          data = null;
-        }
+          const fetchOptions = {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(body),
+          };
 
-        if (!res.ok) {
-          const apiErr =
-            data && data.error && typeof data.error.message === "string"
-              ? data.error.message
+          const res = await fetch(`${url}?key=${apiKey}`, fetchOptions);
+          console.log("9. Response received:", {
+            status: res.status,
+            statusText: res.statusText,
+            ok: res.ok,
+          });
+
+          const rawText = await res.text();
+          console.log("10. Raw response text:", rawText);
+          let data;
+          try {
+            data = JSON.parse(rawText);
+          } catch (error) {
+            console.error("11. JSON parse error:", error);
+            data = null;
+          }
+
+          if (!res.ok) {
+            const apiErr =
+              data && data.error && typeof data.error.message === "string"
+                ? data.error.message
+                : rawText || "Unknown Gemini error";
+            console.log("12. API Error details:", {
+              status: res.status,
+              apiError: apiErr,
+              errorData: data && data.error,
+            });
+
+            const isInvalidKey =
+              res.status === 401 ||
+              /invalid.*key|missing.*key|unauthorized/i.test(apiErr);
+            const isRateLimited = res.status === 429;
+            const isBlocked = res.status === 403;
+            const isRetryable =
+              res.status === 503 ||
+              (res.status >= 500 &&
+                /high demand|temporarily unavailable/i.test(apiErr));
+
+            if (isInvalidKey) {
+              await markGeminiKeyAsFailed(apiKey);
+              console.log("Invalid Gemini key, trying next key...");
+              lastError = new Error(apiErr);
+              break;
+            }
+
+            if (isRateLimited && keyAttempt < apiKeys.length - 1) {
+              console.log("Gemini key rate limited, trying next key...");
+              lastError = new Error(apiErr);
+              break;
+            }
+
+            if (isBlocked) {
+              lastError = new Error(apiErr);
+              if (attempt < maxRetries - 1) {
+                const delay =
+                  baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+                await sleep(delay);
+                continue;
+              }
+              throw new Error(apiErr);
+            }
+
+            if (isRetryable && attempt < maxRetries - 1) {
+              const delay =
+                baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+              await sleep(delay);
+              continue;
+            }
+
+            const errorToThrow = new Error(
+              `Gemini request failed (${res.status}). ${apiErr}`,
+            );
+            lastError = errorToThrow;
+            throw errorToThrow;
+          }
+
+          const responseText =
+            data &&
+            data.candidates &&
+            data.candidates[0] &&
+            data.candidates[0].content &&
+            Array.isArray(data.candidates[0].content.parts)
+              ? data.candidates[0].content.parts
+                  .map((part) => part.text || "")
+                  .join("")
               : "";
 
-          console.log("12. API Error details:", {
-            status: res.status,
-            apiError: apiErr,
-            errorData: data && data.error,
-          });
-
-          // Check if this is a retryable error
-          const isRetryable =
-            res.status === 429 || // Rate limited
-            res.status === 503 || // Service unavailable
-            (res.status >= 500 &&
-              /high demand|currently experiencing/i.test(apiErr)) || // High demand message
-            (res.status === 0 && attempt < maxRetries - 1); // Network error (but not on last attempt)
-
-          console.log("13. Is retryable error:", {
-            isRetryable,
-            currentAttempt: attempt,
-            maxRetries: maxRetries - 1,
-          });
-
-          if (isRetryable && attempt < maxRetries - 1) {
-            const delay =
-              baseDelay * Math.pow(2, attempt) + Math.random() * 1000; // Exponential backoff with jitter
-            const retryMsg =
-              attempt === 0
-                ? `Gemini API busy. Retrying ${attempt + 1}/${maxRetries} in ${Math.round(delay / 1000)}s...`
-                : `Still busy. Retrying ${attempt + 1}/${maxRetries} in ${Math.round(delay / 1000)}s...`;
-            console.log("14. Retrying:", retryMsg);
-            // Show user-friendly retry message in UI
-            showRetryStatus(retryMsg);
-            await sleep(delay);
-            continue;
-          }
-
-          // Not retryable or last attempt - throw error
-          console.log("15. Final error - throwing exception");
-          let msg = mapGeminiError(res.status, apiErr);
-          if (apiErr && !/api[_-]?key/i.test(apiErr)) {
-            if (!(res.status === 400 && /unsupported.image/i.test(apiErr))) {
-              msg = msg + " " + apiErr.slice(0, 200);
-            }
-          }
-          throw new Error(msg.trim());
-        }
-
-        // Success - parse response
-        console.log("16. Parsing successful response");
-        const candidate = data && data.candidates && data.candidates[0];
-        console.log("17. Candidate data:", candidate);
-
-        const content = candidate && candidate.content;
-        console.log("18. Content data:", content);
-
-        const parts = content && content.parts;
-        console.log("19. Parts data:", parts);
-
-        if (parts && parts.length > 0) {
-          const textParts = parts.filter((p) => p && p.text).map((p) => p.text);
-          console.log("20. Text parts:", textParts);
-
-          // Track successful Gemini call
           await trackGeminiCall();
+          await setCurrentGeminiKeyIndex(currentIndex);
 
-          const finalText = stripFencesAndPreamble(textParts.join("\n"));
-          console.log("21. Final text to return:", finalText);
-          console.log("=== Gemini API Request Complete ===\n");
+          if (responseText) {
+            return stripFencesAndPreamble(responseText);
+          }
 
-          return finalText;
-        }
-
-        console.log("20. No text parts found, returning empty string");
-
-        // Track successful Gemini call (even if empty response)
-        await trackGeminiCall();
-
-        console.log("=== Gemini API Request Complete (Empty) ===\n");
-        return "";
-      } catch (error) {
-        console.log("22. Exception caught:", {
-          error: error,
-          message: error.message,
-          stack: error.stack ? error.stack.substring(0, 500) : "no stack",
-          attempt: attempt,
-          isLastAttempt: attempt === maxRetries - 1,
-        });
-
-        // If this is the last attempt, re-throw the error
-        if (attempt === maxRetries - 1) {
-          console.log("23. Last attempt failed, throwing error");
-          console.log("=== Gemini API Request Failed ===\n");
-          throw error;
-        }
-
-        // For network errors, retry with exponential backoff
-        if (
-          error.message.includes("network") ||
-          error.message.includes("fetch")
-        ) {
+          throw new Error("Gemini returned no usable text response.");
+        } catch (error) {
+          console.log("Exception:", error.message);
+          lastError = error;
+          if (attempt === maxRetries - 1) {
+            break;
+          }
           const delay = baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
-          console.log(
-            `24. Network error - retry ${attempt + 1}/${maxRetries} after ${delay}ms`,
-          );
           await sleep(delay);
-          continue;
         }
-
-        // For other errors, don't retry
-        console.log("25. Non-retryable error, throwing immediately");
-        console.log("=== Gemini API Request Failed ===\n");
-        throw error;
       }
     }
 
-    console.log("26. All retries exhausted");
-    throw new Error("Gemini API request failed after all retries.");
+    throw new Error(
+      `Gemini API request failed with all available keys. ${
+        lastError && lastError.message
+          ? `Last error: ${lastError.message}`
+          : "Check your Gemini keys and account status."
+      }`,
+    );
   }
 
   function injectModalStyles() {
@@ -2513,7 +2604,11 @@
               data && data.error
                 ? String(data.error.code || data.error.type || "").toLowerCase()
                 : "";
-            console.log("API Error:", errMsg, errorCode ? `(${errorCode})` : "");
+            console.log(
+              "API Error:",
+              errMsg,
+              errorCode ? `(${errorCode})` : "",
+            );
 
             const unsupportedModelError =
               isOpenAIModelUnsupported(errMsg, errorCode) &&
@@ -2533,8 +2628,7 @@
             }
 
             const quotaExhausted = isOpenAIQuotaExhausted(errMsg, errorCode);
-            const isRateLimited =
-              res.status === 429 && !quotaExhausted;
+            const isRateLimited = res.status === 429 && !quotaExhausted;
 
             // Invalid key or out of credits — rotate to next key
             if (
@@ -2573,7 +2667,10 @@
             }
 
             let msg = mapOpenAIError(res.status, errMsg, errorCode);
-            if (keyAttempt < apiKeys.length - 1 && (res.status === 401 || quotaExhausted || isRateLimited)) {
+            if (
+              keyAttempt < apiKeys.length - 1 &&
+              (res.status === 401 || quotaExhausted || isRateLimited)
+            ) {
               msg += " (trying next API key...)";
             }
 
@@ -2719,7 +2816,9 @@
       /invalid.*model|unsupported.*model|model.*not.*available|not.*found|model.*does.*not.*exist|permission.*model|model.*not.*allowed|not.*enabled|not.*authorized|not.*have.*access|access.*denied|permission.*denied|not.*available.*for.*your.*account/.test(
         message,
       ) ||
-      /model_not_found|resource_not_found|permission_denied|not_authorized|access_denied|model_not_allowed/.test(code)
+      /model_not_found|resource_not_found|permission_denied|not_authorized|access_denied|model_not_allowed/.test(
+        code,
+      )
     );
   }
 
@@ -3003,6 +3102,7 @@
               '<button type="button" class="far-ia-btn far-ia-cost-btn" data-a="cost">💰 Cost</button>' +
               "</div>" +
               '<button type="button" class="far-ia-btn" data-a="quote">📋 Quote — structured quote; no invented specifics</button>' +
+              '<button type="button" class="far-ia-btn" data-a="cursorPrompt">🧠 Cursor AI prompt — software engineer style</button>' +
               '<button type="button" class="far-ia-btn" data-a="task">🔍 Task Explain — Bangla + English summary (new window)</button>' +
               '<button type="button" class="far-ia-btn" data-a="analysis">📊 Analyze — communication improvement score</button>' +
               "</div>" +

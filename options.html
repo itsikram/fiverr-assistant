@@ -231,21 +231,36 @@
                 <option value="gemini">Gemini only</option>
               </select>
               <small
-                style="color: #64748b; font-weight: 400; display: block; margin-top: 6px;"
-              >Choose which AI backend to use. "Both" will fall back to Gemini if OpenAI fails.</small>
+                style="
+                  color: #64748b;
+                  font-weight: 400;
+                  display: block;
+                  margin-top: 6px;
+                "
+                >Choose which AI backend to use. "Both" will fall back to Gemini
+                if OpenAI fails.</small
+              >
             </label>
             <label>
-              <span>Gemini API key</span>
+              <span>Gemini API keys (one per line or comma-separated)</span>
               <textarea
                 id="geminiApiKey"
                 name="geminiApiKey"
-                rows="2"
+                rows="4"
                 spellcheck="false"
-                placeholder="AIza..."
+                placeholder="AIza...&#10;AQ...."
               ></textarea>
               <small
-                style="color: #64748b; font-weight: 400; display: block; margin-top: 6px;"
-              >Enter your Gemini API key here if you want to use Gemini for replies.</small>
+                style="
+                  color: #64748b;
+                  font-weight: 400;
+                  display: block;
+                  margin-top: 6px;
+                "
+                >Add multiple Gemini keys to enable automatic failover when one
+                key is rate limited or exhausted. Keys are tried in
+                order.</small
+              >
             </label>
             <label>
               <span>Gemini model</span>
@@ -256,8 +271,15 @@
                 <option value="gemini-1.5-flash">gemini-1.5-flash</option>
               </select>
               <small
-                style="color: #64748b; font-weight: 400; display: block; margin-top: 6px;"
-              >Choose the Gemini model to use when Gemini is selected or used for failover.</small>
+                style="
+                  color: #64748b;
+                  font-weight: 400;
+                  display: block;
+                  margin-top: 6px;
+                "
+                >Choose the Gemini model to use when Gemini is selected or used
+                for failover.</small
+              >
             </label>
             <label>
               <span>Inbox message list selector (optional override)</span>

@@ -30,7 +30,7 @@
     inboxTranslateDebounceMs: "500",
     openaiApiKey: [],
     openaiModel: "gpt-4o-mini",
-    geminiApiKey: "",
+    geminiApiKey: [],
     geminiModel: "gemini-2.5-flash",
     aiPlatform: "auto",
     disableImageProcessing: false,
@@ -101,7 +101,10 @@
 
       if (field.type === "checkbox") {
         field.checked = coerceBoolean(value, Boolean(defaultSettings[key]));
-      } else if (key === "openaiApiKey" && Array.isArray(value)) {
+      } else if (
+        (key === "openaiApiKey" || key === "geminiApiKey") &&
+        Array.isArray(value)
+      ) {
         // Convert array back to textarea format
         field.value = value.filter((k) => k && k.trim()).join("\n");
       } else {
@@ -133,16 +136,16 @@
     }
 
     // Parse multiple API keys from textarea or comma-separated
-    if (values.openaiApiKey) {
-      const keyText = String(values.openaiApiKey || "");
-      const keys = keyText
+    const parseKeyList = (raw) => {
+      if (!raw) return [];
+      return String(raw || "")
         .split(/[\n,]/)
         .map((k) => k.trim())
         .filter((k) => k.length > 0);
-      values.openaiApiKey = keys;
-    } else {
-      values.openaiApiKey = [];
-    }
+    };
+
+    values.openaiApiKey = parseKeyList(values.openaiApiKey);
+    values.geminiApiKey = parseKeyList(values.geminiApiKey);
 
     return values;
   };
