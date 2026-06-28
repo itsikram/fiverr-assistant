@@ -1880,14 +1880,16 @@
    */
   function showRetryStatus(message) {
     // Try to find active modal and update loading text
-    const activeModal = document.querySelector(".far-ia-task-modal");
-    if (activeModal) {
-      const loadingText = activeModal.querySelector(".far-ia-loading-text");
+    const modals = document.querySelectorAll(
+      ".far-ia-task-modal, .far-ia-backdrop",
+    );
+    modals.forEach((modal) => {
+      const loadingText = modal.querySelector(".far-ia-loading-text");
       if (loadingText) {
         loadingText.textContent = message;
         loadingText.style.display = "block";
       }
-    }
+    });
 
     // Also try to find custom offer button
     const customOfferBtn = document.querySelector(".far-custom-offer-ai-btn");
@@ -2448,12 +2450,14 @@
         options && typeof options.temperature === "number"
           ? options.temperature
           : 0.7,
-      max_tokens: 8192,
+      max_tokens:
+        options && typeof options.max_tokens === "number"
+          ? options.max_tokens
+          : 1024,
     };
 
     const url = "https://api.openai.com/v1/chat/completions";
-    const maxRetries = 3;
-    const baseDelay = 2000;
+    const maxRetries = 5;
 
     // Try current key, then rotate through other keys if this one fails
     for (let keyAttempt = 0; keyAttempt < apiKeys.length; keyAttempt++) {
@@ -2499,41 +2503,55 @@
               (data && data.error && data.error.message) ||
               rawText ||
               `HTTP ${res.status}`;
-            console.log("API Error:", errMsg);
+            const errorCode =
+              data && data.error
+                ? String(data.error.code || data.error.type || "").toLowerCase()
+                : "";
+            console.log("API Error:", errMsg, errorCode ? `(${errorCode})` : "");
 
-            // Check if retryable with same key
-            const isRetryable =
-              res.status === 429 || res.status === 503 || res.status >= 500;
+            const quotaExhausted = isOpenAIQuotaExhausted(errMsg, errorCode);
+            const isRateLimited =
+              res.status === 429 && !quotaExhausted;
 
+            // Invalid key or out of credits — rotate to next key
             if (
               res.status === 401 ||
-              (res.status === 429 && keyAttempt < apiKeys.length - 1)
+              quotaExhausted ||
+              (isRateLimited && keyAttempt < apiKeys.length - 1)
             ) {
-              // Invalid key or rate limited - mark as failed and try next key
-              await markKeyAsFailed(keyToUse);
+              if (res.status === 401 || quotaExhausted) {
+                await markKeyAsFailed(keyToUse);
+              }
               if (res.status === 401) {
                 console.log("Invalid API key, trying next key...");
-                break; // Break inner retry loop, try next key in outer loop
-              } else if (res.status === 429) {
+                break;
+              }
+              if (quotaExhausted) {
+                console.log("Quota exhausted on this key, trying next key...");
+                break;
+              }
+              if (isRateLimited) {
                 console.log("Rate limited, trying next key...");
                 break;
               }
             }
 
+            const isRetryable =
+              isRateLimited || res.status === 503 || res.status >= 500;
+
             if (isRetryable && attempt < maxRetries - 1) {
-              const delay =
-                baseDelay * Math.pow(2, attempt) + Math.random() * 1000;
+              const delay = getOpenAIRetryDelayMs(res, attempt, res.status);
               console.log(`Retrying after ${delay}ms`);
               showRetryStatus(
-                `OpenAI API busy. Retrying ${attempt + 1}/${maxRetries} in ${Math.round(delay / 1000)}s...`,
+                `OpenAI rate limit hit. Retrying ${attempt + 1}/${maxRetries} in ${Math.round(delay / 1000)}s...`,
               );
               await sleep(delay);
               continue;
             }
 
-            let msg = mapOpenAIError(res.status, errMsg);
-            if (keyAttempt < apiKeys.length - 1) {
-              msg += ` (trying next API key...)`;
+            let msg = mapOpenAIError(res.status, errMsg, errorCode);
+            if (keyAttempt < apiKeys.length - 1 && (res.status === 401 || quotaExhausted || isRateLimited)) {
+              msg += " (trying next API key...)";
             }
 
             if (res.status === 401) {
@@ -2603,7 +2621,32 @@
   /**
    * Map OpenAI error codes to helpful messages
    */
-  function mapOpenAIError(status, bodySnippet) {
+  function isOpenAIQuotaExhausted(errMsg, errorCode) {
+    return (
+      /insufficient_quota|billing_hard_limit|quota_exceeded/.test(errorCode) ||
+      /exceeded.*quota|insufficient.*quota|billing.*limit|out of credits/i.test(
+        String(errMsg || ""),
+      )
+    );
+  }
+
+  function getOpenAIRetryDelayMs(res, attempt, status) {
+    const retryAfter =
+      res && res.headers && res.headers.get
+        ? res.headers.get("retry-after")
+        : null;
+    if (retryAfter) {
+      const seconds = parseInt(retryAfter, 10);
+      if (!Number.isNaN(seconds) && seconds > 0) {
+        return seconds * 1000;
+      }
+    }
+    // Free tier is often ~3 requests/minute; wait longer on 429
+    const base = status === 429 ? 20000 : 2000;
+    return base * Math.pow(2, attempt) + Math.random() * 1000;
+  }
+
+  function mapOpenAIError(status, bodySnippet, errorCode) {
     if (status === 401) {
       return "Unauthorized (401). Invalid OpenAI API key. Check your key at https://platform.openai.com/api-keys";
     }
@@ -2611,7 +2654,16 @@
       return "Forbidden (403). Your account or API key doesn't have access. Check https://platform.openai.com/account/billing";
     }
     if (status === 429) {
-      return "Rate limited (429). You've hit the API rate limit. Wait a moment and try again, or upgrade your plan.";
+      if (isOpenAIQuotaExhausted(bodySnippet, errorCode || "")) {
+        return (
+          "OpenAI quota exhausted (429). This key has no free credits left. " +
+          "Add another key in settings, add billing at https://platform.openai.com/account/billing, or wait for quota reset."
+        );
+      }
+      return (
+        "Rate limited (429). Free-tier keys allow only a few requests per minute. " +
+        "Wait 30–60 seconds and try again. Add multiple keys (one per line in settings) from different OpenAI accounts for automatic failover."
+      );
     }
     if (status === 500) {
       return "OpenAI server error (500). Their servers are having issues. Please try again in a moment.";
@@ -2633,10 +2685,9 @@
    */
   async function generateWithAI(getSettings, messages, options) {
     const s = getSettings();
+    const hasOpenAI = getApiKeyList(s).length > 0;
     const hasGemini =
       s && s.geminiApiKey && String(s.geminiApiKey).trim().length > 0;
-    const hasOpenAI =
-      s && s.openaiApiKey && String(s.openaiApiKey).trim().length > 0;
 
     if (hasOpenAI) {
       console.log("Using OpenAI API...");

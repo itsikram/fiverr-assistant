@@ -2287,6 +2287,8 @@
     inboxTranslateEnabled: "true",
     inboxTranslateClientLang: "",
     inboxTranslateDebounceMs: "500",
+    openaiApiKey: [],
+    openaiModel: "gpt-4o-mini",
     geminiApiKey: "",
     geminiModel: "gemini-2.5-flash",
     disableImageProcessing: false,
@@ -3538,6 +3540,8 @@
       window.FarInboxAi.attachToolbarButton(toolbarRow, sendTa, root, () => ({
         profile: settings.profile,
         profileUsername: settings.profileUsername,
+        openaiApiKey: settings.openaiApiKey,
+        openaiModel: settings.openaiModel,
         geminiApiKey: settings.geminiApiKey,
         geminiModel: settings.geminiModel,
         disableImageProcessing: settings.disableImageProcessing,
@@ -3788,6 +3792,8 @@
       window.FarInboxAi.startCustomOfferDescriptionHelper(() => ({
         profile: settings.profile,
         profileUsername: settings.profileUsername,
+        openaiApiKey: settings.openaiApiKey,
+        openaiModel: settings.openaiModel,
         geminiApiKey: settings.geminiApiKey,
         geminiModel: settings.geminiModel,
         disableImageProcessing: settings.disableImageProcessing,
