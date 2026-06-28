@@ -2458,6 +2458,7 @@
 
     const url = "https://api.openai.com/v1/chat/completions";
     const maxRetries = 5;
+    const baseDelay = 2000; // 2 seconds base delay for exponential backoff
 
     // Try current key, then rotate through other keys if this one fails
     for (let keyAttempt = 0; keyAttempt < apiKeys.length; keyAttempt++) {
