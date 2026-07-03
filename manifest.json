@@ -2,7 +2,7 @@
   "manifest_version": 2,
   "name": "Fiverr Assistant",
   "short_name": "Fiverr Assistant",
-  "version": "6.7",
+  "version": "6.8",
   "description": "Fiverr assistant for inbox monitoring, client alerts, auto-reload, and AI-powered replies for Fiverr sellers.",
   "background": {
     "scripts": ["background.js"],
