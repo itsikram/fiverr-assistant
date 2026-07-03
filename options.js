@@ -2019,12 +2019,19 @@
 
         const openaiContainer = document.getElementById("openaiKeysContainer");
         if (openaiContainer) {
+          openaiContainer.textContent = "";
           if (openaiKeys.length === 0) {
-            openaiContainer.innerHTML =
-              '<p style="color: #64748b; text-align: center;">No OpenAI keys configured. Add keys in the General tab.</p>';
+            const msg = document.createElement("p");
+            msg.style.color = "#64748b";
+            msg.style.textAlign = "center";
+            msg.textContent = "No OpenAI keys configured. Add keys in the General tab.";
+            openaiContainer.appendChild(msg);
           } else {
-            let html =
-              '<div style="display: flex; flex-direction: column; gap: 8px;">';
+            const wrapper = document.createElement("div");
+            wrapper.style.display = "flex";
+            wrapper.style.flexDirection = "column";
+            wrapper.style.gap = "8px";
+
             openaiKeys.forEach((key, idx) => {
               const isFailed = failedKeys.includes(idx);
               const isActive = idx === openaiKeyIndex && !isFailed;
@@ -2045,19 +2052,51 @@
                 : isActive
                   ? "#86efac"
                   : "#d1d5db";
+              const statusColor = isFailed
+                ? "#dc2626"
+                : isActive
+                  ? "#16a34a"
+                  : "#6b7280";
 
-              html += `<div style="padding: 10px; background: ${bgColor}; border-left: 3px solid ${borderColor}; border-radius: 4px;">
-                <div style="display: flex; justify-content: space-between; align-items: center;">
-                  <div>
-                    <div style="font-size: 12px; color: #64748b;">Key ${idx + 1}: ${keyPreview}</div>
-                    <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Calls: <strong>${callCount}</strong></div>
-                  </div>
-                  <div style="font-size: 14px; font-weight: bold; color: ${isFailed ? "#dc2626" : isActive ? "#16a34a" : "#6b7280"};">${statusEmoji}</div>
-                </div>
-              </div>`;
+              const keyBox = document.createElement("div");
+              keyBox.style.padding = "10px";
+              keyBox.style.background = bgColor;
+              keyBox.style.borderLeft = `3px solid ${borderColor}`;
+              keyBox.style.borderRadius = "4px";
+
+              const row = document.createElement("div");
+              row.style.display = "flex";
+              row.style.justifyContent = "space-between";
+              row.style.alignItems = "center";
+
+              const info = document.createElement("div");
+              const keyLabel = document.createElement("div");
+              keyLabel.style.fontSize = "12px";
+              keyLabel.style.color = "#64748b";
+              keyLabel.textContent = `Key ${idx + 1}: ${keyPreview}`;
+
+              const callsLabel = document.createElement("div");
+              callsLabel.style.fontSize = "11px";
+              callsLabel.style.color = "#64748b";
+              callsLabel.style.marginTop = "2px";
+              callsLabel.textContent = `Calls: ${callCount}`;
+
+              info.appendChild(keyLabel);
+              info.appendChild(callsLabel);
+
+              const status = document.createElement("div");
+              status.style.fontSize = "14px";
+              status.style.fontWeight = "bold";
+              status.style.color = statusColor;
+              status.textContent = statusEmoji;
+
+              row.appendChild(info);
+              row.appendChild(status);
+              keyBox.appendChild(row);
+              wrapper.appendChild(keyBox);
             });
-            html += "</div>";
-            openaiContainer.innerHTML = html;
+
+            openaiContainer.appendChild(wrapper);
           }
         }
 
@@ -2065,21 +2104,53 @@
         const geminiKey = data.geminiApiKey || "";
         const geminiContainer = document.getElementById("geminiKeyContainer");
         if (geminiContainer) {
+          geminiContainer.textContent = "";
           if (!geminiKey) {
-            geminiContainer.innerHTML =
-              '<p style="color: #64748b; text-align: center;">No Gemini key configured. Add key in the General tab.</p>';
+            const msg = document.createElement("p");
+            msg.style.color = "#64748b";
+            msg.style.textAlign = "center";
+            msg.textContent = "No Gemini key configured. Add key in the General tab.";
+            geminiContainer.appendChild(msg);
           } else {
             const geminiCallCount = data.farGeminiCallCount || 0;
             const keyPreview = geminiKey.substring(0, 20) + "...";
-            geminiContainer.innerHTML = `<div style="padding: 10px; background: #e3f2fd; border-left: 3px solid #2196f3; border-radius: 4px;">
-              <div style="display: flex; justify-content: space-between; align-items: center;">
-                <div>
-                  <div style="font-size: 12px; color: #64748b;">Key: ${keyPreview}</div>
-                  <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Calls: <strong>${geminiCallCount}</strong></div>
-                </div>
-                <div style="font-size: 14px; font-weight: bold; color: #2196f3;">✅ Active</div>
-              </div>
-            </div>`;
+
+            const keyBox = document.createElement("div");
+            keyBox.style.padding = "10px";
+            keyBox.style.background = "#e3f2fd";
+            keyBox.style.borderLeft = "3px solid #2196f3";
+            keyBox.style.borderRadius = "4px";
+
+            const row = document.createElement("div");
+            row.style.display = "flex";
+            row.style.justifyContent = "space-between";
+            row.style.alignItems = "center";
+
+            const info = document.createElement("div");
+            const keyLabel = document.createElement("div");
+            keyLabel.style.fontSize = "12px";
+            keyLabel.style.color = "#64748b";
+            keyLabel.textContent = `Key: ${keyPreview}`;
+
+            const callsLabel = document.createElement("div");
+            callsLabel.style.fontSize = "11px";
+            callsLabel.style.color = "#64748b";
+            callsLabel.style.marginTop = "2px";
+            callsLabel.textContent = `Calls: ${geminiCallCount}`;
+
+            info.appendChild(keyLabel);
+            info.appendChild(callsLabel);
+
+            const status = document.createElement("div");
+            status.style.fontSize = "14px";
+            status.style.fontWeight = "bold";
+            status.style.color = "#2196f3";
+            status.textContent = "✅ Active";
+
+            row.appendChild(info);
+            row.appendChild(status);
+            keyBox.appendChild(row);
+            geminiContainer.appendChild(keyBox);
           }
         }
 
@@ -2106,7 +2177,7 @@
         // Key Status Table
         const tableBody = document.getElementById("keyStatusTable");
         if (tableBody) {
-          let tableHtml = "";
+          tableBody.textContent = "";
 
           // OpenAI keys rows
           openaiKeys.forEach((key, idx) => {
@@ -2125,33 +2196,108 @@
                 ? "#16a34a"
                 : "#6b7280";
 
-            tableHtml += `<tr style="border-bottom: 1px solid #e5e7eb;">
-              <td style="padding: 8px; border: 1px solid #cbd5e1;">OpenAI</td>
-              <td style="padding: 8px; border: 1px solid #cbd5e1; font-family: monospace; font-size: 11px;">${keyPreview}</td>
-              <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center; color: ${statusColor};">${statusEmoji}</td>
-              <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">${idx + 1}</td>
-              <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold;">${callCount}</td>
-            </tr>`;
+            const row = document.createElement("tr");
+            row.style.borderBottom = "1px solid #e5e7eb";
+
+            const tdPlatform = document.createElement("td");
+            tdPlatform.style.padding = "8px";
+            tdPlatform.style.border = "1px solid #cbd5e1";
+            tdPlatform.textContent = "OpenAI";
+
+            const tdKey = document.createElement("td");
+            tdKey.style.padding = "8px";
+            tdKey.style.border = "1px solid #cbd5e1";
+            tdKey.style.fontFamily = "monospace";
+            tdKey.style.fontSize = "11px";
+            tdKey.textContent = keyPreview;
+
+            const tdStatus = document.createElement("td");
+            tdStatus.style.padding = "8px";
+            tdStatus.style.border = "1px solid #cbd5e1";
+            tdStatus.style.textAlign = "center";
+            tdStatus.style.color = statusColor;
+            tdStatus.textContent = statusEmoji;
+
+            const tdIndex = document.createElement("td");
+            tdIndex.style.padding = "8px";
+            tdIndex.style.border = "1px solid #cbd5e1";
+            tdIndex.style.textAlign = "center";
+            tdIndex.textContent = idx + 1;
+
+            const tdCalls = document.createElement("td");
+            tdCalls.style.padding = "8px";
+            tdCalls.style.border = "1px solid #cbd5e1";
+            tdCalls.style.textAlign = "center";
+            tdCalls.style.fontWeight = "bold";
+            tdCalls.textContent = callCount;
+
+            row.appendChild(tdPlatform);
+            row.appendChild(tdKey);
+            row.appendChild(tdStatus);
+            row.appendChild(tdIndex);
+            row.appendChild(tdCalls);
+            tableBody.appendChild(row);
           });
 
           // Gemini key row
           if (geminiKey) {
             const geminiCallCount = data.farGeminiCallCount || 0;
             const keyPreview = geminiKey.substring(0, 15) + "...";
-            tableHtml += `<tr style="border-bottom: 1px solid #e5e7eb;">
-              <td style="padding: 8px; border: 1px solid #cbd5e1;">Gemini</td>
-              <td style="padding: 8px; border: 1px solid #cbd5e1; font-family: monospace; font-size: 11px;">${keyPreview}</td>
-              <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center; color: #2196f3;">✅ Active</td>
-              <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center;">1</td>
-              <td style="padding: 8px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold;">${geminiCallCount}</td>
-            </tr>`;
+
+            const row = document.createElement("tr");
+            row.style.borderBottom = "1px solid #e5e7eb";
+
+            const tdPlatform = document.createElement("td");
+            tdPlatform.style.padding = "8px";
+            tdPlatform.style.border = "1px solid #cbd5e1";
+            tdPlatform.textContent = "Gemini";
+
+            const tdKey = document.createElement("td");
+            tdKey.style.padding = "8px";
+            tdKey.style.border = "1px solid #cbd5e1";
+            tdKey.style.fontFamily = "monospace";
+            tdKey.style.fontSize = "11px";
+            tdKey.textContent = keyPreview;
+
+            const tdStatus = document.createElement("td");
+            tdStatus.style.padding = "8px";
+            tdStatus.style.border = "1px solid #cbd5e1";
+            tdStatus.style.textAlign = "center";
+            tdStatus.style.color = "#2196f3";
+            tdStatus.textContent = "✅ Active";
+
+            const tdIndex = document.createElement("td");
+            tdIndex.style.padding = "8px";
+            tdIndex.style.border = "1px solid #cbd5e1";
+            tdIndex.style.textAlign = "center";
+            tdIndex.textContent = "1";
+
+            const tdCalls = document.createElement("td");
+            tdCalls.style.padding = "8px";
+            tdCalls.style.border = "1px solid #cbd5e1";
+            tdCalls.style.textAlign = "center";
+            tdCalls.style.fontWeight = "bold";
+            tdCalls.textContent = geminiCallCount;
+
+            row.appendChild(tdPlatform);
+            row.appendChild(tdKey);
+            row.appendChild(tdStatus);
+            row.appendChild(tdIndex);
+            row.appendChild(tdCalls);
+            tableBody.appendChild(row);
           }
 
-          if (!tableHtml) {
-            tableHtml =
-              '<tr><td colspan="5" style="padding: 12px; text-align: center; color: #64748b;">No API keys configured.</td></tr>';
+          if (tableBody.children.length === 0) {
+            const row = document.createElement("tr");
+            const td = document.createElement("td");
+            td.colSpan = 5;
+            td.style.padding = "12px";
+            td.style.textAlign = "center";
+            td.style.color = "#64748b";
+            td.textContent = "No API keys configured.";
+            row.appendChild(td);
+            tableBody.appendChild(row);
           }
-          tableBody.innerHTML = tableHtml;
         }
       } catch (err) {
         console.warn("Error updating API usage display:", err);
@@ -2225,10 +2371,18 @@
 
     const renderReloadLogs = (logs) => {
       if (!reloadLogsBody) return;
-      reloadLogsBody.innerHTML = "";
+      while (reloadLogsBody.firstChild) {
+        reloadLogsBody.removeChild(reloadLogsBody.firstChild);
+      }
       if (!Array.isArray(logs) || logs.length === 0) {
-        reloadLogsBody.innerHTML =
-          '<tr><td colspan="2" style="padding:8px;color:#64748b;">No reload logs available.</td></tr>';
+        const tr = document.createElement("tr");
+        const td = document.createElement("td");
+        td.colSpan = 2;
+        td.style.padding = "8px";
+        td.style.color = "#64748b";
+        td.textContent = "No reload logs available.";
+        tr.appendChild(td);
+        reloadLogsBody.appendChild(tr);
         if (reloadLogsCount) reloadLogsCount.textContent = "";
         return;
       }

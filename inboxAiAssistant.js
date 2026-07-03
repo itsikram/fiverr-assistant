@@ -1746,28 +1746,28 @@
     }
   }
 
-  /**
   async function generateCommunicationAnalysis(getSettings) {
     const sellerName = getSellerDisplayName(getSettings);
     const { text: transcript, imageUrls } = buildInboxTranscript(getSettings);
-    
+
     if (!transcript || transcript.trim().length === 0) {
       return "No conversation found to analyze. Please start a conversation with a buyer first.";
     }
-    
+
     const userContent = await buildUserContentWithImages(
-      "Fiverr conversation to analyze for communication optimization and success score improvement:\n\n" + transcript,
+      "Fiverr conversation to analyze for communication optimization and success score improvement:\n\n" +
+        transcript,
       imageUrls,
-      getSettings
+      getSettings,
     );
-    
+
     return generateWithAI(
       getSettings,
       [
         { role: "system", content: COMMUNICATION_ANALYSIS_SYSTEM_PROMPT },
         { role: "user", content: userContent },
       ],
-      { temperature: 0.3 }
+      { temperature: 0.3 },
     );
   }
 
@@ -2894,13 +2894,68 @@
   function attachToolbarButton(toolbarRow, sendTa, _root, getSettings) {
     injectModalStyles();
 
-    const btn = document.createElement("button");
-    btn.type = "button";
-    btn.className = "far-ia-ai-toggle";
-    btn.title = "AI reply assistant";
-    btn.setAttribute("aria-label", "Open AI reply assistant");
-    btn.innerHTML =
-      '<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path stroke-linecap="round" stroke-linejoin="round" d="M12 18v-5M9 21h6M8 5a4 4 0 1 1 8 0v3H8V5z"/></svg>';
+    function createEl(tag, options = {}) {
+      const el = document.createElement(tag);
+      if (options.className) el.className = options.className;
+      if (options.type) el.type = options.type;
+      if (options.id) el.id = options.id;
+      if (options.textContent != null) el.textContent = options.textContent;
+      if (options.placeholder) el.placeholder = options.placeholder;
+      if (options.rows != null) el.rows = options.rows;
+      if (options.cols != null) el.cols = options.cols;
+      if (options.readOnly) el.readOnly = true;
+      if (options.style) el.style.cssText = options.style;
+      if (options.title) el.title = options.title;
+      if (options.ariaLabel) el.setAttribute("aria-label", options.ariaLabel);
+      if (options.htmlFor) el.htmlFor = options.htmlFor;
+      if (options.role) el.setAttribute("role", options.role);
+      if (options.dataset) {
+        Object.entries(options.dataset).forEach(([key, value]) => {
+          el.dataset[key] = value;
+        });
+      }
+      if (options.attrs) {
+        Object.entries(options.attrs).forEach(([key, value]) => {
+          el.setAttribute(key, value);
+        });
+      }
+      return el;
+    }
+
+    function clearChildren(el) {
+      while (el.firstChild) {
+        el.removeChild(el.firstChild);
+      }
+    }
+
+    const btn = createEl("button", {
+      type: "button",
+      className: "far-ia-ai-toggle",
+      title: "AI reply assistant",
+      ariaLabel: "Open AI reply assistant",
+    });
+    const icon = createEl("svg", {
+      attrs: {
+        xmlns: "http://www.w3.org/2000/svg",
+        width: "20",
+        height: "20",
+        viewBox: "0 0 24 24",
+        fill: "none",
+        stroke: "currentColor",
+        "stroke-width": "1.7",
+        "aria-hidden": "true",
+      },
+    });
+    icon.appendChild(
+      createEl("path", {
+        attrs: {
+          "stroke-linecap": "round",
+          "stroke-linejoin": "round",
+          d: "M12 18v-5M9 21h6M8 5a4 4 0 1 1 8 0v3H8V5z",
+        },
+      }),
+    );
+    btn.appendChild(icon);
     toolbarRow.appendChild(btn);
 
     let backdrop = null;
@@ -2929,20 +2984,74 @@
     }
 
     async function openTaskExplanationModal(sellerPrivateNote) {
-      const wrap = document.createElement("div");
-      wrap.className = "far-ia-backdrop far-ia-task-modal";
-      wrap.setAttribute("role", "dialog");
+      const wrap = createEl("div", {
+        className: "far-ia-backdrop far-ia-task-modal",
+        role: "dialog",
+      });
       wrap.setAttribute("aria-modal", "true");
-      const dlg = document.createElement("div");
-      dlg.className = "far-ia-dialog";
-      dlg.innerHTML =
-        '<div class="far-ia-head"><span class="far-ia-title">Task explanation</span><button type="button" class="far-ia-btn" data-close style="max-width:80px">Close</button></div>' +
-        '<div class="far-ia-body"><p class="far-ia-small">Bangla and English summaries of what the buyer wants (from the thread).</p>' +
-        '<div class="far-ia-small" style="font-weight:600">BN</div>' +
-        '<div data-out-bn class="far-ia-out" readonly style="pointer-events:none;background:#f8fafc"></div>' +
-        '<div class="far-ia-small" style="font-weight:600">EN</div>' +
-        '<div data-out-en class="far-ia-out" readonly style="pointer-events:none;background:#f8fafc"></div>' +
-        '<p data-err class="far-ia-err" style="display:none"></p></div>';
+      const dlg = createEl("div", { className: "far-ia-dialog" });
+
+      const head = createEl("div", { className: "far-ia-head" });
+      head.appendChild(
+        createEl("span", {
+          className: "far-ia-title",
+          textContent: "Task explanation",
+        }),
+      );
+      const closeBtn = createEl("button", {
+        type: "button",
+        className: "far-ia-btn",
+        textContent: "Close",
+        style: "max-width:80px",
+      });
+      closeBtn.dataset.close = "";
+      head.appendChild(closeBtn);
+      dlg.appendChild(head);
+
+      const body = createEl("div", { className: "far-ia-body" });
+      body.appendChild(
+        createEl("p", {
+          className: "far-ia-small",
+          textContent:
+            "Bangla and English summaries of what the buyer wants (from the thread).",
+        }),
+      );
+      body.appendChild(
+        createEl("div", {
+          className: "far-ia-small",
+          style: "font-weight:600",
+          textContent: "BN",
+        }),
+      );
+      body.appendChild(
+        createEl("div", {
+          className: "far-ia-out",
+          dataset: { outBn: "" },
+          style: "pointer-events:none;background:#f8fafc",
+        }),
+      );
+      body.appendChild(
+        createEl("div", {
+          className: "far-ia-small",
+          style: "font-weight:600",
+          textContent: "EN",
+        }),
+      );
+      body.appendChild(
+        createEl("div", {
+          className: "far-ia-out",
+          dataset: { outEn: "" },
+          style: "pointer-events:none;background:#f8fafc",
+        }),
+      );
+      body.appendChild(
+        createEl("p", {
+          className: "far-ia-err",
+          dataset: { err: "" },
+          style: "display:none",
+        }),
+      );
+      dlg.appendChild(body);
       wrap.appendChild(dlg);
       document.body.appendChild(wrap);
 
@@ -3032,42 +3141,60 @@
       backdrop.className = "far-ia-backdrop";
       backdrop.setAttribute("role", "dialog");
       backdrop.setAttribute("aria-modal", "true");
-      const dlg = document.createElement("div");
-      dlg.className = "far-ia-dialog";
-      dlg.innerHTML =
-        '<div class="far-ia-head"><span class="far-ia-title">✨ AI Assistant</span><div class="far-ia-tabs"><button type="button" class="far-ia-tab-btn active" data-tab="generate">Generate Response</button><button type="button" class="far-ia-tab-btn" data-tab="chat">Live Chat</button></div><button type="button" class="far-ia-btn" data-x style="max-width:72px">Close</button></div>' +
-        '<div class="far-ia-body">' +
-        '<p class="far-ia-small">Uses the visible conversation as context. Buyer image attachments in the thread are included for vision-capable models (e.g. gemini-2.5-flash). Paste the output into Fiverr when ready.</p>' +
-        '<div class="far-ia-loading-text" style="color:#64748b; font-size:12px; margin-bottom:8px; display:none;"></div>' +
-        '<label class="far-ia-small" for="far-ia-seller-note" style="font-weight:600;color:#475569">Your note to the AI (optional)</label>' +
-        '<textarea id="far-ia-seller-note" class="far-ia-seller-note" data-seller-note rows="3" placeholder="Tone, constraints, price to mention or avoid, deadline, context not in the thread… Not sent to the buyer." aria-label="Private note for AI"></textarea>' +
-        '<div class="far-ia-presets">' +
-        '<button type="button" class="far-ia-btn" data-a="first">Generate first message — short welcome; invite requirements</button>' +
-        '<button type="button" class="far-ia-btn" data-a="reply">Generate professional response — reply to buyer’s last message</button>' +
-        '<button type="button" class="far-ia-btn" data-a="clarify">Generate clarification message — ask focused questions from the thread</button>' +
-        '<button type="button" class="far-ia-btn" data-a="analysis">Analyze communication — improve success score</button>' +
-        '<div class="far-ia-cost-row">' +
-        '<input type="text" class="far-ia-cost-input" data-cost-input placeholder="Optional: your price (e.g., $50, $25-50)" title="Optional: Enter your price or let AI estimate from task scope" aria-label="Your cost or price (optional)" />' +
-        '<button type="button" class="far-ia-btn far-ia-cost-btn" data-a="cost">Generate cost message</button>' +
-        "</div>" +
-        '<button type="button" class="far-ia-btn" data-a="quote">Generate quote message — structured quote; no invented specifics</button>' +
-        '<button type="button" class="far-ia-btn" data-a="cool">Generate cool-down message — de-escalation, empathy</button>' +
-        '<button type="button" class="far-ia-btn" data-a="postdelivery">After delivery — set expectations (revisions vs new work; reduce post-delivery scope creep)</button>' +
-        '<button type="button" class="far-ia-btn" data-a="task">Generate task explanation — Bangla + English (new window)</button>' +
-        "</div>" +
-        '<textarea class="far-ia-out" readonly placeholder="Generated message appears here…" data-out></textarea>' +
-        '<p class="far-ia-err" data-err style="display:none"></p>' +
-        '<div class="far-ia-small">Chat about this thread</div>' +
-        '<div class="far-ia-chat-log" data-chat-log></div>' +
-        '<div class="far-ia-chat-input-row">' +
-        '<textarea class="far-ia-chat-input" data-chat-in placeholder="Ask for a rewrite, shorter text, tone change…" rows="2"></textarea>' +
-        '<button type="button" class="far-ia-btn" data-chat-send style="max-width:88px">Send</button>' +
-        "</div>" +
-        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
-        '<button type="button" class="far-ia-btn" data-copy style="max-width:120px">Copy output</button>' +
-        '<button type="button" class="far-ia-btn" data-insert style="max-width:180px;display:none">Insert into message box</button>' +
-        "</div>" +
-        "</div>";
+      const dlg = createEl("div", { className: "far-ia-dialog" });
+
+      const head = createEl("div", { className: "far-ia-head" });
+      head.appendChild(
+        createEl("span", {
+          className: "far-ia-title",
+          textContent: "✨ AI Assistant",
+        }),
+      );
+      const tabs = createEl("div", { className: "far-ia-tabs" });
+      tabs.appendChild(
+        createEl("button", {
+          type: "button",
+          className: "far-ia-tab-btn active",
+          dataset: { tab: "generate" },
+          textContent: "Generate Response",
+        }),
+      );
+      tabs.appendChild(
+        createEl("button", {
+          type: "button",
+          className: "far-ia-tab-btn",
+          dataset: { tab: "chat" },
+          textContent: "Live Chat",
+        }),
+      );
+      head.appendChild(tabs);
+      head.appendChild(
+        createEl("button", {
+          type: "button",
+          className: "far-ia-btn",
+          dataset: { x: "" },
+          style: "max-width:72px",
+          textContent: "Close",
+        }),
+      );
+      dlg.appendChild(head);
+
+      const body = createEl("div", { className: "far-ia-body" });
+      body.appendChild(
+        createEl("p", {
+          className: "far-ia-small",
+          textContent:
+            "Uses the visible conversation as context. Buyer image attachments in the thread are included for vision-capable models (e.g. gemini-2.5-flash). Paste the output into Fiverr when ready.",
+        }),
+      );
+      body.appendChild(
+        createEl("div", {
+          className: "far-ia-loading-text",
+          style:
+            "color:#64748b; font-size:12px; margin-bottom:8px; display:none;",
+        }),
+      );
+      dlg.appendChild(body);
 
       backdrop.appendChild(dlg);
       document.body.appendChild(backdrop);
@@ -3079,44 +3206,254 @@
           // Move content into tabs
           const body = dlg.querySelector(".far-ia-body");
           if (body) {
-            body.innerHTML =
-              '<div class="far-ia-tab-content active" data-tab-content="generate">' +
-              '<p class="far-ia-small">✓ Context: Uses visible conversation and attachments as reference.</p>' +
-              '<label class="far-ia-small" style="font-weight:600;color:#475569;margin-top:6px;display:block;">Your private note (optional)</label>' +
-              '<textarea id="far-ia-seller-note" class="far-ia-seller-note" data-seller-note rows="3" placeholder="Tone, price, deadline, context not in thread..."></textarea>' +
-              '<div class="far-ia-preset-group">' +
-              '<div class="far-ia-preset-group-title">Quick Messages</div>' +
-              '<button type="button" class="far-ia-btn" data-a="first">📌 First message — short welcome; invite requirements</button>' +
-              '<button type="button" class="far-ia-btn" data-a="reply">💬 Reply — professional response to buyer\'s last message</button>' +
-              '<button type="button" class="far-ia-btn" data-a="clarify">❓ Clarify — ask focused questions from the thread</button>' +
-              "</div>" +
-              '<div class="far-ia-preset-group">' +
-              '<div class="far-ia-preset-group-title">Management</div>' +
-              '<button type="button" class="far-ia-btn" data-a="cool">😊 Cool-Down — de-escalation, empathy</button>' +
-              '<button type="button" class="far-ia-btn" data-a="postdelivery">✅ After Delivery — set expectations (revisions vs new work)</button>' +
-              "</div>" +
-              '<div class="far-ia-preset-group">' +
-              '<div class="far-ia-preset-group-title">Advanced</div>' +
-              '<div class="far-ia-cost-row">' +
-              '<input type="text" class="far-ia-cost-input" data-cost-input placeholder="Optional: your price (e.g., $50, $25-50)" title="Optional: Enter your price or let AI estimate from task scope" aria-label="Your cost or price (optional)" />' +
-              '<button type="button" class="far-ia-btn far-ia-cost-btn" data-a="cost">💰 Cost</button>' +
-              "</div>" +
-              '<button type="button" class="far-ia-btn" data-a="quote">📋 Quote — structured quote; no invented specifics</button>' +
-              '<button type="button" class="far-ia-btn" data-a="cursorPrompt">🧠 Cursor AI prompt — software engineer style</button>' +
-              '<button type="button" class="far-ia-btn" data-a="task">🔍 Task Explain — Bangla + English summary (new window)</button>' +
-              '<button type="button" class="far-ia-btn" data-a="analysis">📊 Analyze — communication improvement score</button>' +
-              "</div>" +
-              '<div class="far-ia-loading-text" style="color:#1dbf73;font-size:12px;margin-bottom:8px;display:none;font-weight:500;"></div>' +
-              '<textarea class="far-ia-out" readonly placeholder="✓ Generated message..." data-out></textarea>' +
-              '<p class="far-ia-err" data-err style="display:none"></p>' +
-              '<div class="far-ia-actions" style="display:flex;gap:8px;"><button type="button" class="far-ia-btn" data-copy style="flex:1;">📋 Copy</button><button type="button" class="far-ia-btn" data-insert style="flex:1;display:none;">→ Insert</button></div>' +
-              "</div>" +
-              '<div class="far-ia-tab-content" data-tab-content="chat">' +
-              '<p class="far-ia-small">Ask AI for rewrites, tone changes, refinements.</p>' +
-              '<div class="far-ia-chat-log" data-chat-log style="flex:1;min-height:120px;margin-bottom:8px;"></div>' +
-              '<textarea class="far-ia-chat-input" data-chat-in placeholder="Ask: shorter, formal, friendly..." rows="3" style="width:100%;margin-bottom:8px;"></textarea>' +
-              '<button type="button" class="far-ia-btn" data-chat-send style="width:100%;text-align:center;">→ Send Message</button>' +
-              "</div>";
+            clearChildren(body);
+
+            const generateTab = createEl("div", {
+              className: "far-ia-tab-content active",
+              dataset: { tabContent: "generate" },
+            });
+            generateTab.appendChild(
+              createEl("p", {
+                className: "far-ia-small",
+                textContent:
+                  "✓ Context: Uses visible conversation and attachments as reference.",
+              }),
+            );
+            generateTab.appendChild(
+              createEl("label", {
+                className: "far-ia-small",
+                style:
+                  "font-weight:600;color:#475569;margin-top:6px;display:block;",
+                htmlFor: "far-ia-seller-note",
+                textContent: "Your private note (optional)",
+              }),
+            );
+            generateTab.appendChild(
+              createEl("textarea", {
+                id: "far-ia-seller-note",
+                className: "far-ia-seller-note",
+                dataset: { sellerNote: "" },
+                rows: 3,
+                placeholder: "Tone, price, deadline, context not in thread...",
+                ariaLabel: "Your private note (optional)",
+              }),
+            );
+
+            const quickGroup = createEl("div", {
+              className: "far-ia-preset-group",
+            });
+            quickGroup.appendChild(
+              createEl("div", {
+                className: "far-ia-preset-group-title",
+                textContent: "Quick Messages",
+              }),
+            );
+            quickGroup.appendChild(
+              createEl("button", {
+                type: "button",
+                className: "far-ia-btn",
+                dataset: { a: "first" },
+                textContent:
+                  "📌 First message — short welcome; invite requirements",
+              }),
+            );
+            quickGroup.appendChild(
+              createEl("button", {
+                type: "button",
+                className: "far-ia-btn",
+                dataset: { a: "reply" },
+                textContent:
+                  "💬 Reply — professional response to buyer's last message",
+              }),
+            );
+            quickGroup.appendChild(
+              createEl("button", {
+                type: "button",
+                className: "far-ia-btn",
+                dataset: { a: "clarify" },
+                textContent:
+                  "❓ Clarify — ask focused questions from the thread",
+              }),
+            );
+            generateTab.appendChild(quickGroup);
+
+            const managementGroup = createEl("div", {
+              className: "far-ia-preset-group",
+            });
+            managementGroup.appendChild(
+              createEl("div", {
+                className: "far-ia-preset-group-title",
+                textContent: "Management",
+              }),
+            );
+            managementGroup.appendChild(
+              createEl("button", {
+                type: "button",
+                className: "far-ia-btn",
+                dataset: { a: "cool" },
+                textContent: "😊 Cool-Down — de-escalation, empathy",
+              }),
+            );
+            managementGroup.appendChild(
+              createEl("button", {
+                type: "button",
+                className: "far-ia-btn",
+                dataset: { a: "postdelivery" },
+                textContent:
+                  "✅ After Delivery — set expectations (revisions vs new work)",
+              }),
+            );
+            generateTab.appendChild(managementGroup);
+
+            const advancedGroup = createEl("div", {
+              className: "far-ia-preset-group",
+            });
+            advancedGroup.appendChild(
+              createEl("div", {
+                className: "far-ia-preset-group-title",
+                textContent: "Advanced",
+              }),
+            );
+            const costRow = createEl("div", { className: "far-ia-cost-row" });
+            costRow.appendChild(
+              createEl("input", {
+                type: "text",
+                className: "far-ia-cost-input",
+                dataset: { costInput: "" },
+                placeholder: "Optional: your price (e.g., $50, $25-50)",
+                title:
+                  "Optional: Enter your price or let AI estimate from task scope",
+                ariaLabel: "Your cost or price (optional)",
+              }),
+            );
+            costRow.appendChild(
+              createEl("button", {
+                type: "button",
+                className: "far-ia-btn far-ia-cost-btn",
+                dataset: { a: "cost" },
+                textContent: "💰 Cost",
+              }),
+            );
+            advancedGroup.appendChild(costRow);
+            advancedGroup.appendChild(
+              createEl("button", {
+                type: "button",
+                className: "far-ia-btn",
+                dataset: { a: "quote" },
+                textContent:
+                  "📋 Quote — structured quote; no invented specifics",
+              }),
+            );
+            advancedGroup.appendChild(
+              createEl("button", {
+                type: "button",
+                className: "far-ia-btn",
+                dataset: { a: "cursorPrompt" },
+                textContent: "🧠 Cursor AI prompt — software engineer style",
+              }),
+            );
+            advancedGroup.appendChild(
+              createEl("button", {
+                type: "button",
+                className: "far-ia-btn",
+                dataset: { a: "task" },
+                textContent:
+                  "🔍 Task Explain — Bangla + English summary (new window)",
+              }),
+            );
+            advancedGroup.appendChild(
+              createEl("button", {
+                type: "button",
+                className: "far-ia-btn",
+                dataset: { a: "analysis" },
+                textContent: "📊 Analyze — communication improvement score",
+              }),
+            );
+            generateTab.appendChild(advancedGroup);
+
+            generateTab.appendChild(
+              createEl("div", {
+                className: "far-ia-loading-text",
+                style:
+                  "color:#1dbf73;font-size:12px;margin-bottom:8px;display:none;font-weight:500;",
+              }),
+            );
+            generateTab.appendChild(
+              createEl("textarea", {
+                className: "far-ia-out",
+                readOnly: true,
+                placeholder: "✓ Generated message...",
+                dataset: { out: "" },
+              }),
+            );
+            generateTab.appendChild(
+              createEl("p", {
+                className: "far-ia-err",
+                dataset: { err: "" },
+                style: "display:none",
+              }),
+            );
+            const actionsRow = createEl("div", {
+              className: "far-ia-actions",
+              style: "display:flex;gap:8px;",
+            });
+            actionsRow.appendChild(
+              createEl("button", {
+                type: "button",
+                className: "far-ia-btn",
+                dataset: { copy: "" },
+                style: "flex:1;",
+                textContent: "📋 Copy",
+              }),
+            );
+            actionsRow.appendChild(
+              createEl("button", {
+                type: "button",
+                className: "far-ia-btn",
+                dataset: { insert: "" },
+                style: "flex:1;display:none;",
+                textContent: "→ Insert",
+              }),
+            );
+            generateTab.appendChild(actionsRow);
+            body.appendChild(generateTab);
+
+            const chatTab = createEl("div", {
+              className: "far-ia-tab-content",
+              dataset: { tabContent: "chat" },
+            });
+            chatTab.appendChild(
+              createEl("p", {
+                className: "far-ia-small",
+                textContent: "Ask AI for rewrites, tone changes, refinements.",
+              }),
+            );
+            chatTab.appendChild(
+              createEl("div", {
+                className: "far-ia-chat-log",
+                dataset: { chatLog: "" },
+                style: "flex:1;min-height:120px;margin-bottom:8px;",
+              }),
+            );
+            chatTab.appendChild(
+              createEl("textarea", {
+                className: "far-ia-chat-input",
+                dataset: { chatIn: "" },
+                placeholder: "Ask: shorter, formal, friendly...",
+                rows: 3,
+                style: "width:100%;margin-bottom:8px;",
+              }),
+            );
+            chatTab.appendChild(
+              createEl("button", {
+                type: "button",
+                className: "far-ia-btn",
+                dataset: { chatSend: "" },
+                style: "width:100%;text-align:center;",
+                textContent: "→ Send Message",
+              }),
+            );
+            body.appendChild(chatTab);
           }
         }
       })();
@@ -3194,15 +3531,15 @@
         const msgContent = document.createElement("div");
         msgContent.style.cssText =
           "white-space:pre-wrap;overflow-wrap:break-word;";
-        msgContent.innerHTML =
-          (isUser
-            ? "<strong>You:</strong> "
-            : isAI
-              ? "<strong>AI:</strong> "
-              : "<strong>Error:</strong> ") +
-          (typeof text === "string"
-            ? text.replace(/</g, "&lt;").replace(/>/g, "&gt;")
-            : text);
+        const label = document.createElement("strong");
+        label.textContent = isUser ? "You:" : isAI ? "AI:" : "Error:";
+        msgContent.appendChild(label);
+        msgContent.appendChild(document.createTextNode(" "));
+        msgContent.appendChild(
+          document.createTextNode(
+            typeof text === "string" ? text : String(text),
+          ),
+        );
         row.appendChild(msgContent);
 
         // Create action buttons (except for errors)
@@ -3264,7 +3601,7 @@
 
       async function runCommunicationAnalysis() {
         chatPanelHistory = [];
-        chatLog.innerHTML = "";
+        clearChildren(chatLog);
         err.style.display = "none";
         out.value = "";
         setLoading(true);
@@ -3288,7 +3625,7 @@
 
       async function runPreset(kind) {
         chatPanelHistory = [];
-        chatLog.innerHTML = "";
+        clearChildren(chatLog);
         err.style.display = "none";
         out.value = "";
         setLoading(true);

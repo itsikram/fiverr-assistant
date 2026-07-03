@@ -3500,10 +3500,33 @@
     toggle.setAttribute("aria-label", "Toggle translation composer");
     toggle.title =
       "Compose in English; translated text fills the message box below";
-    toggle.innerHTML =
-      '<svg class="far-inbox-translate-icon" xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.65" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
-      '<path d="m5 8 6 6"/><path d="M4 14 10 8l2-3"/><path d="M2 5h12"/><path d="M7 2h1"/><path d="m22 22-5-10-5 10"/><path d="M14 18h6"/>' +
-      "</svg>";
+    const toggleIcon = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    toggleIcon.setAttribute("class", "far-inbox-translate-icon");
+    toggleIcon.setAttribute("width", "22");
+    toggleIcon.setAttribute("height", "22");
+    toggleIcon.setAttribute("viewBox", "0 0 24 24");
+    toggleIcon.setAttribute("fill", "none");
+    toggleIcon.setAttribute("stroke", "currentColor");
+    toggleIcon.setAttribute("stroke-width", "1.65");
+    toggleIcon.setAttribute("stroke-linecap", "round");
+    toggleIcon.setAttribute("stroke-linejoin", "round");
+    toggleIcon.setAttribute("aria-hidden", "true");
+    [
+      "m5 8 6 6",
+      "M4 14 10 8l2-3",
+      "M2 5h12",
+      "M7 2h1",
+      "m22 22-5-10-5 10",
+      "M14 18h6",
+    ].forEach((d) => {
+      const path = document.createElementNS(
+        "http://www.w3.org/2000/svg",
+        "path",
+      );
+      path.setAttribute("d", d);
+      toggleIcon.appendChild(path);
+    });
+    toggle.appendChild(toggleIcon);
 
     const toLabel = document.createElement("div");
     toLabel.className = "far-inbox-translate-lang-label";

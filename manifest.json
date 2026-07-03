@@ -1,33 +1,20 @@
 {
   "manifest_version": 2,
   "name": "Fiverr Assistant & Auto Reloader",
-  "version": "6.4",
+  "version": "6.5",
   "description": "Injects the Fiverr auto reloader script into fiverr.com to monitor messages and auto-navigate as configured. also notify you when you have a new client or old client.",
   "background": {
-    "scripts": [
-      "background.js"
-    ],
+    "scripts": ["background.js"],
     "persistent": false
   },
   "content_scripts": [
     {
-      "matches": [
-        "https://www.fiverr.com/*",
-        "https://fiverr.com/*"
-      ],
-      "js": [
-        "content.js",
-        "inboxAiAssistant.js"
-      ],
+      "matches": ["https://www.fiverr.com/*", "https://fiverr.com/*"],
+      "js": ["content.js", "inboxAiAssistant.js"],
       "run_at": "document_idle"
     }
   ],
-  "permissions": [
-    "notifications",
-    "tabs",
-    "storage",
-    "<all_urls>"
-  ],
+  "permissions": ["notifications", "tabs", "storage", "<all_urls>"],
   "options_ui": {
     "page": "options.html",
     "browser_style": true
@@ -36,14 +23,13 @@
     "gecko": {
       "id": "mdikram295@gmail.com",
       "data_collection_permissions": {
-        "required": [
-          "none"
-        ]
+        "required": ["none"]
       }
     }
   },
   "icons": {
-    "48": "icons/icon48.png"  },
+    "48": "icons/icon48.png"
+  },
   "browser_action": {
     "default_icon": {
       "48": "icons/icon48.png"
@@ -52,4 +38,3 @@
     "default_popup": "options.html"
   }
 }
-
