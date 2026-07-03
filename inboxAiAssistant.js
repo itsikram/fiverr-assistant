@@ -2269,7 +2269,7 @@
       ".far-ia-btn{text-align:left;padding:10px 12px;border-radius:8px;border:1px solid #cbd5e1;background:#fff;cursor:pointer;font-size:13px;line-height:1.35;transition:all 0.2s;}" +
       ".far-ia-btn:hover{border-color:#1dbf73;background:#f0fdf4;color:#1dbf73;}" +
       ".far-ia-btn:disabled{opacity:0.55;cursor:not-allowed;}" +
-      ".far-ia-out{width:100%;min-height:100px;max-height:200px;resize:vertical;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;box-sizing:border-box;}" +
+      ".far-ia-out{width:100%;min-height:100px;max-height:200px;overflow-y:auto;resize:vertical;padding:10px;border:1px solid #cbd5e1;border-radius:8px;font-size:13px;box-sizing:border-box;}" +
       ".far-ia-err{color:#b91c1c;font-size:13px;padding:8px;background:#fee2e2;border-radius:6px;}" +
       ".far-ia-chat-log{min-height:200px;max-height:65vh;overflow-y:auto;font-size:13px;color:#475569;border:1px solid #cbd5e1;border-radius:8px;padding:12px;background:#f8fafc;display:flex;flex-direction:column;gap:8px;}" +
       ".far-ia-chat-row{padding:10px;border-radius:6px;line-height:1.5;word-wrap:break-word;display:grid;grid-template-columns:1fr auto;gap:8px;align-items:start;}" +
