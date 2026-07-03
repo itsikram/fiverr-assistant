@@ -1,8 +1,9 @@
 {
   "manifest_version": 2,
-  "name": "Fiverr Assistant & Auto Reloader",
+  "name": "Fiverr Assistant",
+  "short_name": "Fiverr Assistant",
   "version": "6.7",
-  "description": "Injects the Fiverr auto reloader script into fiverr.com to monitor messages and auto-navigate as configured. also notify you when you have a new client or old client.",
+  "description": "Fiverr assistant for inbox monitoring, client alerts, auto-reload, and AI-powered replies for Fiverr sellers.",
   "background": {
     "scripts": ["background.js"],
     "persistent": false
